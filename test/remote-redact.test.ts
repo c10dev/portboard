@@ -62,7 +62,7 @@ test('lan aliases are the same across responses and tools, and hide the address'
   assert.equal(a.cards[2].id, d.proxmox.hosts[0].guests[0].device, 'who_uses_what and list_devices agree');
   assert.match(lanAlias('lan:192.168.50.20'), /^lan-device-[0-9a-f]{6}$/);
   assert.notEqual(lanAlias('lan:192.168.50.20'), lanAlias('lan:192.168.50.21'));
-  assert.doesNotMatch(lanAlias('lan:192.168.50.20'), /192|168/);
+  assert.doesNotMatch(lanAlias('lan:192.168.50.20'), /192\.168|50\.20/, 'the hex suffix may contain any digits, never the address');
 });
 
 test('flags loosen redaction only for what they name', () => {
