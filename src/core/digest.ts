@@ -8,8 +8,8 @@
 // What it covers: watched (🔔) ports' uptime and outages in the period, what is down right now, new devices first
 // seen in the period (known-devices.json), cleanup candidates now (owners.ts), removable worktrees now, self-watch
 // problems now (failing collectors, credentials about to expire), remote connectors that need a look now (커넥터 상태,
-// src/remote/health.ts), memory now (src/core/memory.ts: a problem only while memory is short), and the most used
-// services (usage history).
+// src/remote/health.ts), memory now (src/core/memory.ts: a problem only while memory is short), device health now
+// (src/core/devhealth.ts: only while a condition is alerted), and the most used services (usage history).
 // Nothing to report → one line, "이상 없음".
 //
 // Scheduling: a slot is the configured time in KST (fixed UTC+9, no DST), every day or every Monday. A slot is sent
@@ -178,6 +178,8 @@ export interface DigestInput {
   remote?: { name: string; health: string }[] | null;
   /** 메모리 now (memory-state.json): a problem while the pressure alert is on; optional source */
   memory?: { problem: boolean; text: string } | null;
+  /** 기기 상태 now (devhealth-state.json): a line only while a device condition is alerted; optional source */
+  devhealth?: { problem: boolean; text: string } | null;
 }
 
 export interface DigestLine {
@@ -312,6 +314,7 @@ export function buildDigest(input: DigestInput, mode: DigestMode, period: { from
   if (input.worktrees?.removable) lines.push({ problem: true, text: t('digestMsg.worktrees', { n: input.worktrees.removable, size: kbText(input.worktrees.removableKb) }) });
   if (input.selfwatch) lines.push(...selfwatchLines(input.selfwatch, now));
   if (input.memory) lines.push(input.memory);
+  if (input.devhealth) lines.push(input.devhealth);
   if (input.remote?.length) lines.push({ problem: true, text: t('digestMsg.remote', { n: input.remote.length, list: list(input.remote.map((r) => `${r.name || t('digestMsg.unnamed')} ${r.health}`)) }) });
   const top = input.history ? busiest(input.history, from, to) : [];
   if (top.length) lines.push({ problem: false, text: t('digestMsg.top', { list: top.map((s) => t('digestMsg.topItem', { service: s.service, n: s.devices })).join(' · ') }) });

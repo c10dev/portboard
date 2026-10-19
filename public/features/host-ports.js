@@ -111,11 +111,12 @@ function hint(box, text, setupUrl) {
 
 const READ_ERROR = { unreachable: 'hostports.err.unreachable', timeout: 'hostports.err.timeout' };
 
-/** The Proxmox host's SSH port reader: a setup hint until the key is installed, then only problems. */
+/** The Proxmox host's SSH port reader: why it hasn't read yet, a setup hint until the key is installed, then only problems. */
 export function renderPortsHint(box, pp) {
   const node = pp?.node ?? 'Proxmox';
   const lastOk = pp?.lastOk ? ` · ${t('hostports.lastOk', { t: ago(new Date(pp.lastOk).toISOString()) })}` : '';
-  const text = !pp || !pp.enabled || pp.pending ? ''
+  const text = !pp || !pp.enabled ? ''
+    : pp.pending ? (pp.reason ? t('hostports.pve.pending', { node, reason: pp.reason }) : '')
     : pp.error === 'not-installed' ? t('hostports.pve.notInstalled', { node })
     : pp.error === 'no-key' ? t('hostports.pve.noKey', { node })
     : pp.error === 'host-key' ? t('hostports.pve.hostKey', { node })
@@ -127,10 +128,11 @@ export function renderPortsHint(box, pp) {
   hint(box, text, text && (pp.error === 'not-installed' || pp.error === 'no-key') ? pp.setupUrl : null);
 }
 
-/** The desktop's Windows-side reader: the setup hint until the user is set and the key works, then only problems. */
+/** The desktop's Windows-side reader: why it hasn't read yet, the setup hint until the user is set and the key works, then only problems. */
 export function renderWinHint(box, wp) {
   const dev = wp?.device ?? 'Windows';
-  const text = !wp || !wp.enabled || wp.pending ? ''
+  const text = !wp || !wp.enabled ? ''
+    : wp.pending ? (wp.reason ? t('hostports.win.pending', { dev, reason: wp.reason }) : '')
     : wp.error === 'no-user' || wp.error === 'not-installed' ? t('hostports.win.notInstalled', { dev })
     : wp.error === 'no-key' ? t('hostports.win.noKey', { dev })
     : wp.error === 'host-key' ? t('hostports.win.hostKey', { dev })

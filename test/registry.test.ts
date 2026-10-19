@@ -133,7 +133,7 @@ test('a preview never starts the alert checker; production does unless PORTBOARD
   assert.equal(at({ PORTBOARD_ALERTS: 'off' }), false, 'production with alerts off');
   // what a preview starts, so a new job that should be gated gets noticed here
   const preview = resolvePaths({ PORTBOARD_PORT: '8808' }, '/home/x');
-  assert.deepEqual(REGISTRY.jobs.filter((j) => isEnabled(j, preview)).map((j) => j.name), ['usage-sample', 'host-ports', 'selfwatch', 'worktrees-scan', 'adoption-scan', 'new-ports', 'memory']);
+  assert.deepEqual(REGISTRY.jobs.filter((j) => isEnabled(j, preview)).map((j) => j.name), ['usage-sample', 'host-ports', 'selfwatch', 'worktrees-scan', 'adoption-scan', 'new-ports', 'memory', 'devhealth']);
 });
 
 // ---- consistency ----

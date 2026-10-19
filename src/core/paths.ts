@@ -47,6 +47,8 @@ export interface Paths {
   site: string;
   /** access.json: writeDevices, the devices that may write through tailscale serve (security review v1.0, M1) */
   access: string;
+  /** devhealth.json: thresholds of the device health alerts (devhealth.ts, docs/config.md) */
+  devhealth: string;
   history: string;
   uptime: string;
   alertsState: string;
@@ -105,6 +107,7 @@ export function resolvePaths(env: Env = process.env, home = homedir()): Paths {
     site: env.PORTBOARD_SITE ?? join(configDir, 'portboard.json'),
     // A preview's own (it starts without one: no allowlist), never production's.
     access: env.PORTBOARD_ACCESS ?? join(configDir, 'access.json'),
+    devhealth: env.PORTBOARD_DEVHEALTH ?? join(configDir, 'devhealth.json'),
     // Not under PORTBOARD_STATE_DIR in production (as before); a preview keeps its own.
     history: env.PORTBOARD_HISTORY ?? join(preview ? previewDir : prodState, 'usage-history.json'),
     uptime: env.PORTBOARD_UPTIME ?? join(stateDir, 'uptime.json'),

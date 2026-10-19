@@ -40,6 +40,7 @@ import { savedStatus } from '../core/selfwatch.ts';
 import { loadUptime } from '../core/uptime.ts';
 import { text } from '../mcp/kit.ts';
 import { adoptionForDigest } from './adoption.ts';
+import { devhealthForDigest } from './devhealth.ts';
 import { memoryForDigest } from './memory.ts';
 import { connectorView } from '../remote/admin.ts';
 import { HEALTH_LABEL, needsAttention } from '../remote/health.ts';
@@ -87,17 +88,19 @@ export interface Sources {
   /** Remote connectors that need a look (커넥터 상태): left out where there is none */
   remote?(): Promise<DigestInput['remote']>;
   memory?(): Promise<DigestInput['memory']>;
+  devhealth?(): Promise<DigestInput['devhealth']>;
 }
 
 export async function gather(src: Sources, period?: { from: number; to: number }): Promise<DigestInput> {
   const safe = <T>(f: () => Promise<T>) => f().catch(() => null);
-  const [watching, uptime, known, cleanup, worktrees, selfwatch, history, adoption, remote, memory] = await Promise.all([
+  const [watching, uptime, known, cleanup, worktrees, selfwatch, history, adoption, remote, memory, devhealth] = await Promise.all([
     safe(src.watching), safe(src.uptime), safe(src.known), safe(src.cleanup), safe(src.worktrees), safe(src.selfwatch), safe(src.history),
     src.adoption && period ? safe(() => src.adoption!(period)) : null,
     src.remote ? safe(src.remote) : null,
     src.memory ? safe(src.memory) : null,
+    src.devhealth ? safe(src.devhealth) : null,
   ]);
-  return { watching, uptime, known, cleanup, worktrees, selfwatch, history, adoption, remote, memory };
+  return { watching, uptime, known, cleanup, worktrees, selfwatch, history, adoption, remote, memory, devhealth };
 }
 
 /** remote.json → the clients whose 커넥터 상태 isn't 정상, by name and label only */
@@ -124,6 +127,7 @@ function serverSources(ctx: ServerContext): Sources {
     adoption: (p) => adoptionForDigest(p),
     remote: () => remoteAttention(ctx.paths.remoteConfig),
     memory: () => memoryForDigest(ctx.paths),
+    devhealth: () => devhealthForDigest(ctx.paths),
   };
 }
 
@@ -143,6 +147,7 @@ function fileSources(): Sources {
     adoption: (p) => adoptionForDigest(p),
     remote: () => remoteAttention(PATHS.remoteConfig),
     memory: () => memoryForDigest(),
+    devhealth: () => devhealthForDigest(),
   };
 }
 

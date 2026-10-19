@@ -154,3 +154,24 @@ The following never produce a notice:
 - The same port and command line again within 10 minutes, for example a dev server restarting on a file change.
 
 A look whose `ss` returned nothing changes nothing. The events are kept in memory for the toast and the Mac app: `GET /api/new-ports` ([api.md](api.md#new-ports)).
+
+## Device health: `devhealth.json`
+
+The thresholds of the device health alerts ([operations.md](operations.md#device-health-alerts)). A separate file, read on every check and never written; every key is optional, and a missing, wrong-typed or out-of-range key keeps its default.
+
+- **Where it is:** `~/.config/portboard/devhealth.json` (a preview: its own config dir). Set `PORTBOARD_DEVHEALTH` to read it from somewhere else.
+- **The code:** `src/core/devhealth.ts` (`DEFAULT_THRESHOLDS`, `parseThresholds`).
+
+| Key | Default | Range | Meaning |
+|---|---|---|---|
+| `failMinRuns` | 5 | 1–1000 | A compute-pool host's failure rate counts only with at least this many runs in the last 24 h |
+| `failPct` | 50 | 1–100 | Alert when this share (%) of those runs failed; it recovers at 10 points under |
+| `offlineMin` | 30 | 1–1440 | Alert when a Proxmox guest is `running` and its tailnet device has been offline this many minutes |
+| `loadPerCore` | 2 | 0.1–64 | Alert when a pool host's load1 / cores is at this or more; it recovers at 80 % of it |
+| `loadMin` | 15 | 1–1440 | … for this many minutes |
+| `recoverMin` | 5 | 1–120 | A condition must be clear this many minutes to send the recovery |
+| `reminderHours` | 6 | 1–168 | A reminder while a condition lasts |
+
+```json
+{ "failPct": 60, "offlineMin": 60, "loadPerCore": 3 }
+```

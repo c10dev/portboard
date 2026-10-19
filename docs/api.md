@@ -22,7 +22,8 @@
 | POST | `/api/worktrees/remove` | JSON `{repo, paths}`: `git worktree remove` (never `--force`; branches stay) for each path that is still removable when re-checked; needs `X-Portboard: 1` |
 | POST | `/api/worktrees/prune` | JSON `{repo}`: `git worktree prune` (records of directories already deleted); needs `X-Portboard: 1` |
 | GET | `/api/memory` | The last memory sample: memory, swap and PSI, the partition by group (Claude sessions, MCP servers, services, docker, other), sessions, the hour's history, the pressure state and thresholds, and suggestions (never actions) ([memory](memory/README.md)) |
-| GET | `/api/devices` | Tailnet devices joined with compute-pool host status; `tree` is the network hierarchy ([dashboard](dashboard.md#network-tree-구조)) |
+| GET | `/api/devhealth` | 기기 상태 알림 (#2): `at` (last check), `alertsOn`, `thresholds` (`devhealth.json`, [config.md](config.md#device-health-devhealthjson)), `conditions[]` (`key`, `kind` `failures`\|`guest`\|`load`, `name`, `active` (alerted), `since`, `facts`, `text`): alerted conditions and breaches still within their sustain; read-only ([operations.md](operations.md#device-health-alerts)) |
+| GET | `/api/devices` | Tailnet devices joined with compute-pool host status; `tree` is the network hierarchy ([dashboard](dashboard.md#network-tree-구조)). `pvePorts` and `winPorts` (the SSH port readers) carry `reason`: why there is no fresh read, in words (`pending` and its first read waiting or running, turned off, or the error and when it retries); null when ok |
 | GET | `/api/usage` | One card per device with what it uses now, `idle` services, `history` (`byPort` last use, `byDevice` last 7 days), and the same `tree` as `/api/devices` |
 | POST | `/api/clients/name` | JSON `{key, name}` names a LAN device (`clients.json`); needs `X-Portboard: 1` |
 | POST | `/api/ports/:port/expose` · `unexpose` · `restart` · `stop` | Actions; need header `X-Portboard: 1` |
