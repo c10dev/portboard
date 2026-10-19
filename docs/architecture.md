@@ -46,6 +46,7 @@ src/mcp/prompts.ts    MCP prompts (Korean): server_status_summary, port_cleanup,
 src/mcp/rpc.ts        MCP JSON-RPC dispatch (initialize, ping, tools/*, resources/*, prompts/*)
 src/remote/tools.ts   the remote MCP surface: what the features mark remote, nothing else (docs/remote-mcp/)
 src/remote/core.ts    RemoteCore (what the remote may read) and readOnlyCore()
+src/remote/dashboard.ts the remote's snapshot / devices / usage: the dashboard's, over loopback; local only while it is down
 bin/portboard-mcp     SSH entry point for remote MCP clients (finds node without nvm)
 scripts/mac-setup.sh  one-time Mac setup for Claude Code + Claude Desktop
 scripts/mac-menubar-setup.sh  Mac menu bar plugin installer (SwiftBar)

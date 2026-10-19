@@ -18,6 +18,7 @@ node scripts/remote-smoke.ts [url] # end-to-end check (discovery → OAuth → e
 | `src/remote/oauth.ts` | metadata documents, redirect allowlist, CIMD fetch, PKCE, consent page |
 | `src/remote/tools.ts` | the remote JSON-RPC surface: lists and dispatches what the feature modules mark remote (`src/features/*`), wrapping `src/mcp/rpc.ts` |
 | `src/remote/core.ts` | `RemoteCore` (what the remote may read) and `readOnlyCore()` (writes and logs throw) |
+| `src/remote/dashboard.ts` | where snapshot, devices and usage come from: the dashboard over loopback, local reads only while it is down (#5) |
 | `src/remote/redact.ts` | what may leave the tailnet (projection + scrub) |
 | `src/remote/store.ts` | `~/.config/portboard/remote.json` (mode 600, hashes only); records an access token's last use at most once a minute |
 | `src/remote/admin.ts` | the dashboard's view of that file (derived `c-…`/`g-…` ids, no secrets) and its revokes (#31); served by `src/features/remote-connector.ts` on the dashboard only |
@@ -134,7 +135,22 @@ Why a CLI code and not a button on the dashboard: Funnel traffic arrives on 127.
   - Bodies: `/mcp` 64 KB, OAuth endpoints 8 KB (`413`).
   - `headersTimeout` 10 s, `requestTimeout` 30 s, keep-alive 5 s.
   - 20 s per JSON-RPC message (`-32603 timed out`).
-  - Snapshot, devices and usage are cached for 2 s.
+  - Snapshot, devices and usage are cached for 2 s (on top of the dashboard's own 2 s caches, see below).
+
+## Where the data comes from (#5)
+
+The remote server doesn't collect on its own while the dashboard runs. `src/remote/dashboard.ts` reads the dashboard's answers over loopback, so `ss -ltnpH`, `docker ps`, `tailscale status`, `tailscale serve status` and the HTTP probes run once per 2 s on the machine, in the dashboard, not once in each process:
+
+| RemoteCore read | Dashboard route | Falls back to |
+|---|---|---|
+| `snapshot()` | `GET /api/ports` (`ctx.snapshot()`) | `snapshot()` |
+| `devices()` | `GET /api/devices` (`devices()` with the LAN clients the 기기 tab shows) | `devices()` |
+| `usage()` | `GET /api/usage` (`ctx.usage()`) | `usage(topology(snapshot()))` |
+
+- **Same objects, same redaction.** The routes answer the core objects as JSON (plain data, times as ISO strings), so `src/remote/redact.ts` projects exactly what it projected before. `/api/usage` adds history and 새 기기 fields; the projection never copies them. A body that isn't JSON or lacks the fields the redaction walks is read locally instead.
+- **Loopback only.** Always `http://127.0.0.1:<PORTBOARD_PORT>` (default 8790, as `src/server.ts`), GET only, with a fixed `Host: 127.0.0.1:<port>`, `Accept` and `User-Agent: portboard-remote`. Nothing from a remote client (headers, cookies, arguments) is passed on: the paths are constants. GET routes need no `X-Portboard` header.
+- **Fallback and back-off.** No connection within 1.5 s (refused, or a dashboard that hangs: 15 s for the whole answer) counts as down: that read and every read for the next 10 s are computed locally, then the dashboard is tried again. One log line when it goes away and one when it answers again. An HTTP error or a malformed body from a live dashboard is read locally once, without the back-off.
+- **Not from the dashboard:** `free_port` (its own `ss -ltnH` and serve read on each call, so a port taken a moment ago counts) and the status resource's extras (local files, no commands).
 
 ## Tools: allowlist
 
@@ -150,7 +166,7 @@ A feature module offers a tool remotely with `remote: { description, call }` nex
 Not available remotely: `expose_port`, `unexpose_port`, `restart_service`, `stop_service`, `tail_logs` (logs can contain tokens), and label/pin/hide or device-name writes (they were never MCP tools). Three independent layers:
 1. `tools/list` returns only `REMOTE_TOOLS` (the registry's remote tools). All are annotated `readOnlyHint: true` and their descriptions are rewritten so they don't mention the hidden tools.
 2. `tools/call` refuses any name not in `REMOTE_TOOL_NAMES` **before touching the core**, with the same `-32602 unknown tool: <name>` as a tool that doesn't exist.
-3. The `Core` handed to shared code (`readOnlyCore`) has `expose / unexpose / restart / stop / logs` that throw. `src/remote.ts` imports only `snapshot`, `freePorts`, `devices`, `topology` and `usage` from the core, plus two readers for the status resource: the alert checker's `status()` (never started) and `loadKnown()`.
+3. The `Core` handed to shared code (`readOnlyCore`) has `expose / unexpose / restart / stop / logs` that throw. `src/remote.ts` imports only `snapshot`, `freePorts`, `devices`, `topology` and `usage` from the core (the first three are read from the dashboard while it runs, above), plus two readers for the status resource: the alert checker's `status()` (never started) and `loadKnown()`.
 
 `initialize` returns its own read-only `instructions`; the stdio server's instructions point at write tools.
 
