@@ -1,0 +1,960 @@
+{
+ "at": "2026-10-17T12:32:24.356Z",
+ "host": {
+  "hostname": "devbox",
+  "user": "dev"
+ },
+ "tailscale": {
+  "available": true,
+  "dnsName": "devbox.example.ts.net",
+  "hostName": "devbox",
+  "ips": [
+   "100.64.10.1",
+   "fd7a:115c:a1e0::10:1"
+  ]
+ },
+ "ports": [
+  {
+   "port": 22,
+   "listening": true,
+   "scope": "all",
+   "addresses": [
+    "0.0.0.0",
+    "::"
+   ],
+   "owned": false,
+   "kind": "system",
+   "container": null,
+   "processes": [],
+   "name": "unknown",
+   "detectedName": "unknown",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": false,
+   "probe": null,
+   "served": null,
+   "urls": {
+    "direct": "tcp://devbox.example.ts.net:22",
+    "served": null,
+    "ssh": "ssh -N -L 22:127.0.0.1:22 dev@devbox"
+   },
+   "canExpose": false,
+   "exposeBlocker": "already reachable on tailnet",
+   "control": null,
+   "canRestart": false,
+   "canStop": false
+  },
+  {
+   "port": 53,
+   "listening": true,
+   "scope": "loopback",
+   "addresses": [
+    "127.0.0.54",
+    "127.0.0.53"
+   ],
+   "owned": false,
+   "kind": "system",
+   "container": null,
+   "processes": [],
+   "name": "unknown",
+   "detectedName": "unknown",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": false,
+   "probe": null,
+   "served": null,
+   "urls": {
+    "direct": null,
+    "served": null,
+    "ssh": "ssh -N -L 53:127.0.0.1:53 dev@devbox"
+   },
+   "canExpose": false,
+   "exposeBlocker": "not an HTTP server",
+   "control": null,
+   "canRestart": false,
+   "canStop": false
+  },
+  {
+   "port": 443,
+   "listening": true,
+   "scope": "tailnet",
+   "addresses": [
+    "100.64.10.1",
+    "fd7a:115c:a1e0::10:1"
+   ],
+   "owned": false,
+   "kind": "system",
+   "container": null,
+   "processes": [],
+   "name": "unknown",
+   "detectedName": "unknown",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": false,
+   "probe": null,
+   "served": null,
+   "urls": {
+    "direct": "tcp://devbox.example.ts.net:443",
+    "served": null,
+    "ssh": "ssh -N -L 443:127.0.0.1:443 dev@devbox"
+   },
+   "canExpose": false,
+   "exposeBlocker": "already reachable on tailnet",
+   "control": null,
+   "canRestart": false,
+   "canStop": false
+  },
+  {
+   "port": 631,
+   "listening": true,
+   "scope": "all",
+   "addresses": [
+    "0.0.0.0",
+    "::"
+   ],
+   "owned": false,
+   "kind": "system",
+   "container": null,
+   "processes": [],
+   "name": "unknown",
+   "detectedName": "unknown",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": false,
+   "probe": null,
+   "served": null,
+   "urls": {
+    "direct": "tcp://devbox.example.ts.net:631",
+    "served": null,
+    "ssh": "ssh -N -L 631:127.0.0.1:631 dev@devbox"
+   },
+   "canExpose": false,
+   "exposeBlocker": "already reachable on tailnet",
+   "control": null,
+   "canRestart": false,
+   "canStop": false
+  },
+  {
+   "port": 3000,
+   "listening": true,
+   "scope": "all",
+   "addresses": [
+    "*"
+   ],
+   "owned": true,
+   "kind": "app",
+   "container": null,
+   "processes": [
+    {
+     "pid": 2408824,
+     "project": "webapp",
+     "unit": null,
+     "unitDescription": null,
+     "cmdline": "node /home/dev/projects/webapp/node_modules/.bin/next dev"
+    }
+   ],
+   "name": "webapp",
+   "detectedName": "webapp",
+   "label": null,
+   "pinned": true,
+   "hidden": false,
+   "visible": true,
+   "probe": {
+    "http": true,
+    "status": 307,
+    "title": null
+   },
+   "served": null,
+   "urls": {
+    "direct": "http://devbox.example.ts.net:3000",
+    "served": null,
+    "ssh": "ssh -N -L 3000:127.0.0.1:3000 dev@devbox"
+   },
+   "canExpose": false,
+   "exposeBlocker": "already reachable on tailnet",
+   "control": {
+    "type": "process",
+    "pids": [
+     2408824
+    ]
+   },
+   "canRestart": false,
+   "canStop": true
+  },
+  {
+   "port": 3080,
+   "listening": true,
+   "scope": "loopback",
+   "addresses": [
+    "127.0.0.1"
+   ],
+   "owned": true,
+   "kind": "app",
+   "container": null,
+   "processes": [
+    {
+     "pid": 4931,
+     "project": "webapp",
+     "unit": "agent-web.service",
+     "unitDescription": "Agent Web UI (agent web) on 127.0.0.1:3080",
+     "cmdline": "node /home/dev/projects/webapp/agent-web/server.js --port 3080"
+    }
+   ],
+   "name": "Agent Web UI (agent web) on 127.0.0.1:3080",
+   "detectedName": "Agent Web UI (agent web) on 127.0.0.1:3080",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": true,
+   "probe": {
+    "http": true,
+    "status": 401,
+    "title": null
+   },
+   "served": null,
+   "urls": {
+    "direct": null,
+    "served": null,
+    "ssh": "ssh -N -L 3080:127.0.0.1:3080 dev@devbox"
+   },
+   "canExpose": true,
+   "exposeBlocker": null,
+   "control": {
+    "type": "systemd",
+    "unit": "agent-web.service"
+   },
+   "canRestart": true,
+   "canStop": true
+  },
+  {
+   "port": 5281,
+   "listening": true,
+   "scope": "loopback",
+   "addresses": [
+    "127.0.0.1"
+   ],
+   "owned": true,
+   "kind": "app",
+   "container": null,
+   "processes": [
+    {
+     "pid": 831911,
+     "project": "shop-web/.worktrees/redesign",
+     "unit": null,
+     "unitDescription": null,
+     "cmdline": "node /home/dev/projects/shop-web/.worktrees/redesign/node_modules/.bin/vite --port 5281"
+    }
+   ],
+   "name": "ShopSim",
+   "detectedName": "ShopSim",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": true,
+   "probe": {
+    "http": true,
+    "status": 200,
+    "title": "ShopSim"
+   },
+   "served": null,
+   "urls": {
+    "direct": null,
+    "served": null,
+    "ssh": "ssh -N -L 5281:127.0.0.1:5281 dev@devbox"
+   },
+   "canExpose": true,
+   "exposeBlocker": null,
+   "control": {
+    "type": "process",
+    "pids": [
+     831911
+    ]
+   },
+   "canRestart": false,
+   "canStop": true
+  },
+  {
+   "port": 7720,
+   "listening": true,
+   "scope": "loopback",
+   "addresses": [
+    "127.0.0.1"
+   ],
+   "owned": true,
+   "kind": "app",
+   "container": null,
+   "processes": [
+    {
+     "pid": 3480132,
+     "project": null,
+     "unit": "compute-pool-monitor.service",
+     "unitDescription": "compute-pool monitor (host health, alerts, dashboard on 127.0.0.1:7720)",
+     "cmdline": "/usr/bin/node /home/dev/projects/compute-pool/monitor.js"
+    }
+   ],
+   "name": "compute-pool",
+   "detectedName": "compute-pool monitor (host health, alerts, dashboard on 127.0.0.1:7720)",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": true,
+   "probe": {
+    "http": true,
+    "status": 200,
+    "title": "compute-pool"
+   },
+   "served": null,
+   "urls": {
+    "direct": null,
+    "served": null,
+    "ssh": "ssh -N -L 7720:127.0.0.1:7720 dev@devbox"
+   },
+   "canExpose": true,
+   "exposeBlocker": null,
+   "control": {
+    "type": "systemd",
+    "unit": "compute-pool-monitor.service"
+   },
+   "canRestart": true,
+   "canStop": true,
+   "alert": true
+  },
+  {
+   "port": 7721,
+   "listening": true,
+   "scope": "tailnet",
+   "addresses": [
+    "100.64.10.1",
+    "fd7a:115c:a1e0::10:1"
+   ],
+   "owned": true,
+   "kind": "app",
+   "container": null,
+   "processes": [
+    {
+     "pid": 3480132,
+     "project": null,
+     "unit": "compute-pool-monitor.service",
+     "unitDescription": "compute-pool monitor (host health, alerts, dashboard on 127.0.0.1:7720)",
+     "cmdline": "/usr/bin/node /home/dev/projects/compute-pool/monitor.js"
+    }
+   ],
+   "name": "compute-pool",
+   "detectedName": "compute-pool monitor (host health, alerts, dashboard on 127.0.0.1:7720)",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": true,
+   "probe": {
+    "http": false,
+    "status": null,
+    "title": null
+   },
+   "served": null,
+   "urls": {
+    "direct": "tcp://devbox.example.ts.net:7721",
+    "served": null,
+    "ssh": "ssh -N -L 7721:127.0.0.1:7721 dev@devbox"
+   },
+   "canExpose": false,
+   "exposeBlocker": "already reachable on tailnet",
+   "control": {
+    "type": "systemd",
+    "unit": "compute-pool-monitor.service"
+   },
+   "canRestart": true,
+   "canStop": true
+  },
+  {
+   "port": 8080,
+   "listening": true,
+   "scope": "loopback",
+   "addresses": [
+    "127.0.0.1"
+   ],
+   "owned": true,
+   "kind": "app",
+   "container": null,
+   "processes": [
+    {
+     "pid": 1763,
+     "project": null,
+     "unit": "supabase-mcp-tunnel.service",
+     "unitDescription": "Supabase MCP SSH Tunnel",
+     "cmdline": "/usr/bin/ssh -N -L 8080:127.0.0.1:8080 db-host"
+    }
+   ],
+   "name": "Supabase MCP SSH Tunnel",
+   "detectedName": "Supabase MCP SSH Tunnel",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": true,
+   "probe": {
+    "http": true,
+    "status": 401,
+    "title": null
+   },
+   "served": null,
+   "urls": {
+    "direct": null,
+    "served": null,
+    "ssh": "ssh -N -L 8080:127.0.0.1:8080 dev@devbox"
+   },
+   "canExpose": true,
+   "exposeBlocker": null,
+   "control": {
+    "type": "systemd",
+    "unit": "supabase-mcp-tunnel.service"
+   },
+   "canRestart": true,
+   "canStop": true
+  },
+  {
+   "port": 8384,
+   "listening": true,
+   "scope": "loopback",
+   "addresses": [
+    "127.0.0.1"
+   ],
+   "owned": true,
+   "kind": "app",
+   "container": null,
+   "processes": [
+    {
+     "pid": 1919,
+     "project": null,
+     "unit": "syncthing.service",
+     "unitDescription": "Syncthing - Open Source Continuous File Synchronization",
+     "cmdline": "/usr/bin/syncthing serve --no-browser"
+    }
+   ],
+   "name": "Syncthing",
+   "detectedName": "Syncthing - Open Source Continuous File Synchronization",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": true,
+   "probe": {
+    "http": true,
+    "status": 200,
+    "title": null
+   },
+   "served": null,
+   "urls": {
+    "direct": null,
+    "served": null,
+    "ssh": "ssh -N -L 8384:127.0.0.1:8384 dev@devbox"
+   },
+   "canExpose": true,
+   "exposeBlocker": null,
+   "control": {
+    "type": "systemd",
+    "unit": "syncthing.service"
+   },
+   "canRestart": true,
+   "canStop": true
+  },
+  {
+   "port": 8790,
+   "listening": true,
+   "scope": "tailnet",
+   "addresses": [
+    "127.0.0.1",
+    "100.64.10.1"
+   ],
+   "owned": true,
+   "kind": "app",
+   "container": null,
+   "processes": [
+    {
+     "pid": 3690402,
+     "project": "portboard",
+     "unit": "portboard.service",
+     "unitDescription": "Portboard — listening ports dashboard on :8790 (loopback + tailnet)",
+     "cmdline": "/usr/bin/node src/server.ts"
+    }
+   ],
+   "name": "Portboard",
+   "detectedName": "Portboard — listening ports dashboard on :8790 (loopback + tailnet)",
+   "label": "Portboard",
+   "pinned": false,
+   "hidden": false,
+   "visible": true,
+   "probe": {
+    "http": true,
+    "status": 200,
+    "title": "Portboard"
+   },
+   "served": {
+    "httpsPort": 8443,
+    "upstream": "http://127.0.0.1:8790",
+    "upstreamPort": 8790
+   },
+   "urls": {
+    "direct": "http://devbox.example.ts.net:8790",
+    "served": "https://devbox.example.ts.net:8443/",
+    "ssh": "ssh -N -L 8790:127.0.0.1:8790 dev@devbox"
+   },
+   "canExpose": false,
+   "exposeBlocker": "already served",
+   "control": {
+    "type": "systemd",
+    "unit": "portboard.service"
+   },
+   "canRestart": true,
+   "canStop": false,
+   "alert": true
+  },
+  {
+   "port": 8794,
+   "listening": true,
+   "scope": "loopback",
+   "addresses": [
+    "127.0.0.1"
+   ],
+   "owned": true,
+   "kind": "app",
+   "container": null,
+   "processes": [
+    {
+     "pid": 3690455,
+     "project": "portboard",
+     "unit": "portboard-remote.service",
+     "unitDescription": "Portboard remote MCP (read-only)",
+     "cmdline": "/usr/bin/node src/remote.ts"
+    }
+   ],
+   "name": "Portboard remote MCP (read-only)",
+   "detectedName": "Portboard remote MCP (read-only)",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": true,
+   "probe": {
+    "http": true,
+    "status": 404,
+    "title": null
+   },
+   "served": {
+    "httpsPort": 443,
+    "upstream": "http://127.0.0.1:8794",
+    "upstreamPort": 8794,
+    "funnel": false
+   },
+   "urls": {
+    "direct": null,
+    "served": "https://devbox.example.ts.net/",
+    "ssh": "ssh -N -L 8794:127.0.0.1:8794 dev@devbox"
+   },
+   "canExpose": false,
+   "exposeBlocker": "already served",
+   "control": {
+    "type": "systemd",
+    "unit": "portboard-remote.service"
+   },
+   "canRestart": true,
+   "canStop": true,
+   "alert": false
+  },
+  {
+   "port": 18080,
+   "listening": true,
+   "scope": "loopback",
+   "addresses": [
+    "127.0.0.1"
+   ],
+   "owned": true,
+   "kind": "app",
+   "container": null,
+   "processes": [
+    {
+     "pid": 1769,
+     "project": null,
+     "unit": "db-mcp-tunnel.service",
+     "unitDescription": "webapp OpenAI Secure MCP Tunnel",
+     "cmdline": "/usr/bin/ssh -N -L 18080:127.0.0.1:18080 db-host"
+    }
+   ],
+   "name": "webapp OpenAI Secure MCP Tunnel",
+   "detectedName": "webapp OpenAI Secure MCP Tunnel",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": true,
+   "probe": {
+    "http": true,
+    "status": 200,
+    "title": "tunnel-client"
+   },
+   "served": null,
+   "urls": {
+    "direct": null,
+    "served": null,
+    "ssh": "ssh -N -L 18080:127.0.0.1:18080 dev@devbox"
+   },
+   "canExpose": true,
+   "exposeBlocker": null,
+   "control": {
+    "type": "systemd",
+    "unit": "db-mcp-tunnel.service"
+   },
+   "canRestart": true,
+   "canStop": true
+  },
+  {
+   "port": 22000,
+   "listening": true,
+   "scope": "all",
+   "addresses": [
+    "*"
+   ],
+   "owned": true,
+   "kind": "app",
+   "container": null,
+   "processes": [
+    {
+     "pid": 1919,
+     "project": null,
+     "unit": "syncthing.service",
+     "unitDescription": "Syncthing - Open Source Continuous File Synchronization",
+     "cmdline": "/usr/bin/syncthing serve --no-browser"
+    }
+   ],
+   "name": "Syncthing",
+   "detectedName": "Syncthing - Open Source Continuous File Synchronization",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": true,
+   "probe": {
+    "http": false,
+    "status": null,
+    "title": null
+   },
+   "served": null,
+   "urls": {
+    "direct": "tcp://devbox.example.ts.net:22000",
+    "served": null,
+    "ssh": "ssh -N -L 22000:127.0.0.1:22000 dev@devbox"
+   },
+   "canExpose": false,
+   "exposeBlocker": "already reachable on tailnet",
+   "control": {
+    "type": "systemd",
+    "unit": "syncthing.service"
+   },
+   "canRestart": true,
+   "canStop": true
+  },
+  {
+   "port": 33809,
+   "listening": true,
+   "scope": "loopback",
+   "addresses": [
+    "127.0.0.1"
+   ],
+   "owned": false,
+   "kind": "system",
+   "container": null,
+   "processes": [],
+   "name": "unknown",
+   "detectedName": "unknown",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": false,
+   "probe": null,
+   "served": null,
+   "urls": {
+    "direct": null,
+    "served": null,
+    "ssh": "ssh -N -L 33809:127.0.0.1:33809 dev@devbox"
+   },
+   "canExpose": false,
+   "exposeBlocker": "not an HTTP server",
+   "control": null,
+   "canRestart": false,
+   "canStop": false
+  },
+  {
+   "port": 33819,
+   "listening": true,
+   "scope": "tailnet",
+   "addresses": [
+    "100.64.10.1"
+   ],
+   "owned": false,
+   "kind": "system",
+   "container": null,
+   "processes": [],
+   "name": "unknown",
+   "detectedName": "unknown",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": false,
+   "probe": null,
+   "served": null,
+   "urls": {
+    "direct": "tcp://devbox.example.ts.net:33819",
+    "served": null,
+    "ssh": "ssh -N -L 33819:127.0.0.1:33819 dev@devbox"
+   },
+   "canExpose": false,
+   "exposeBlocker": "already reachable on tailnet",
+   "control": null,
+   "canRestart": false,
+   "canStop": false
+  },
+  {
+   "port": 34659,
+   "listening": true,
+   "scope": "loopback",
+   "addresses": [
+    "127.0.0.1"
+   ],
+   "owned": true,
+   "kind": "ephemeral",
+   "container": null,
+   "processes": [
+    {
+     "pid": 2754192,
+     "project": null,
+     "unit": null,
+     "unitDescription": null,
+     "cmdline": "/home/dev/.vscode-server/bin/code-server --port 0"
+    }
+   ],
+   "name": "code-07f806f999",
+   "detectedName": "code-07f806f999",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": false,
+   "probe": {
+    "http": true,
+    "status": 403,
+    "title": null
+   },
+   "served": null,
+   "urls": {
+    "direct": null,
+    "served": null,
+    "ssh": "ssh -N -L 34659:127.0.0.1:34659 dev@devbox"
+   },
+   "canExpose": true,
+   "exposeBlocker": null,
+   "control": {
+    "type": "process",
+    "pids": [
+     2754192
+    ]
+   },
+   "canRestart": false,
+   "canStop": true
+  },
+  {
+   "port": 41751,
+   "listening": true,
+   "scope": "loopback",
+   "addresses": [
+    "127.0.0.1"
+   ],
+   "owned": true,
+   "kind": "ephemeral",
+   "container": null,
+   "processes": [
+    {
+     "pid": 3653701,
+     "project": null,
+     "unit": null,
+     "unitDescription": null,
+     "cmdline": "/home/dev/.vscode-server/bin/code-server --port 0"
+    }
+   ],
+   "name": "code-16507d91be",
+   "detectedName": "code-16507d91be",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": false,
+   "probe": {
+    "http": false,
+    "status": null,
+    "title": null
+   },
+   "served": null,
+   "urls": {
+    "direct": null,
+    "served": null,
+    "ssh": "ssh -N -L 41751:127.0.0.1:41751 dev@devbox"
+   },
+   "canExpose": false,
+   "exposeBlocker": "not an HTTP server",
+   "control": {
+    "type": "process",
+    "pids": [
+     3653701
+    ]
+   },
+   "canRestart": false,
+   "canStop": true
+  },
+  {
+   "port": 46389,
+   "listening": true,
+   "scope": "loopback",
+   "addresses": [
+    "127.0.0.1"
+   ],
+   "owned": true,
+   "kind": "ephemeral",
+   "container": null,
+   "processes": [
+    {
+     "pid": 3005236,
+     "project": null,
+     "unit": null,
+     "unitDescription": null,
+     "cmdline": "/home/dev/.vscode-server/bin/code-server --port 0"
+    }
+   ],
+   "name": "MainThread",
+   "detectedName": "MainThread",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": false,
+   "probe": {
+    "http": true,
+    "status": 200,
+    "title": null
+   },
+   "served": null,
+   "urls": {
+    "direct": null,
+    "served": null,
+    "ssh": "ssh -N -L 46389:127.0.0.1:46389 dev@devbox"
+   },
+   "canExpose": true,
+   "exposeBlocker": null,
+   "control": {
+    "type": "process",
+    "pids": [
+     3005236
+    ]
+   },
+   "canRestart": false,
+   "canStop": true
+  },
+  {
+   "port": 54321,
+   "listening": true,
+   "scope": "all",
+   "addresses": [
+    "0.0.0.0",
+    "::"
+   ],
+   "owned": false,
+   "kind": "app",
+   "container": "supabase_kong_webapp",
+   "processes": [],
+   "name": "docker: supabase_kong_webapp",
+   "detectedName": "docker: supabase_kong_webapp",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": true,
+   "probe": {
+    "http": true,
+    "status": 404,
+    "title": null
+   },
+   "served": null,
+   "urls": {
+    "direct": "http://devbox.example.ts.net:54321",
+    "served": null,
+    "ssh": "ssh -N -L 54321:127.0.0.1:54321 dev@devbox"
+   },
+   "canExpose": false,
+   "exposeBlocker": "already reachable on tailnet",
+   "control": {
+    "type": "docker",
+    "container": "supabase_kong_webapp"
+   },
+   "canRestart": true,
+   "canStop": true,
+   "composeProject": "webapp"
+  },
+  {
+   "port": 54322,
+   "listening": true,
+   "scope": "all",
+   "addresses": [
+    "0.0.0.0",
+    "::"
+   ],
+   "owned": false,
+   "kind": "app",
+   "container": "supabase_db_webapp",
+   "processes": [],
+   "name": "docker: supabase_db_webapp",
+   "detectedName": "docker: supabase_db_webapp",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": true,
+   "probe": null,
+   "served": null,
+   "urls": {
+    "direct": "tcp://devbox.example.ts.net:54322",
+    "served": null,
+    "ssh": "ssh -N -L 54322:127.0.0.1:54322 dev@devbox"
+   },
+   "canExpose": false,
+   "exposeBlocker": "already reachable on tailnet",
+   "control": {
+    "type": "docker",
+    "container": "supabase_db_webapp"
+   },
+   "canRestart": true,
+   "canStop": true,
+   "composeProject": "webapp"
+  },
+  {
+   "port": 63055,
+   "listening": true,
+   "scope": "tailnet",
+   "addresses": [
+    "fd7a:115c:a1e0::10:1"
+   ],
+   "owned": false,
+   "kind": "system",
+   "container": null,
+   "processes": [],
+   "name": "unknown",
+   "detectedName": "unknown",
+   "label": null,
+   "pinned": false,
+   "hidden": false,
+   "visible": false,
+   "probe": null,
+   "served": null,
+   "urls": {
+    "direct": "tcp://devbox.example.ts.net:63055",
+    "served": null,
+    "ssh": "ssh -N -L 63055:127.0.0.1:63055 dev@devbox"
+   },
+   "canExpose": false,
+   "exposeBlocker": "already reachable on tailnet",
+   "control": null,
+   "canRestart": false,
+   "canStop": false
+  }
+ ]
+}

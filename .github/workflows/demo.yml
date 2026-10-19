@@ -1,0 +1,49 @@
+name: demo
+
+# The public demo and landing page (docs/demo.md): `npm run demo` builds a static, read-only copy of the dashboard
+# from the example data into demo/, and this deploys it to GitHub Pages. Pages must be turned on once, with
+# Settings › Pages › Source: GitHub Actions; until then the deploy job fails and nothing is published.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time; a newer push replaces a queued one, a running deploy finishes
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Actions pinned by commit SHA (the tag they were at, after #)
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      # No npm ci: the build uses Node and the repo only. It refuses to run unless the site config is
+      # portboard.example.json, and scans its output (scripts/public-scan.mjs) before writing demo/.
+      - run: npm run demo
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: demo
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Only this job can publish: Pages write and the OIDC token deploy-pages needs
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

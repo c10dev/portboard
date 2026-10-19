@@ -49,7 +49,8 @@
     "prepack": "npm run build",
     "typecheck:public": "tsc -p tsconfig.public.json",
     "changelog": "node scripts/changelog.ts",
-    "changelog:check": "node scripts/changelog.ts --check"
+    "changelog:check": "node scripts/changelog.ts --check",
+    "demo": "PORTBOARD_SITE=portboard.example.json node scripts/demo.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

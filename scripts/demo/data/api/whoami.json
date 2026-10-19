@@ -1,0 +1,11 @@
+{
+ "login": "dev@example.com",
+ "source": "serve",
+ "owner": true,
+ "canWrite": true,
+ "device": {
+  "addr": "100.64.10.3",
+  "name": "dev-mac",
+  "id": "nDevMac1CNTRL"
+ }
+}

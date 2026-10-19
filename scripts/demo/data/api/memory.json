@@ -1,0 +1,826 @@
+{
+ "at": "2026-10-17T12:32:04.356Z",
+ "mem": {
+  "totalMb": 50170,
+  "usedMb": 25910,
+  "cacheMb": 5720,
+  "freeMb": 18540,
+  "availableMb": 22660,
+  "availablePct": 45.2,
+  "shmemMb": 210,
+  "swapTotalMb": 8191,
+  "swapUsedMb": 240,
+  "swapPct": 3
+ },
+ "psi": {
+  "some": {
+   "avg10": 0.1,
+   "avg60": 0.3,
+   "avg300": 0.2
+  },
+  "full": {
+   "avg10": 0,
+   "avg60": 0,
+   "avg300": 0
+  }
+ },
+ "groups": [
+  {
+   "key": "claude",
+   "label": "Claude sessions",
+   "mb": 2140,
+   "procs": 14
+  },
+  {
+   "key": "mcp",
+   "label": "MCP servers",
+   "mb": 310,
+   "procs": 5
+  },
+  {
+   "key": "services",
+   "label": "Services · dev servers",
+   "mb": 1460,
+   "procs": 9
+  },
+  {
+   "key": "docker",
+   "label": "docker",
+   "mb": 3920,
+   "procs": 11
+  },
+  {
+   "key": "other",
+   "label": "Other",
+   "mb": 2210,
+   "procs": 140
+  }
+ ],
+ "rssMb": 10040,
+ "sessions": [
+  {
+   "pid": 41021,
+   "id": "00000000-0000-4000-8000-000000000001",
+   "title": "Checkout total fix",
+   "project": "shop-web",
+   "version": "2.0.0",
+   "stale": false,
+   "startedAt": "2026-10-17T10:57:24.356Z",
+   "uptimeSec": 5700,
+   "lastActive": "2026-10-17T12:29:24.356Z",
+   "idleMin": 3,
+   "cpuPct": 4,
+   "idle": false,
+   "helper": false,
+   "mb": 1180,
+   "breakdown": {
+    "cli": 708,
+    "mcp": 177,
+    "servers": 236,
+    "tools": 59
+   },
+   "procs": 6,
+   "mcp": [
+    "portboard",
+    "playwright"
+   ]
+  },
+  {
+   "pid": 41877,
+   "id": "00000000-0000-4000-8000-000000000007",
+   "title": "Auth refactor",
+   "project": "webapp",
+   "version": "2.0.0",
+   "stale": false,
+   "startedAt": "2026-10-17T08:12:24.356Z",
+   "uptimeSec": 15600,
+   "lastActive": "2026-10-17T11:07:24.356Z",
+   "idleMin": 85,
+   "cpuPct": 0,
+   "idle": true,
+   "helper": false,
+   "mb": 960,
+   "breakdown": {
+    "cli": 576,
+    "mcp": 144,
+    "servers": 192,
+    "tools": 48
+   },
+   "procs": 6,
+   "mcp": [
+    "portboard",
+    "playwright"
+   ]
+  }
+ ],
+ "newestVersion": "2.0.0",
+ "mcp": [
+  {
+   "name": "portboard",
+   "label": "portboard",
+   "instances": 2,
+   "mb": 96,
+   "orphans": 0,
+   "sessions": 2,
+   "procs": 2
+  },
+  {
+   "name": "playwright",
+   "label": "playwright",
+   "instances": 2,
+   "mb": 214,
+   "orphans": 0,
+   "sessions": 2,
+   "procs": 6
+  }
+ ],
+ "services": [
+  {
+   "name": "webapp",
+   "ports": [
+    3000
+   ],
+   "unit": null,
+   "dev": true,
+   "unused": false,
+   "mb": 820,
+   "startedAt": "2026-10-17T07:32:24.356Z",
+   "uptimeSec": 18000,
+   "session": null
+  },
+  {
+   "name": "ShopSim",
+   "ports": [
+    5281
+   ],
+   "unit": null,
+   "dev": true,
+   "unused": false,
+   "mb": 410,
+   "startedAt": "2026-10-17T11:02:24.356Z",
+   "uptimeSec": 5400,
+   "session": "Checkout total fix"
+  },
+  {
+   "name": "Portboard",
+   "ports": [
+    8790
+   ],
+   "unit": "portboard.service",
+   "dev": false,
+   "unused": false,
+   "mb": 96,
+   "startedAt": "2026-10-13T12:32:24.356Z",
+   "uptimeSec": 345600,
+   "session": null
+  },
+  {
+   "name": "compute-pool",
+   "ports": [
+    7720,
+    7721
+   ],
+   "unit": "compute-pool-monitor.service",
+   "dev": false,
+   "unused": false,
+   "mb": 134,
+   "startedAt": "2026-10-16T10:32:24.356Z",
+   "uptimeSec": 93600,
+   "session": null
+  }
+ ],
+ "docker": [
+  {
+   "name": "supabase_db_webapp",
+   "mb": 2610
+  },
+  {
+   "name": "supabase_kong_webapp",
+   "mb": 380
+  },
+  {
+   "name": "jellyfin",
+   "mb": 930
+  }
+ ],
+ "other": [
+  {
+   "name": "tailscaled",
+   "count": 1,
+   "mb": 72
+  },
+  {
+   "name": "syncthing",
+   "count": 1,
+   "mb": 118
+  },
+  {
+   "name": "sshd",
+   "count": 6,
+   "mb": 41
+  }
+ ],
+ "cpu": {
+  "at": 1792240324356,
+  "ticks": {}
+ },
+ "pressure": {
+  "active": false,
+  "breachSince": null,
+  "clearSince": null,
+  "lastSent": null,
+  "lastSample": 1792240324356,
+  "reasons": [],
+  "reasonText": [],
+  "thresholds": {
+   "availablePct": 10,
+   "psiSome60": 5,
+   "swapPct": 90,
+   "sustainMin": 5,
+   "reminderHours": 6,
+   "idleMin": 60,
+   "devIdleHours": 24
+  }
+ },
+ "history": [
+  {
+   "t": 1792155144356,
+   "availablePct": 45,
+   "swapPct": 3,
+   "psi60": 1.2,
+   "claudeMb": 1500,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792156344356,
+   "availablePct": 46.1,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1537,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792157544356,
+   "availablePct": 47.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1574,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792158744356,
+   "availablePct": 48.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1611,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792159944356,
+   "availablePct": 49.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1648,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792161144356,
+   "availablePct": 50.2,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1685,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792162344356,
+   "availablePct": 51,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1722,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792163544356,
+   "availablePct": 51.7,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1759,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792164744356,
+   "availablePct": 52.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1796,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792165944356,
+   "availablePct": 52.7,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1833,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792167144356,
+   "availablePct": 52.9,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1870,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792168344356,
+   "availablePct": 53,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1907,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792169544356,
+   "availablePct": 52.9,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1944,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792170744356,
+   "availablePct": 52.7,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1981,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792171944356,
+   "availablePct": 52.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 2018,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792173144356,
+   "availablePct": 51.7,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 2055,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792174344356,
+   "availablePct": 51,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 2092,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792175544356,
+   "availablePct": 50.2,
+   "swapPct": 3,
+   "psi60": 1.2,
+   "claudeMb": 2129,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792176744356,
+   "availablePct": 49.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 2166,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792177944356,
+   "availablePct": 48.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1503,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792179144356,
+   "availablePct": 47.2,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1540,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792180344356,
+   "availablePct": 46.1,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1577,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792181544356,
+   "availablePct": 45,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1614,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792182744356,
+   "availablePct": 43.9,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1651,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792183944356,
+   "availablePct": 42.7,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1688,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792185144356,
+   "availablePct": 41.7,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1725,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792186344356,
+   "availablePct": 40.7,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1762,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792187544356,
+   "availablePct": 39.8,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1799,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792188744356,
+   "availablePct": 38.9,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1836,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792189944356,
+   "availablePct": 38.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1873,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792191144356,
+   "availablePct": 37.7,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1910,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792192344356,
+   "availablePct": 37.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1947,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792193544356,
+   "availablePct": 37.1,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1984,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792194744356,
+   "availablePct": 37,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 2021,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792195944356,
+   "availablePct": 37.1,
+   "swapPct": 3,
+   "psi60": 1.2,
+   "claudeMb": 2058,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792197144356,
+   "availablePct": 37.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 2095,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792198344356,
+   "availablePct": 37.7,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 2132,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792199544356,
+   "availablePct": 38.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 2169,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792200744356,
+   "availablePct": 39,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1506,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792201944356,
+   "availablePct": 39.8,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1543,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792203144356,
+   "availablePct": 40.7,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1580,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792204344356,
+   "availablePct": 41.7,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1617,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792205544356,
+   "availablePct": 42.8,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1654,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792206744356,
+   "availablePct": 43.9,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1691,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792207944356,
+   "availablePct": 45,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1728,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792209144356,
+   "availablePct": 46.2,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1765,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792210344356,
+   "availablePct": 47.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1802,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792211544356,
+   "availablePct": 48.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1839,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792212744356,
+   "availablePct": 49.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1876,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792213944356,
+   "availablePct": 50.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1913,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792215144356,
+   "availablePct": 51.1,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1950,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792216344356,
+   "availablePct": 51.7,
+   "swapPct": 3,
+   "psi60": 1.2,
+   "claudeMb": 1987,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792217544356,
+   "availablePct": 52.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 2024,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792218744356,
+   "availablePct": 52.7,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 2061,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792219944356,
+   "availablePct": 52.9,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 2098,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792221144356,
+   "availablePct": 53,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 2135,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792222344356,
+   "availablePct": 52.9,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 2172,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792223544356,
+   "availablePct": 52.7,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1509,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792224744356,
+   "availablePct": 52.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1546,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792225944356,
+   "availablePct": 51.7,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1583,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792227144356,
+   "availablePct": 51,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1620,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792228344356,
+   "availablePct": 50.2,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1657,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792229544356,
+   "availablePct": 49.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1694,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792230744356,
+   "availablePct": 48.3,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1731,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792231944356,
+   "availablePct": 47.2,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1768,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792233144356,
+   "availablePct": 46.1,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1805,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792234344356,
+   "availablePct": 45,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1842,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792235544356,
+   "availablePct": 43.8,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1879,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792236744356,
+   "availablePct": 42.7,
+   "swapPct": 3,
+   "psi60": 1.2,
+   "claudeMb": 1916,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792237944356,
+   "availablePct": 41.6,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1953,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792239144356,
+   "availablePct": 40.6,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 1990,
+   "mcpMb": 300
+  },
+  {
+   "t": 1792240344356,
+   "availablePct": 39.7,
+   "swapPct": 3,
+   "psi60": 0.2,
+   "claudeMb": 2027,
+   "mcpMb": 300
+  }
+ ],
+ "suggestions": [],
+ "sampleEverySec": 60,
+ "note": "groups split every process once (docker, MCP servers, services, Claude CLIs with their other children, the rest); a session's mb is its whole process tree, its MCP servers and dev servers included. Sizes are RSS."
+}

@@ -1,0 +1,256 @@
+{
+ "at": "2026-10-17T12:12:24.356Z",
+ "scanning": false,
+ "tookMs": 64,
+ "days": 7,
+ "current": {
+  "from": "2026-10-11",
+  "to": "2026-10-17",
+  "totals": {
+   "sessions": 23,
+   "tools": 483,
+   "shell": 207,
+   "mcp": 46,
+   "inspect": 23,
+   "kill": 0,
+   "hardcoded": 0,
+   "nudges": 3,
+   "followed": 3
+  },
+  "byDay": [
+   {
+    "day": "2026-10-11",
+    "sessions": 3,
+    "tools": 63,
+    "shell": 27,
+    "mcp": 6,
+    "inspect": 3,
+    "kill": 0,
+    "hardcoded": 0,
+    "nudges": 0,
+    "followed": 0
+   },
+   {
+    "day": "2026-10-12",
+    "sessions": 5,
+    "tools": 105,
+    "shell": 45,
+    "mcp": 10,
+    "inspect": 5,
+    "kill": 0,
+    "hardcoded": 0,
+    "nudges": 1,
+    "followed": 1
+   },
+   {
+    "day": "2026-10-13",
+    "sessions": 2,
+    "tools": 42,
+    "shell": 18,
+    "mcp": 4,
+    "inspect": 2,
+    "kill": 0,
+    "hardcoded": 0,
+    "nudges": 0,
+    "followed": 0
+   },
+   {
+    "day": "2026-10-14",
+    "sessions": 0,
+    "tools": 0,
+    "shell": 0,
+    "mcp": 0,
+    "inspect": 0,
+    "kill": 0,
+    "hardcoded": 0,
+    "nudges": 0,
+    "followed": 0
+   },
+   {
+    "day": "2026-10-15",
+    "sessions": 4,
+    "tools": 84,
+    "shell": 36,
+    "mcp": 8,
+    "inspect": 4,
+    "kill": 0,
+    "hardcoded": 0,
+    "nudges": 1,
+    "followed": 1
+   },
+   {
+    "day": "2026-10-16",
+    "sessions": 6,
+    "tools": 126,
+    "shell": 54,
+    "mcp": 12,
+    "inspect": 6,
+    "kill": 0,
+    "hardcoded": 0,
+    "nudges": 1,
+    "followed": 1
+   },
+   {
+    "day": "2026-10-17",
+    "sessions": 3,
+    "tools": 63,
+    "shell": 27,
+    "mcp": 6,
+    "inspect": 3,
+    "kill": 0,
+    "hardcoded": 0,
+    "nudges": 0,
+    "followed": 0
+   }
+  ],
+  "byProject": [
+   {
+    "sessions": 12,
+    "tools": 250,
+    "shell": 110,
+    "mcp": 30,
+    "inspect": 12,
+    "kill": 0,
+    "hardcoded": 0,
+    "nudges": 2,
+    "followed": 2,
+    "project": "webapp",
+    "dirs": [
+     "~/projects/webapp"
+    ]
+   },
+   {
+    "sessions": 11,
+    "tools": 233,
+    "shell": 97,
+    "mcp": 16,
+    "inspect": 11,
+    "kill": 0,
+    "hardcoded": 0,
+    "nudges": 1,
+    "followed": 1,
+    "project": "shop-web",
+    "dirs": [
+     "~/projects/shop-web",
+     "~/projects/shop-web/.worktrees/redesign"
+    ]
+   }
+  ],
+  "topPorts": [],
+  "topPrefixes": [],
+  "mcpTools": {
+   "free_port": 22,
+   "list_ports": 18,
+   "service_detail": 6
+  },
+  "mcpServers": null
+ },
+ "previous": {
+  "from": "2026-10-04",
+  "to": "2026-10-10",
+  "totals": {
+   "sessions": 23,
+   "tools": 483,
+   "shell": 207,
+   "mcp": 34,
+   "inspect": 23,
+   "kill": 0,
+   "hardcoded": 7,
+   "nudges": 3,
+   "followed": 3
+  },
+  "byDay": [
+   {
+    "day": "2026-10-04",
+    "sessions": 3,
+    "tools": 63,
+    "shell": 27,
+    "mcp": 4,
+    "inspect": 3,
+    "kill": 0,
+    "hardcoded": 1,
+    "nudges": 0,
+    "followed": 0
+   },
+   {
+    "day": "2026-10-05",
+    "sessions": 5,
+    "tools": 105,
+    "shell": 45,
+    "mcp": 8,
+    "inspect": 5,
+    "kill": 0,
+    "hardcoded": 1,
+    "nudges": 1,
+    "followed": 1
+   },
+   {
+    "day": "2026-10-06",
+    "sessions": 2,
+    "tools": 42,
+    "shell": 18,
+    "mcp": 2,
+    "inspect": 2,
+    "kill": 0,
+    "hardcoded": 1,
+    "nudges": 0,
+    "followed": 0
+   },
+   {
+    "day": "2026-10-07",
+    "sessions": 0,
+    "tools": 0,
+    "shell": 0,
+    "mcp": 0,
+    "inspect": 0,
+    "kill": 0,
+    "hardcoded": 1,
+    "nudges": 0,
+    "followed": 0
+   },
+   {
+    "day": "2026-10-08",
+    "sessions": 4,
+    "tools": 84,
+    "shell": 36,
+    "mcp": 6,
+    "inspect": 4,
+    "kill": 0,
+    "hardcoded": 1,
+    "nudges": 1,
+    "followed": 1
+   },
+   {
+    "day": "2026-10-09",
+    "sessions": 6,
+    "tools": 126,
+    "shell": 54,
+    "mcp": 10,
+    "inspect": 6,
+    "kill": 0,
+    "hardcoded": 1,
+    "nudges": 1,
+    "followed": 1
+   },
+   {
+    "day": "2026-10-10",
+    "sessions": 3,
+    "tools": 63,
+    "shell": 27,
+    "mcp": 4,
+    "inspect": 3,
+    "kill": 0,
+    "hardcoded": 1,
+    "nudges": 0,
+    "followed": 0
+   }
+  ],
+  "byProject": [],
+  "topPorts": [],
+  "topPrefixes": [],
+  "mcpTools": {
+   "list_ports": 9
+  },
+  "mcpServers": null
+ }
+}

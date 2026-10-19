@@ -1,0 +1,207 @@
+{
+ "ok": true,
+ "profile": "production",
+ "port": 8790,
+ "checkEverySec": 60,
+ "thresholdMin": 15,
+ "lastCheck": "2026-10-17T12:32:04.356Z",
+ "failing": 0,
+ "summary": "All collectors OK",
+ "collectors": [
+  {
+   "name": "usage",
+   "label": "Port and connection samples",
+   "view": "ok",
+   "enabled": true,
+   "ok": true,
+   "checkedAt": "2026-10-17T12:32:04.356Z",
+   "lastOk": "2026-10-17T12:32:04.356Z",
+   "lastError": null,
+   "failures": 0,
+   "failingSince": null,
+   "alerted": false
+  },
+  {
+   "name": "pool",
+   "label": "compute-pool",
+   "view": "ok",
+   "enabled": true,
+   "ok": true,
+   "checkedAt": "2026-10-17T12:32:04.356Z",
+   "lastOk": "2026-10-17T12:32:04.356Z",
+   "lastError": null,
+   "failures": 0,
+   "failingSince": null,
+   "alerted": false
+  },
+  {
+   "name": "proxmox",
+   "label": "Proxmox API",
+   "view": "ok",
+   "enabled": true,
+   "ok": true,
+   "checkedAt": "2026-10-17T12:32:04.356Z",
+   "lastOk": "2026-10-17T12:32:04.356Z",
+   "lastError": null,
+   "failures": 0,
+   "failingSince": null,
+   "alerted": false
+  },
+  {
+   "name": "pve-ports",
+   "label": "pve1 ports (SSH)",
+   "view": "ok",
+   "enabled": true,
+   "ok": true,
+   "checkedAt": "2026-10-17T12:32:04.356Z",
+   "lastOk": "2026-10-17T12:32:04.356Z",
+   "lastError": null,
+   "failures": 0,
+   "failingSince": null,
+   "alerted": false
+  },
+  {
+   "name": "win-ports",
+   "label": "Windows ports (SSH)",
+   "view": "ok",
+   "enabled": true,
+   "ok": true,
+   "checkedAt": "2026-10-17T12:32:04.356Z",
+   "lastOk": "2026-10-17T12:32:04.356Z",
+   "lastError": null,
+   "failures": 0,
+   "failingSince": null,
+   "alerted": false
+  },
+  {
+   "name": "known-devices",
+   "label": "New devices file",
+   "view": "ok",
+   "enabled": true,
+   "ok": true,
+   "checkedAt": "2026-10-17T12:32:04.356Z",
+   "lastOk": "2026-10-17T12:32:04.356Z",
+   "lastError": null,
+   "failures": 0,
+   "failingSince": null,
+   "alerted": false
+  },
+  {
+   "name": "memory",
+   "label": "Memory samples",
+   "view": "ok",
+   "enabled": true,
+   "ok": true,
+   "checkedAt": "2026-10-17T12:32:04.356Z",
+   "lastOk": "2026-10-17T12:32:04.356Z",
+   "lastError": null,
+   "failures": 0,
+   "failingSince": null,
+   "alerted": false
+  }
+ ],
+ "expiry": {
+  "checkedAt": "2026-10-17T09:32:24.356Z",
+  "items": [
+   {
+    "key": "proxmox",
+    "label": "Proxmox API token",
+    "expiresAt": "2026-12-30T12:32:24.356Z",
+    "daysLeft": 74
+   }
+  ]
+ },
+ "memory": {
+  "pressure": false,
+  "reasons": [],
+  "availablePct": 45.2,
+  "swapPct": 3
+ },
+ "runtime": {
+  "rssMb": 96,
+  "heapUsedMb": 21,
+  "heapTotalMb": 34,
+  "externalMb": 4,
+  "arrayBuffersMb": 1,
+  "uptimeSec": 349200,
+  "subprocesses": {
+   "since": "2026-10-13T12:32:24.356Z",
+   "total": 51840,
+   "perMinute": 9,
+   "byCommand": {
+    "ss": 17280,
+    "tailscale": 17280,
+    "docker": 8640,
+    "systemctl": 8640
+   }
+  },
+  "jobs": [
+   {
+    "name": "usage-sample",
+    "everyMs": 30000,
+    "runs": 11520,
+    "errors": 0,
+    "running": false,
+    "lastRunAt": 1792240335356,
+    "lastMs": 40,
+    "lastError": null,
+    "nextAt": 1792240365356
+   },
+   {
+    "name": "host-ports",
+    "everyMs": 15000,
+    "runs": 23040,
+    "errors": 0,
+    "running": false,
+    "lastRunAt": 1792240334356,
+    "lastMs": 75,
+    "lastError": null,
+    "nextAt": 1792240349356
+   },
+   {
+    "name": "worktrees-scan",
+    "everyMs": 900000,
+    "runs": 384,
+    "errors": 0,
+    "running": false,
+    "lastRunAt": 1792240333356,
+    "lastMs": 110,
+    "lastError": null,
+    "nextAt": 1792241233356
+   },
+   {
+    "name": "adoption-scan",
+    "everyMs": 3600000,
+    "runs": 96,
+    "errors": 0,
+    "running": false,
+    "lastRunAt": 1792240332356,
+    "lastMs": 145,
+    "lastError": null,
+    "nextAt": 1792243932356
+   },
+   {
+    "name": "new-ports",
+    "everyMs": 15000,
+    "runs": 23040,
+    "errors": 0,
+    "running": false,
+    "lastRunAt": 1792240331356,
+    "lastMs": 180,
+    "lastError": null,
+    "nextAt": 1792240346356
+   },
+   {
+    "name": "memory",
+    "everyMs": 60000,
+    "runs": 5760,
+    "errors": 0,
+    "running": false,
+    "lastRunAt": 1792240330356,
+    "lastMs": 215,
+    "lastError": null,
+    "nextAt": 1792240390356
+   }
+  ]
+ }
+}

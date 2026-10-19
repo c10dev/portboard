@@ -6,6 +6,9 @@ Claude Code sessions and worktrees pick ports, start servers and clean up withou
 It is also a dashboard of every TCP port listening on that machine, the devices on your Tailscale tailnet and your dev
 worktrees: open any service from your laptop or phone with one click, no `ssh -N -L …` needed.
 
+**[Live demo](https://c10dev.github.io/portboard/)**: the dashboard in your browser on example data, read-only, nothing to
+install ([docs/demo.md](docs/demo.md); the link works once GitHub Pages is turned on for the repo).
+
 ![The Services tab: ports grouped by service, with who is using them](docs/images/services-1200.png)
 
 - **Port reservations.** `free_port {for: "<repo>@<branch>"}` returns that owner's reserved port first and never offers
@@ -45,7 +48,7 @@ The dashboard speaks **English and Korean**. It follows the browser's language u
 |---|---|
 | ![The Devices tab: the network map of a Proxmox host, its guests and the tailnet devices](docs/images/devices-1200.png) | ![A service page: what it is, how to open it, who uses it, its uptime and alerts](docs/images/service-1200-dark.png) |
 
-The screenshots use example data: none of these machines exist.
+The screenshots and the [live demo](https://c10dev.github.io/portboard/) use example data: none of these machines exist.
 
 ## Quick start
 
@@ -154,6 +157,7 @@ Details: [docs/mac-app](docs/mac-app/README.md).
 | [Operations](docs/operations.md) | deploy, profiles, files, the SSH readers, runtime footprint |
 | [Runbooks](docs/runbooks/README.md) | setting up and rotating every credential Portboard holds |
 | [Architecture](docs/architecture.md) | source layout, adding a feature |
+| [Demo](docs/demo.md) | the static, read-only demo and landing page on GitHub Pages, from example data |
 | [CHANGELOG.md](CHANGELOG.md) · [changelog.d](changelog.d/README.md) | releases, how to add an entry |
 
 ## Optional integrations

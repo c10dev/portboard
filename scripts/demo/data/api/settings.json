@@ -1,0 +1,117 @@
+{
+ "version": "1.0.0",
+ "profile": "production",
+ "port": 8790,
+ "running": "0123456789abcdef0123456789abcdef01234567",
+ "deployed": {
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "at": "2026-10-15T07:32:24.356Z"
+ },
+ "addresses": {
+  "dashboard": "https://devbox.example.ts.net:8443",
+  "connector": null,
+  "connectorPort": null,
+  "direct": "http://devbox.example.ts.net:8790"
+ },
+ "site": {
+  "host": "devbox",
+  "dnsName": "devbox.example.ts.net",
+  "checkout": "/home/dev/projects/portboard",
+  "reposRoots": [
+   "~/projects"
+  ],
+  "poolUrl": "http://127.0.0.1:7720",
+  "sources": {
+   "host": "runtime",
+   "tailnet": "runtime",
+   "dnsName": "runtime",
+   "user": "runtime",
+   "checkout": "runtime",
+   "reposRoots": "file",
+   "poolUrl": "file",
+   "dashboardUrl": "runtime",
+   "publicUrl": "default",
+   "locale": "default"
+  },
+  "file": "/home/dev/.config/portboard/portboard.json",
+  "fileFound": true,
+  "fileError": null,
+  "checkoutFile": null
+ },
+ "docs": [
+  {
+   "label": "README",
+   "href": "https://github.com/c10dev/portboard/blob/main/README.md"
+  },
+  {
+   "label": "Dashboard guide",
+   "href": "https://github.com/c10dev/portboard/blob/main/docs/dashboard.md"
+  },
+  {
+   "label": "REST API",
+   "href": "https://github.com/c10dev/portboard/blob/main/docs/api.md"
+  },
+  {
+   "label": "Security (write access)",
+   "href": "https://github.com/c10dev/portboard/blob/main/docs/security.md"
+  },
+  {
+   "label": "Remote MCP",
+   "href": "https://github.com/c10dev/portboard/blob/main/docs/remote-mcp/README.md"
+  },
+  {
+   "label": "Rotating secrets",
+   "href": "https://github.com/c10dev/portboard/blob/main/docs/runbooks/README.md"
+  },
+  {
+   "label": "Operations (deploy, restart)",
+   "href": "https://github.com/c10dev/portboard/blob/main/docs/operations.md"
+  },
+  {
+   "label": "Changelog",
+   "href": "https://github.com/c10dev/portboard/blob/main/CHANGELOG.md"
+  }
+ ],
+ "secrets": [
+  {
+   "key": "proxmox",
+   "title": "Proxmox API token",
+   "status": "ok",
+   "detail": "Expires in 74 days",
+   "expiresAt": "2026-12-30T12:32:24.356Z",
+   "runbook": "https://github.com/c10dev/portboard/blob/main/docs/runbooks/proxmox-token.md"
+  },
+  {
+   "key": "pve-ssh",
+   "title": "pve1·CT read-only SSH key",
+   "status": "ok",
+   "detail": "Reads pve1 and its containers",
+   "expiresAt": null,
+   "runbook": "https://github.com/c10dev/portboard/blob/main/docs/runbooks/ssh-readonly-keys.md"
+  },
+  {
+   "key": "win-ssh",
+   "title": "Windows read-only SSH key",
+   "status": "ok",
+   "detail": "Reads desktop-pc's Windows ports",
+   "expiresAt": null,
+   "runbook": "https://github.com/c10dev/portboard/blob/main/docs/runbooks/ssh-readonly-keys.md"
+  },
+  {
+   "key": "ntfy",
+   "title": "ntfy topic (alert channel)",
+   "status": "ok",
+   "detail": "Set",
+   "expiresAt": null,
+   "runbook": "https://github.com/c10dev/portboard/blob/main/docs/runbooks/ntfy-topic.md"
+  },
+  {
+   "key": "connector",
+   "title": "Remote connector token",
+   "status": "missing",
+   "detail": "Not connected to claude.ai or ChatGPT yet",
+   "expiresAt": null,
+   "runbook": "https://github.com/c10dev/portboard/blob/main/docs/runbooks/remote-connector.md"
+  }
+ ]
+}

@@ -1,0 +1,21 @@
+{
+ "reservations": [
+  {
+   "port": 3000,
+   "owner": "webapp",
+   "note": "next dev server",
+   "createdAt": "2026-10-08T12:32:24.356Z"
+  },
+  {
+   "port": 5281,
+   "owner": "shop-web",
+   "note": "ShopSim preview",
+   "createdAt": "2026-10-11T12:32:24.356Z"
+  },
+  {
+   "port": 8790,
+   "owner": "portboard",
+   "createdAt": "2026-09-27T12:32:24.356Z"
+  }
+ ]
+}

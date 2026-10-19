@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Portboard</title>
+  <meta name="description" content="A dashboard of every TCP port listening on a Linux server, the devices on your Tailscale tailnet, and your dev worktrees.">
+  <meta name="theme-color" content="#2f6feb">
+  <link rel="icon" href="app/icon.svg" type="image/svg+xml">
+  <style>
+    :root {
+      --bg: #ffffff; --fg: #111827; --muted: #4b5563; --line: #e5e7eb; --card: #f9fafb; --accent: #2f6feb; --accent-fg: #ffffff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) { --bg: #0f1216; --fg: #e5e7eb; --muted: #9ca3af; --line: #262b33; --card: #161a20; --accent: #3b82f6; --accent-fg: #ffffff; }
+    }
+    :root[data-theme="dark"] { --bg: #0f1216; --fg: #e5e7eb; --muted: #9ca3af; --line: #262b33; --card: #161a20; --accent: #3b82f6; --accent-fg: #ffffff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { max-width: 1040px; margin: 0 auto; padding: 48px 16px 64px; }
+    header { display: flex; align-items: center; gap: 12px; }
+    header img { width: 40px; height: 40px; }
+    h1 { font-size: 32px; line-height: 1.2; margin: 0; }
+    .pitch { font-size: 19px; color: var(--muted); max-width: 720px; margin: 16px 0 24px; }
+    .cta { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 32px; }
+    .btn { display: inline-block; padding: 10px 18px; border-radius: 10px; border: 1px solid var(--line); color: var(--fg); text-decoration: none; font-weight: 600; }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+    .btn:hover { filter: brightness(1.08); }
+    figure { margin: 0; }
+    .shot { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 12px; display: block; }
+    figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; }
+    .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+    .pair .shot { aspect-ratio: 4 / 3; object-fit: cover; object-position: top; }
+    .features { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin: 40px 0; padding: 0; list-style: none; }
+    .features li { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+    .features b { display: block; margin-bottom: 4px; }
+    .features span { color: var(--muted); font-size: 15px; }
+    pre { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: 14px; }
+    h2 { font-size: 22px; margin: 40px 0 12px; }
+    a { color: var(--accent); }
+    footer { color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); margin-top: 48px; padding-top: 16px; }
+    @media (max-width: 640px) { main { padding-top: 32px; } h1 { font-size: 26px; } .pitch { font-size: 17px; } .pair { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <img src="app/icon.svg" alt="">
+      <h1>Portboard</h1>
+    </header>
+    <p class="pitch">A dashboard of every TCP port listening on a Linux server, the devices on your Tailscale tailnet, and your
+      dev worktrees. Open any service from your laptop or phone with one click, and let Claude Code pick ports and start dev
+      servers through it instead of guessing.</p>
+    <div class="cta">
+      <a class="btn primary" href="app/">Try the demo</a>
+      <a class="btn" href="https://github.com/c10dev/portboard#quick-start">Install</a>
+      <a class="btn" href="https://github.com/c10dev/portboard">GitHub</a>
+    </div>
+
+    <figure>
+      <a href="app/"><img class="shot" src="images/services-1200.png" width="1200" height="900" alt="The Services tab: ports grouped by service, with who is using them"></a>
+      <figcaption>The demo runs in your browser on example data: none of these machines exist, and nothing can be changed.</figcaption>
+    </figure>
+    <div class="pair">
+      <a href="app/devices.html"><img class="shot" src="images/devices-1200.png" width="1200" height="1699" loading="lazy" alt="The Devices tab: the network map of a Proxmox host, its guests and the tailnet devices"></a>
+      <a href="app/service.html#7720"><img class="shot" src="images/service-1200-dark.png" width="1200" height="1047" loading="lazy" alt="A service page in dark mode: what it is, how to open it, who uses it, its uptime and alerts"></a>
+    </div>
+
+    <ul class="features">
+      <li><b>Services</b><span>Every listening port with its owner: process, project, systemd unit or docker container, bind scope, and who is connected now.</span></li>
+      <li><b>One click to open</b><span>Publish a loopback-only HTTP port to your tailnet with <code>tailscale serve</code>, and unpublish it again.</span></li>
+      <li><b>Devices</b><span>Tailnet devices with their load and the ports they use; optionally a Proxmox host and a desktop's Windows side.</span></li>
+      <li><b>Dev servers and worktrees</b><span>Start and stop dev servers, reserve ports per project, and find worktrees that are safe to clean up.</span></li>
+      <li><b>Alerts</b><span>Down alerts for watched ports and devices, new-device notices and digests over ntfy or a webhook.</span></li>
+      <li><b>For AI agents</b><span>A local MCP server, a Claude Code plugin, and an optional read-only remote MCP connector.</span></li>
+    </ul>
+
+    <h2>Install</h2>
+    <p>Linux with <code>ss</code>, Node.js ≥ 22.18 and <a href="https://tailscale.com">Tailscale</a>. No dependencies to install.</p>
+<pre><code>git clone https://github.com/c10dev/portboard.git ~/projects/portboard
+cd ~/projects/portboard
+npm start    # http://127.0.0.1:8790</code></pre>
+    <p>Then publish it to your tailnet and read the security model: <a href="https://github.com/c10dev/portboard#quick-start">Quick start</a> ·
+      <a href="https://github.com/c10dev/portboard/blob/main/docs/security.md">Security</a> ·
+      <a href="https://github.com/c10dev/portboard/blob/main/docs/setup.md">Setup</a>.</p>
+
+    <footer>Portboard {{VERSION}} · MIT · <a href="https://github.com/c10dev/portboard">github.com/c10dev/portboard</a></footer>
+  </main>
+</body>
+</html>
