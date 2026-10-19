@@ -1,10 +1,17 @@
 // Inlined into every page's <head> by the server (src/core/shell.ts, the "boot" marker), so it runs before the
 // first paint: no module, no imports. It defines window.PortboardBoot:
-//   start({ inspector })  <html> attributes from what is remembered: the sidebar and inspector toggles and widths
+//   start({ inspector, locale, explicit, locales, strings })
+//                         the page's language first: 설정 › 화면 › 언어 on this device (pb.locale, lib/i18n.js), else
+//                         the server's locale when portboard.json or PORTBOARD_LOCALE sets it, else the browser's, else
+//                         the server's; on <html lang> (lib/i18n.js loads that catalog) and in the pb_locale cookie (the
+//                         server writes API text in it, src/core/i18n.ts). Then
+//                         <html> attributes from what is remembered: the sidebar and inspector toggles and widths
 //                         (pb.shell: --side-open / --insp-open and data-side-mode / data-insp-mode, the same arithmetic
 //                         as lib/shell.js layoutFor), 설정 › 화면 › 목록 너비 (pb.listWidth: --col-max / --col-wide, as
 //                         lib/list-width.js), app mode (the Mac app's User-Agent, as lib/macapp.js), read-only (pb.ro,
 //                         last /api/whoami)
+//   relabel()             the markup the server filled in its own locale (data-t, data-t-<attr>; src/core/shell.ts
+//                         fillStrings), in the page's language when that is another one: after the sidebar and at the end of the body
 //   paintSide()           right after the sidebar's markup: the last view counts, 고정, 기기 (the network tree, its
 //                         collapsed groups from pb.navFold) and footer chips (pb.nav, saved by features/nav.js), so a
 //                         tab click shows the same sidebar at once
@@ -20,6 +27,52 @@
   // lib/list-width.js LIST_WIDTHS (test/ui-settings.test.ts keeps them equal): 보통 is the stylesheet's, nothing inline
   var LIST_WIDTHS = { narrow: [680, 808], wide: [1080, 1280] };
   var INSP_COLUMN = 1200;
+  // lib/i18n.js LOCALE_KEY and LOCALE_COOKIE
+  var LOCALE_KEY = 'pb.locale';
+  var LOCALE_COOKIE = 'pb_locale';
+  var I18N = { locale: 'en', page: 'en', strings: {} };
+
+  /** A boot string (shell., page., boot., common. keys) in the page's language */
+  function str(key) {
+    var s = I18N.strings[I18N.page];
+    return (s && s[key]) || key;
+  }
+
+  /** 'ko' | 'en': this device's choice, else the server's set locale, else the browser's, else the server's */
+  function pickLocale(o) {
+    var locales = o.locales || [o.locale];
+    var has = function (l) { return locales.indexOf(l) >= 0; };
+    try {
+      var pref = window.localStorage.getItem(LOCALE_KEY);
+      if (has(pref)) return pref;
+    } catch (e) { /* 자동 */ }
+    if (o.explicit) return o.locale;
+    var langs = (navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || '']);
+    for (var i = 0; i < langs.length; i++) {
+      var l = String(langs[i] || '').slice(0, 2).toLowerCase();
+      if (has(l)) return l;
+    }
+    return o.locale;
+  }
+
+  /** Text and attributes the server wrote in its locale, in the page's (nothing to do when they are the same) */
+  function relabel(scope) {
+    if (I18N.page === I18N.locale) return;
+    var s = I18N.strings[I18N.page] || {};
+    var sels = ['[data-t]', '[data-th]', '[data-t-title]', '[data-t-aria-label]', '[data-t-placeholder]', '[data-t-label]'];
+    var nodes = [];
+    for (var j = 0; j < sels.length; j++) nodes.push.apply(nodes, (scope || document).querySelectorAll(sels[j]));
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      var d = n.dataset;
+      if (d.t && s[d.t] != null) n.textContent = s[d.t];
+      if (d.th && s[d.th] != null) n.innerHTML = s[d.th];
+      if (d.tTitle && s[d.tTitle] != null) n.setAttribute('title', s[d.tTitle]);
+      if (d.tAriaLabel && s[d.tAriaLabel] != null) n.setAttribute('aria-label', s[d.tAriaLabel]);
+      if (d.tPlaceholder && s[d.tPlaceholder] != null) n.setAttribute('placeholder', s[d.tPlaceholder]);
+      if (d.tLabel && s[d.tLabel] != null) n.setAttribute('label', s[d.tLabel]);
+    }
+  }
 
   function clampWidth(pane, w) {
     var p = PANE[pane];
@@ -120,7 +173,7 @@
           var b = el('button', 'si-fold');
           b.setAttribute('type', 'button');
           b.dataset.fold = String(it.key);
-          b.setAttribute('aria-label', String(it.text) + ' 접기·펼치기');
+          b.setAttribute('aria-label', str('boot.fold').replace('{name}', String(it.text)));
           b.setAttribute('aria-expanded', 'true');
           li.append(b);
         } else {
@@ -174,7 +227,7 @@
   function readonlyNote(reason) {
     var foot = document.getElementById('shellFoot');
     if (!foot || foot.querySelector('.readonly-note')) return;
-    var p = el('p', 'readonly-note', '🔒 읽기 전용 — ' + (reason || '이 접속으로는 바꿀 수 없어요.'));
+    var p = el('p', 'readonly-note', str('boot.readonly').replace('{reason}', reason || str('common.readonlyReason')));
     p.setAttribute('role', 'note');
     foot.append(p);
   }
@@ -186,7 +239,20 @@
     chips: chips,
     readonlyNote: readonlyNote,
     modes: modes,
+    relabel: relabel,
+    pickLocale: pickLocale,
     start: function (opts) {
+      try {
+        if (opts && opts.locale) {
+          I18N = { locale: opts.locale, page: pickLocale(opts), strings: opts.strings || {} };
+          root.lang = I18N.page;
+          // the "불러오는 중…" under a page that is still waiting (shell.css [data-wait]::before)
+          root.style.setProperty('--t-loading', JSON.stringify(str('common.loading')));
+          if (document.cookie.indexOf(LOCALE_COOKIE + '=' + I18N.page) < 0) {
+            document.cookie = LOCALE_COOKIE + '=' + I18N.page + '; path=/; max-age=31536000; samesite=lax';
+          }
+        }
+      } catch (e) { /* the server's locale, as rendered */ }
       var s = read(window.localStorage, 'pb.shell') || {};
       if (typeof s !== 'object') s = {};
       root.dataset.shell = '1';
@@ -214,7 +280,10 @@
       if (ro && ro.readonly) root.dataset.readonly = '1';
     },
     paintSide: function () {
+      try { relabel(); } catch (e) { /* the server's text stays */ }
       var nav = read(window.localStorage, NAV_KEY);
+      // a cache written in another language would show its text until the live data repaints it
+      if (nav && nav.locale && nav.locale !== I18N.page) nav = null;
       if (nav) {
         try {
           if (nav.counts) counts(nav.counts);

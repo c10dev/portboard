@@ -22,6 +22,7 @@
 import { open, readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
+import { t } from './i18n.ts';
 
 const DAY = 86_400_000;
 const KST = 9 * 3_600_000;
@@ -676,9 +677,12 @@ export function adoptionLine(cur: Totals, prev: Totals | null): string {
   const raw = cur.inspect + cur.kill;
   const p = prev ?? undefined;
   return (
-    `🤖 Claude 세션 ${cur.sessions}개 포트 사용: Portboard MCP ${cur.mcp}${delta(cur.mcp, p?.mcp)} · ` +
-    `직접 조회·종료 ${raw}${delta(raw, p ? p.inspect + p.kill : undefined)} · 고정 포트 ${cur.hardcoded}${delta(cur.hardcoded, p?.hardcoded)}` +
-    (cur.nudges ? ` · 안내 ${cur.nudges}` : '')
+    t('adoptionMsg.line', {
+      n: cur.sessions,
+      mcp: `${cur.mcp}${delta(cur.mcp, p?.mcp)}`,
+      raw: `${raw}${delta(raw, p ? p.inspect + p.kill : undefined)}`,
+      hardcoded: `${cur.hardcoded}${delta(cur.hardcoded, p?.hardcoded)}`,
+    }) + (cur.nudges ? ` · ${t('adoptionMsg.nudges', { n: cur.nudges })}` : '')
   );
 }
 

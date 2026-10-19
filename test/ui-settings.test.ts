@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { bootLocale } from '../src/core/shell.ts';
 import { FakeDocument, fakeWindow, make, runBoot } from './fixtures/fake-dom.ts';
 import { DEFAULT_SECTION, isSettingsHash, legacySection, linkSection, settingsHash, settingsSection, SETTINGS_IDS, SETTINGS_LABELS } from '../public/lib/settings-route.js';
 import { applyListWidth, LIST_WIDTH_KEY, LIST_WIDTHS, loadListWidth, saveListWidth } from '../public/lib/list-width.js';
@@ -99,7 +100,7 @@ test('목록 너비 before the first paint: lib/shell-boot.js has the same width
   for (const [stored, want] of [['wide', ['wide', '1080px', '1280px']], ['narrow', ['narrow', '680px', '808px']], [null, [undefined, undefined, undefined]], ['junk', [undefined, undefined, undefined]]] as const) {
     const doc = new FakeDocument();
     const store = new Map<string, string>(stored ? [[LIST_WIDTH_KEY, stored]] : []);
-    runBoot(boot, doc, fakeWindow(1440, store), 'node').start({ inspector: false });
+    runBoot(boot, doc, fakeWindow(1440, store), 'node').start({ inspector: false, ...bootLocale('ko') });
     const root = doc.documentElement as any;
     assert.deepEqual([root.dataset.listWidth, root.style['--col-max'], root.style['--col-wide']], want, String(stored));
   }
@@ -107,7 +108,7 @@ test('목록 너비 before the first paint: lib/shell-boot.js has the same width
   const doc = new FakeDocument();
   const win: any = fakeWindow(1440);
   win.localStorage = { getItem() { throw new Error('blocked'); }, setItem() {} };
-  runBoot(boot, doc, win, 'node').start({ inspector: false });
+  runBoot(boot, doc, win, 'node').start({ inspector: false, ...bootLocale('ko') });
   assert.equal((doc.documentElement as any).dataset.listWidth, undefined);
 });
 

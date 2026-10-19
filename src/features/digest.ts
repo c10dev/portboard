@@ -48,6 +48,7 @@ import { currentWorktrees, refreshWorktrees } from './worktrees.ts';
 import { ok, reply } from './router.ts';
 import type { ServerContext } from './context.ts';
 import type { FeatureModule, Tool } from './types.ts';
+import { t } from '../core/i18n.ts';
 
 export interface DigestView {
   settings: DigestSettings;
@@ -220,12 +221,12 @@ export function createDigester(deps: DigesterDeps) {
     sendNow(mode?: 'daily' | 'weekly'): Promise<{ ok: boolean; message: string; sent: Sent[]; digest: Digest | null }> {
       return serial(async () => {
         const c = await channel();
-        if (!c) return { ok: false, message: '알림 채널 없음', sent: [], digest: null };
+        if (!c) return { ok: false, message: t('alertsMsg.noChannel'), sent: [], digest: null };
         const d = await preview(mode);
         const sent = await deliver(c, d);
         const good = sent.length > 0 && sent.every((x) => x.ok);
         if (sent.some((x) => x.ok)) await saveState({ ...(await loadState()), lastSent: now() });
-        return { ok: good, message: good ? '요약을 보냈어요' : `보내기 실패: ${sent.filter((x) => !x.ok).map((x) => `${x.channel} ${x.error}`).join(', ')}`, sent, digest: d };
+        return { ok: good, message: good ? t('digestApi.sent') : t('alertsMsg.sendFailed', { errors: sent.filter((x) => !x.ok).map((x) => `${x.channel} ${x.error}`).join(', ') }), sent, digest: d };
       });
     },
 
@@ -274,7 +275,7 @@ const previewTool: Tool = {
     name: 'digest_preview',
     title: 'Daily/weekly digest preview',
     description:
-      "The 일간/주간 요약 알림 text as it would be sent now (period ending now): watched ports' uptime and outages, what is " +
+      "The daily/weekly digest text as it would be sent now (period ending now): watched ports' uptime and outages, what is " +
       'down, new devices, leftover servers, removable worktrees, self-watch problems, most used services. Also the ' +
       'setting (off/daily/weekly at HH:MM KST, Monday for weekly), the next slot and when one was last sent. Sends nothing.',
     inputSchema: {
@@ -296,7 +297,7 @@ const setTool: Tool = {
     name: 'set_digest',
     title: 'Daily/weekly digest setting',
     description:
-      'Turn the 요약 알림 off, daily or weekly (Monday), at a time in KST (default 09:00). It goes out through the same ' +
+      'Turn the digest off, daily or weekly (Monday), at a time in KST (default 09:00). It goes out through the same ' +
       "channel as the down alerts. The first digest is the next slot after it's switched on. Use digest_preview to show " +
       'the user what it would say.',
     inputSchema: {
@@ -326,6 +327,7 @@ const setTool: Tool = {
 
 export const digestFeature: FeatureModule = {
   name: 'digest',
+  order: 1800,
   routes: [
     { method: 'GET', path: '/api/digest', handler: async (_r, ctx) => ok(await viewOf(ctx)) },
     {

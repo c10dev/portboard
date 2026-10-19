@@ -19,6 +19,7 @@ import { startJobs } from './features/jobs.ts';
 import { noteMenubar } from './core/onboarding.ts';
 import { SITE } from './core/site.ts';
 import { expandShell } from './core/shell.ts';
+import { requestLocale, withLocale } from './core/i18n.ts';
 
 const PORT = Number(process.env.PORTBOARD_PORT ?? 8790);
 // A preview (any other port) gets its own config/state dir, seeded once from production's prefs and clients.
@@ -33,6 +34,7 @@ const TYPES: Record<string, string> = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.webmanifest': 'application/manifest+json',
+  '.json': 'application/json; charset=utf-8',
 };
 
 const ts = await tailscaleInfo();
@@ -99,7 +101,11 @@ async function serveStatic(path: string, res: ServerResponse) {
 const LIMITS = { requestTimeout: 30_000, headersTimeout: 10_000, keepAliveTimeout: 5_000 };
 const MAX_CONNECTIONS = 256;
 
-const handler = async (req: IncomingMessage, res: ServerResponse) => {
+// The text the server writes into an answer (errors, the setup checklist, suggestions) is in the page's language:
+// lib/shell-boot.js keeps it in the pb_locale cookie (src/core/i18n.ts). Without one, the server's locale.
+const handler = (req: IncomingMessage, res: ServerResponse) => withLocale(requestLocale(req.headers) ?? SITE.locale, () => handle(req, res));
+
+const handle = async (req: IncomingMessage, res: ServerResponse) => {
   try {
     if (!hostOk(req)) return send(res, 421, { error: 'unknown host' });
     // 설정 체크리스트: when the Mac's menu bar plugin last asked (its User-Agent; a write every 10 min at most)

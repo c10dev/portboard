@@ -29,6 +29,7 @@ import {
   type ServeEntry,
   type TailscaleInfo,
 } from './tailscale.ts';
+import { t } from './i18n.ts';
 
 export type { ActionResult, BindScope, Control, Logs, OnNew, PortGroup, PortPrefs, PrefsPatch, Probe, ProcInfo, ServeEntry, TailscaleInfo };
 
@@ -245,7 +246,12 @@ function withPrefs(p: ResolvedPrefs, detectedName: string, kind: PortKind) {
 const WELL_KNOWN: Record<number, { name: string; owner: string }> = {
   22: { name: 'SSH (sshd)', owner: 'sshd' },
   53: { name: 'DNS (systemd-resolved)', owner: 'systemd-resolved' },
-  631: { name: 'CUPS 프린터 (cupsd)', owner: 'cupsd' },
+  631: {
+    get name() {
+      return t('wellKnown.cups');
+    },
+    owner: 'cupsd',
+  },
 };
 
 /** Name and owner of a port whose process isn't visible: tailscaled's own listeners first, then well-known ports. */

@@ -36,6 +36,7 @@ async function alertsWithUptime(ctx: ServerContext): Promise<AlertsStatus> {
 
 export const alertsFeature: FeatureModule = {
   name: 'alerts',
+  order: 600,
   routes: [
     { method: 'GET', path: '/api/alerts', handler: async (_r, ctx) => ok(await alertsWithUptime(ctx)) },
     {

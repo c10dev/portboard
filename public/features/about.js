@@ -4,6 +4,7 @@
 
 import { tryJSON } from '../lib/api.js';
 import { $, button, el, extLink, h } from '../lib/dom.js';
+import { t } from '../lib/i18n.js';
 import { when } from '../lib/time.js';
 import { copy } from '../lib/toast.js';
 
@@ -22,10 +23,10 @@ const short = (c) => c.slice(0, 7);
 
 function addr(url, note) {
   if (!url) return h('span', { class: 'set-note', style: 'margin:0' }, note.missing);
-  return h('span', null, h('code', null, url), ' ', button('복사', () => copy(url), { title: '주소 복사' }), h('span', { class: 'set-note', style: 'display:block;margin:2px 0 0' }, note.what));
+  return h('span', null, h('code', null, url), ' ', button(t('about.copy'), () => copy(url), { title: t('about.copy.title') }), h('span', { class: 'set-note', style: 'display:block;margin:2px 0 0' }, note.what));
 }
 
-const SOURCE = { env: '환경 변수', runtime: '실행 중 확인', file: 'portboard.json', default: '기본값' };
+const SOURCE = { env: t('about.source.env'), runtime: t('about.source.runtime'), file: 'portboard.json', default: t('about.source.default') };
 const src = (k, site) => h('span', { class: 'set-note', style: 'margin:0 0 0 6px' }, SOURCE[site.sources?.[k]] ?? '');
 const portOf = (url, fallback) => {
   try {
@@ -40,14 +41,14 @@ function siteRows(site) {
   if (!site) return [];
   const file = site.fileError
     ? h('span', { class: 'set-state warn' }, `${site.file} · ${site.fileError}`)
-    : h('span', null, h('code', null, site.file), h('span', { class: 'set-note', style: 'margin:0 0 0 6px' }, site.fileFound ? '사용 중' : '없음 (기본값과 실행 중 확인한 값을 써요)'));
+    : h('span', null, h('code', null, site.file), h('span', { class: 'set-note', style: 'margin:0 0 0 6px' }, site.fileFound ? t('about.file.inUse') : t('about.file.none')));
   return [
-    h('dt', null, '이 서버'), h('dd', null, h('code', null, site.host), ' · ', h('code', null, site.dnsName), src('dnsName', site)),
-    h('dt', null, '체크아웃'), h('dd', null, h('code', null, site.checkout), src('checkout', site)),
-    h('dt', null, '저장소 루트'), h('dd', null, site.reposRoots.map((r, i) => [i ? ', ' : '', h('code', null, r)]), src('reposRoots', site)),
+    h('dt', null, t('common.thisServer')), h('dd', null, h('code', null, site.host), ' · ', h('code', null, site.dnsName), src('dnsName', site)),
+    h('dt', null, t('about.checkout')), h('dd', null, h('code', null, site.checkout), src('checkout', site)),
+    h('dt', null, t('about.reposRoots')), h('dd', null, site.reposRoots.map((r, i) => [i ? ', ' : '', h('code', null, r)]), src('reposRoots', site)),
     h('dt', null, 'compute-pool'), h('dd', null, h('code', null, site.poolUrl), src('poolUrl', site)),
-    h('dt', null, '설정 파일'), h('dd', null, file),
-    ...(site.checkoutFile ? [h('dt', null, '체크아웃 설정'), h('dd', null, h('code', null, site.checkoutFile), h('span', { class: 'set-note', style: 'margin:0 0 0 6px' }, '사용 중 (위 파일이 키마다 이겨요)'))] : []),
+    h('dt', null, t('about.configFile')), h('dd', null, file),
+    ...(site.checkoutFile ? [h('dt', null, t('about.checkoutFile')), h('dd', null, h('code', null, site.checkoutFile), h('span', { class: 'set-note', style: 'margin:0 0 0 6px' }, t('about.checkoutFile.note')))] : []),
   ];
 }
 
@@ -56,23 +57,23 @@ function paint(s) {
   const a = s.addresses;
   const deployed = s.deployed
     ? h('span', null, extLink(short(s.deployed.commit), COMMIT + s.deployed.commit), s.deployed.at ? ` · ${when(s.deployed.at)}` : '')
-    : h('span', { class: 'set-note', style: 'margin:0' }, 'deployed.json 없음 (scripts/deploy.sh로 배포한 적 없음)');
+    : h('span', { class: 'set-note', style: 'margin:0' }, t('about.deployed.none'));
   const running = s.running
-    ? h('span', null, extLink(short(s.running), COMMIT + s.running), s.deployed && s.deployed.commit !== s.running ? h('span', { class: 'set-state warn' }, ' · 배포된 커밋과 달라요') : null)
-    : '알 수 없음';
+    ? h('span', null, extLink(short(s.running), COMMIT + s.running), s.deployed && s.deployed.commit !== s.running ? h('span', { class: 'set-state warn' }, ` · ${t('about.running.differs')}`) : null)
+    : t('about.unknown');
   body.replaceChildren(
     h(
       'dl',
       { class: 'set-kv' },
-      h('dt', null, '버전'), h('dd', null, `Portboard ${s.version}${s.profile === 'production' ? '' : ` · 미리보기 (포트 ${s.port})`}`),
-      h('dt', null, '배포된 커밋'), h('dd', null, deployed),
-      h('dt', null, '이 서버의 커밋'), h('dd', null, running),
-      h('dt', null, '대시보드'), h('dd', null, addr(a.dashboard, { what: 'https, tailscale serve · tailnet 기기만 열려요 · 소유자 계정이면 바꿀 수 있어요', missing: 'tailscale serve가 대시보드를 공개하고 있지 않아요' })),
-      h('dt', null, '원격 커넥터'), h('dd', null, addr(a.connector, { what: `https${a.connectorPort && a.connectorPort !== 443 ? ` :${a.connectorPort}` : ' 443'}, Tailscale Funnel · 인터넷에 공개 · 읽기 전용 MCP, 승인 코드로만 연결`, missing: 'remote.json에 공개 주소(publicUrl)가 없어요' })),
-      h('dt', null, '직접 주소'), h('dd', null, addr(a.direct, { what: `http :${portOf(a.direct, '8790')} · tailnet 기기 누구나 · 읽기 전용`, missing: '알 수 없음' })),
+      h('dt', null, t('about.version')), h('dd', null, `Portboard ${s.version}${s.profile === 'production' ? '' : ` · ${t('about.preview', { port: s.port })}`}`),
+      h('dt', null, t('about.deployed')), h('dd', null, deployed),
+      h('dt', null, t('about.running')), h('dd', null, running),
+      h('dt', null, t('about.dashboard')), h('dd', null, addr(a.dashboard, { what: t('about.dashboard.what'), missing: t('about.dashboard.missing') })),
+      h('dt', null, t('about.connector')), h('dd', null, addr(a.connector, { what: t('about.connector.what', { port: a.connectorPort && a.connectorPort !== 443 ? ` :${a.connectorPort}` : ' 443' }), missing: t('about.connector.missing') })),
+      h('dt', null, t('about.direct')), h('dd', null, addr(a.direct, { what: t('about.direct.what', { port: portOf(a.direct, '8790') }), missing: t('about.unknown') })),
       ...siteRows(s.site),
     ),
-    h('h3', null, '문서'),
+    h('h3', null, t('about.docs')),
     h('div', { class: 'set-extra', style: 'display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px' }, s.docs.map((d) => extLink(`${d.label} ↗`, d.href))),
   );
 }
@@ -81,7 +82,7 @@ async function refresh() {
   const body = $('aboutBody');
   if (!body) return;
   const s = await settingsDoc();
-  if (!s) return body.replaceChildren(el('p', 'set-note', '정보를 읽지 못했어요.'));
+  if (!s) return body.replaceChildren(el('p', 'set-note', t('about.loadFailed')));
   paint(s);
 }
 

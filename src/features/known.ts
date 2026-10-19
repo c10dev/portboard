@@ -24,6 +24,7 @@ const isObject = (body: unknown) => !!body && typeof body === 'object' && !Array
 
 export const knownFeature: FeatureModule = {
   name: 'known-devices',
+  order: 700,
   routes: [
     { method: 'GET', path: '/api/known-devices', handler: async (_r, ctx) => ok(await ctx.known.summary(newDeviceSettings(await loadPrefs()))) },
     {
@@ -60,7 +61,7 @@ export const knownFeature: FeatureModule = {
         name: 'list_new_devices',
         title: 'New devices not acknowledged yet',
         description:
-          'Devices Portboard has seen for the first time and the user has not acknowledged (확인) or named yet: a tailnet ' +
+          'Devices Portboard has seen for the first time and the user has not acknowledged or named yet: a tailnet ' +
           'or LAN device that connected to a service on this server for the first time (scope "connection"), or, when ' +
           'turned on, a MAC new in the neighbour table (scope "neighbor"). Each has name, kind, vendor, LAN ip, the first ' +
           'service it used, since, and nameKey for name_device. Also returns the alert settings and how many devices are known.' +

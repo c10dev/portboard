@@ -1,6 +1,8 @@
 // fetch helpers for /api. Every write carries X-Portboard: 1 (the router refuses writes without it, docs/security.md).
 // Writes are the owner's only (#29): once the page knows this browser may not write (lib/access.js), post() answers
-// 403 with the reason in Korean instead of sending.
+// 403 with the reason instead of sending.
+
+import { t } from './i18n.js';
 
 /** GET → JSON; throws "HTTP n" when the answer isn't 2xx */
 export async function getJSON(path) {
@@ -40,14 +42,14 @@ export function noteAccess(w) {
 
 /** POST → { ok, status, body } (body {} when the answer isn't JSON); network errors throw */
 export async function post(path, body) {
-  if (access && !access.canWrite) return { ok: false, status: 403, body: { error: `읽기 전용: ${access.reason ?? '이 접속으로는 바꿀 수 없어요.'}` } };
+  if (access && !access.canWrite) return { ok: false, status: 403, body: { error: t('api.readonly', { reason: access.reason ?? t('common.readonlyReason') }) } };
   const res = await fetch(path, writeInit(body));
   const out = await res.json().catch(() => ({}));
   return { ok: res.ok, status: res.status, body: out };
 }
 
 /** "error" from the answer, else "HTTP n" */
-export const errorText = (r) => (r.body.error === 'owner only' && r.body.reason ? `읽기 전용: ${r.body.reason}` : r.body.error ?? `HTTP ${r.status}`);
+export const errorText = (r) => (r.body.error === 'owner only' && r.body.reason ? t('api.readonly', { reason: r.body.reason }) : r.body.error ?? `HTTP ${r.status}`);
 
 /** POST → the answer's body; throws with its error when it isn't 2xx */
 export async function postOrThrow(path, body) {

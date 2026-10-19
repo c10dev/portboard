@@ -25,6 +25,8 @@ import type { HistoryView } from './history.ts';
 import type { DeviceCard, Usage } from './usage.ts';
 import { reportHealth } from './health.ts';
 import { appendPrivate, writePrivate } from './atomic.ts';
+import { t } from './i18n.ts';
+import { LOCALES } from './site.ts';
 
 export const KNOWN_PATH = PATHS.known;
 /** Oldest non-pending records go first past this (random MACs rotate) */
@@ -297,7 +299,7 @@ export function acknowledge(store: KnownStore, key: string): number {
 /** Name for an alert: never an address (an unnamed LAN device's name is its IP) */
 function alertName(r: KnownDevice): string {
   if (r.nameSource !== 'ip') return r.name;
-  if (r.name === '개인 Wi-Fi 주소 기기') return r.name;
+  if (LOCALES.some((l) => r.name === t('clientsMsg.privateWifi', undefined, l))) return r.name;
   return r.kind === 'tailnet' ? r.name : 'unnamed LAN device';
 }
 
@@ -314,7 +316,7 @@ export function newDeviceText(list: KnownDevice[], dashboard: string | null): Me
   const title = list.length === 1 ? `portboard: new device — ${alertName(list[0])}` : `portboard: ${list.length} new devices`;
   const lines = list.slice(0, 8).map(alertLine);
   if (list.length > 8) lines.push(`… and ${list.length - 8} more.`);
-  lines.push(`Open Portboard → 기기 to name ${list.length === 1 ? 'it' : 'them'} or mark ${list.length === 1 ? 'it' : 'them'} 확인.`);
+  lines.push(t('knownMsg.alert.openHint', { it: list.length === 1 ? 'it' : 'them' }));
   return { key: 'new-device', kind: 'new-device', title, body: lines.join('\n'), high: false, ...(click ? { click } : {}) };
 }
 

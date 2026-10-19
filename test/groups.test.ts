@@ -77,7 +77,7 @@ test('docker ps third column gives the compose project; the port map ignores it'
 });
 
 test('wellKnown names root-owned ports; tailscaled listeners come from tailscale itself', () => {
-  const ts = { peerApiPorts: peerApiPorts(['http://100.64.10.1:33819', 'http://[fd7a:115c:a1e0::182b:1a3c]:63055']) };
+  const ts = { peerApiPorts: peerApiPorts(['http://100.64.10.1:33819', 'http://[fd7a:115c:a1e0::10:1]:63055']) };
   assert.deepEqual(ts.peerApiPorts, [33819, 63055]);
   const serve = [{ httpsPort: 443, upstream: 'http://127.0.0.1:8790', upstreamPort: 8790 }];
   assert.deepEqual(wellKnown(22, 'all', ts, serve), { name: 'SSH (sshd)', owner: 'sshd' });

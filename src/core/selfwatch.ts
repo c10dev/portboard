@@ -25,6 +25,7 @@ import { SITE } from './site.ts';
 import { runbookForCollector, runbookForExpiry } from './runbooks.ts';
 import { loadConfig as loadProxmoxConfig, pveGet, PROXMOX_PATH, type ProxmoxConfig } from './proxmox.ts';
 import { appendPrivate, writePrivate } from './atomic.ts';
+import { t } from './i18n.ts';
 
 // Preview instances get their own state dir (core/paths.ts), so a preview never rewrites production's self-watch state.
 export const SELFWATCH_PATH = join(PATHS.stateDir, 'selfwatch.json');
@@ -377,7 +378,7 @@ export function statusOf(file: SelfWatchFile, recs: CollectorHealth[], now: numb
     thresholdMin: Math.round(threshold / MIN),
     lastCheck: iso(file.lastCheck),
     failing,
-    summary: failing ? `${failing}개 실패` : '수집 정상',
+    summary: failing ? t('selfwatchMsg.failing', { n: failing }) : t('selfwatchMsg.ok'),
     collectors,
     expiry: { checkedAt: iso(file.expiry.at), items: file.expiry.items.map((i) => ({ ...i, expiresAt: iso(i.expiresAt), runbook: runbookForExpiry(i.key) })) },
   };

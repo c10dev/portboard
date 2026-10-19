@@ -77,10 +77,10 @@ public enum DashboardTab: String, CaseIterable, Sendable {
 
     public var title: String {
         switch self {
-        case .services: return "서비스"
-        case .devices: return "기기"
-        case .dev: return "개발"
-        case .settings: return "설정"
+        case .services: return L10n.t("shell.view.services")
+        case .devices: return L10n.t("shell.view.devices")
+        case .dev: return L10n.t("shell.view.dev")
+        case .settings: return L10n.t("shell.view.settings")
         }
     }
 
@@ -106,37 +106,37 @@ public enum DashboardTab: String, CaseIterable, Sendable {
     }
 }
 
-/// Error text for the window and the menu when the server cannot be read: plain Korean, with the likely cause.
+/// Error text for the window and the menu when the server cannot be read: plain words, with the likely cause.
 public enum Problem {
     /// NSURLErrorDomain codes (URLError.Code raw values). nil for a cancelled load, which is not an error.
     public static func text(urlErrorCode code: Int, timeout: Int = 8) -> String? {
         switch code {
         case -999: return nil
-        case -1001: return "\(timeout)초 안에 응답이 없어요"
-        case -1003, -1006: return "서버 주소를 찾지 못했어요 (Tailscale이 꺼져 있나요?)"
-        case -1004: return "서버에 연결할 수 없어요 (Tailscale이 꺼져 있거나 Portboard가 멈춰 있어요)"
-        case -1005: return "연결이 끊겼어요"
-        case -1009: return "인터넷에 연결돼 있지 않아요"
-        case -1018, -1020: return "지금은 네트워크를 쓸 수 없어요"
-        case -1200, -1201, -1202, -1203, -1204, -1205, -1206: return "보안 연결(TLS)을 만들지 못했어요 (주소가 맞나요? tailnet 주소는 https://…ts.net)"
-        case -1011: return "서버가 이상한 응답을 보냈어요"
-        default: return "연결하지 못했어요 (오류 \(code))"
+        case -1001: return L10n.t("mac.error.timeout", ["seconds": timeout])
+        case -1003, -1006: return L10n.t("mac.error.hostNotFound")
+        case -1004: return L10n.t("mac.error.cannotConnect")
+        case -1005: return L10n.t("mac.error.connectionLost")
+        case -1009: return L10n.t("mac.error.notConnected")
+        case -1018, -1020: return L10n.t("mac.error.networkUnavailable")
+        case -1200, -1201, -1202, -1203, -1204, -1205, -1206: return L10n.t("mac.error.tls")
+        case -1011: return L10n.t("mac.error.badResponse")
+        default: return L10n.t("mac.error.other", ["code": code])
         }
     }
 
     /// An HTTP status that is not 2xx
     public static func text(httpStatus status: Int) -> String {
         switch status {
-        case 502, 503, 504: return "Portboard 서버가 응답하지 않아요 (HTTP \(status)) — 서버에서 portboard 서비스가 멈췄을 수 있어요"
-        case 401, 403: return "접근이 거부됐어요 (HTTP \(status))"
-        case 404: return "이 주소에 Portboard가 없어요 (HTTP 404) — 설정의 서버 주소를 확인하세요"
-        default: return "서버 오류 (HTTP \(status))"
+        case 502, 503, 504: return L10n.t("mac.error.serverDown", ["status": status])
+        case 401, 403: return L10n.t("mac.error.denied", ["status": status])
+        case 404: return L10n.t("mac.error.notFound")
+        default: return L10n.t("mac.error.http", ["status": status])
         }
     }
 
     /// The second line under the error
     public static func hint(base: URL) -> String {
-        "Mac에서 Tailscale이 켜져 있는지, 서버 주소(\(base.absoluteString))가 맞는지 확인하세요"
+        L10n.t("mac.error.hint", ["url": base.absoluteString])
     }
 }
 
@@ -159,6 +159,6 @@ public enum Poll {
 
     /// "15초" / "2분"
     public static func label(_ t: TimeInterval) -> String {
-        t < 60 ? "\(Int(t))초" : "\(Int(t / 60))분"
+        t < 60 ? L10n.t("mac.settings.seconds", ["n": Int(t)]) : L10n.t("mac.settings.minutes", ["n": Int(t / 60)])
     }
 }

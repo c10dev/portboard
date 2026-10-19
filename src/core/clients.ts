@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { PATHS } from './paths.ts';
 import { run, runShared } from './exec.ts';
 import { writePrivate } from './atomic.ts';
+import { t } from './i18n.ts';
 
 export interface Neighbor {
   mac: string;
@@ -101,9 +102,9 @@ export function resolveName(n: {
   if (n.pool) return { name: n.pool, source: 'pool' };
   if (n.vendor) {
     const v = shortVendor(n.vendor);
-    return { name: /\bVM$/.test(v) ? v : `${v} 기기`, source: 'vendor' };
+    return { name: /\bVM$/.test(v) ? v : t('clientsMsg.vendorDevice', { vendor: v }), source: 'vendor' };
   }
-  if (n.randomMac) return { name: '개인 Wi-Fi 주소 기기', source: 'ip' };
+  if (n.randomMac) return { name: t('clientsMsg.privateWifi'), source: 'ip' };
   return { name: n.ip, source: 'ip' };
 }
 

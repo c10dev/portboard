@@ -60,14 +60,14 @@ public struct LoadRetry: Equatable, Sendable {
 
     /// The line under the error. `next` nil: the automatic tries are over.
     public static func status(next: Date?, now: Date, timeZone: TimeZone = .current) -> String {
-        guard let next else { return "자동으로 다시 시도하지 않아요. 아래 다시 시도를 눌러 주세요" }
+        guard let next else { return L10n.t("mac.retry.stopped") }
         let left = Int(next.timeIntervalSince(now).rounded(.up))
-        guard left > 0 else { return "자동으로 다시 시도하는 중…" }
+        guard left > 0 else { return L10n.t("mac.retry.trying") }
         let f = DateFormatter()
         f.locale = Locale(identifier: "ko_KR")
         f.timeZone = timeZone
         f.dateFormat = "HH:mm:ss"
-        return "자동으로 다시 시도하는 중… 다음 시도 \(f.string(from: next)) (\(left)초 후)"
+        return L10n.t("mac.retry.next", ["time": f.string(from: next), "seconds": left])
     }
 }
 
@@ -89,5 +89,5 @@ public struct CrashReloads: Equatable, Sendable {
     }
 
     /// Shown instead of reloading once the limit is reached
-    public static let text = "대시보드 페이지가 5분 안에 3번 멈춰서 더 다시 불러오지 않았어요"
+    public static var text: String { L10n.t("mac.retry.crashed") }
 }

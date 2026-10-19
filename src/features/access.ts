@@ -13,6 +13,7 @@ import type { FeatureModule } from './types.ts';
 
 export const accessFeature: FeatureModule = {
   name: 'access',
+  order: 2700,
   routes: [
     {
       method: 'GET',

@@ -19,6 +19,7 @@ import { connectorView, revokeClient, revokeGrant } from '../remote/admin.ts';
 import { Store } from '../remote/store.ts';
 import { ok, reply } from './router.ts';
 import type { FeatureModule } from './types.ts';
+import { t } from '../core/i18n.ts';
 
 // One Store per file: its in-process queue serializes this process's writes (the lock file covers the others).
 const stores = new Map<string, Store>();
@@ -39,10 +40,11 @@ export function connectorUrlOf(publicUrl: unknown): string | null {
   }
 }
 
-const unreadable = (err: unknown) => reply(500, { error: `remote.json을 읽을 수 없어요 (${err instanceof Error ? err.message.replace(/^.*: /, '') : 'error'})` });
+const unreadable = (err: unknown) => reply(500, { error: t('remoteApi.unreadable', { error: err instanceof Error ? err.message.replace(/^.*: /, '') : 'error' }) });
 
 export const remoteConnectorFeature: FeatureModule = {
   name: 'remote-connector',
+  order: 2600,
   routes: [
     {
       method: 'GET',
@@ -67,7 +69,7 @@ export const remoteConnectorFeature: FeatureModule = {
         } catch (err) {
           return unreadable(err);
         }
-        if (!out) return reply(404, { error: '그런 클라이언트가 없어요' });
+        if (!out) return reply(404, { error: t('remoteApi.noClient') });
         console.error(`[portboard] remote connector: client ${params.device} revoked (${out.tokens} token(s))`);
         return ok({ revoked: out });
       },
@@ -83,7 +85,7 @@ export const remoteConnectorFeature: FeatureModule = {
         } catch (err) {
           return unreadable(err);
         }
-        if (!out) return reply(404, { error: '그런 토큰이 없어요' });
+        if (!out) return reply(404, { error: t('remoteApi.noToken') });
         console.error(`[portboard] remote connector: authorization ${params.device} revoked (${out.tokens} token(s))`);
         return ok({ revoked: out });
       },

@@ -1,0 +1,156 @@
+/* Portboard for Mac: English text. Same keys and {placeholders} as the other .lproj; keys shared with
+   the dashboard (public/i18n/*.json) mean the same there. Loaded by PortboardCore/L10n.swift. */
+
+// Shared with the dashboard (public/i18n)
+"shell.view.services" = "Services";
+"shell.view.devices" = "Devices";
+"shell.view.dev" = "Dev";
+"shell.view.settings" = "Settings";
+"shell.back" = "Back";
+"common.refresh" = "Refresh";
+"common.loading" = "Loading…";
+"common.thisServer" = "This server";
+
+// Alerts
+"mac.alert.ok" = "OK";
+"mac.alert.cancel" = "Cancel";
+
+// Menu bar menu and the Dashboard menu
+"mac.menu.dashboard" = "Dashboard";
+"mac.menu.notLoaded" = "Not loaded yet";
+"mac.menu.unreachable" = "Not connected to Portboard";
+"mac.menu.inUse" = "Services in use · {n}";
+"mac.menu.inUseEmpty" = "No services in use right now";
+"mac.menu.serviceDetails" = "Show service details";
+"mac.menu.viewInDashboard" = "View in dashboard";
+"mac.menu.pinned" = "Pinned ports · {n}";
+"mac.menu.pinnedEmpty" = "No pinned ports (pin them in the dashboard)";
+"mac.menu.devices" = "Devices · {n}";
+"mac.menu.devicesEmpty" = "No device info";
+"mac.menu.viewInDevices" = "View in Devices";
+"mac.menu.localOnly" = "Local-only services · {n}";
+"mac.menu.cleanup" = "Servers to clean up · {n}";
+"mac.menu.cleanupInDashboard" = "Clean up in dashboard";
+"mac.menu.more" = "{n} more — {label}";
+"mac.menu.open" = "Open ↗";
+"mac.menu.noWebURL" = "No web address to open";
+"mac.menu.expose" = "Expose on tailnet";
+"mac.menu.cantExpose" = "Can't expose: {reason}";
+"mac.menu.copySSH" = "Copy SSH tunnel command";
+"mac.menu.openDashboard" = "Open dashboard";
+"mac.menu.openInBrowser" = "Open in browser";
+"mac.menu.lastUpdate" = "Last updated {time}";
+"mac.menu.settings" = "Settings…";
+"mac.menu.quit" = "Quit Portboard";
+
+// Menu lines (PortboardCore Summary)
+"mac.summary.memory" = "memory {pct}%";
+"mac.summary.online" = "online";
+"mac.summary.offline" = "offline";
+"mac.summary.services" = "services {n}";
+"mac.summary.listening" = "listening";
+"mac.summary.notListening" = "not listening";
+"mac.summary.portDown" = "🔔 {name} :{port} not responding";
+"mac.summary.deviceOffline" = "🔔 {name} offline";
+"mac.summary.pinnedDown" = "Pinned port :{port} {name} not listening";
+"mac.summary.readFailed" = "Couldn't read /api/{what}: {error}";
+"mac.summary.watchedDown" = "Watched ports not responding: {n}";
+"mac.summary.devicesToCheck" = "Devices to check: {n}";
+"mac.summary.serversToClean" = "Servers to clean up: {n}";
+
+// compute-pool states (public/devices.js POOL_STATE)
+"mac.pool.ok" = "ok";
+"mac.pool.degraded" = "some issues";
+"mac.pool.wslDown" = "WSL off";
+"mac.pool.hostDown" = "not responding";
+"mac.pool.auth" = "SSH auth failed";
+"mac.pool.agentAway" = "agent disconnected";
+"mac.pool.agentBusy" = "in use";
+"mac.pool.unknown" = "unknown";
+
+// Notifications
+"mac.notify.downTitle" = "🔔 {name} not responding";
+"mac.notify.downBody" = ":{port} isn't responding";
+"mac.notify.offlineTitle" = "🔔 {name} offline";
+"mac.notify.offlineBody" = "A watched device dropped off the tailnet";
+"mac.notify.recoveredTitle" = "✅ {name} is back";
+"mac.notify.recoveredBody" = ":{port} is responding again";
+"mac.notify.onlineTitle" = "✅ {name} online";
+"mac.notify.onlineBody" = "A watched device is connected again";
+"mac.notify.newDeviceTitle" = "New device: {name}";
+"mac.notify.newDeviceService" = "Connected to {target} for the first time";
+"mac.notify.newDeviceLAN" = "Seen on the LAN for the first time";
+"mac.notify.newDeviceUnseen" = "A device not seen before";
+
+// Errors: the window's error screen, the menu, Check connection
+"mac.error.title" = "Couldn't connect to Portboard";
+"mac.error.changeServer" = "Change server address…";
+"mac.error.hint" = "Check that Tailscale is running on this Mac and that the server address ({url}) is right";
+"mac.error.timeout" = "No response within {seconds} seconds";
+"mac.error.hostNotFound" = "Couldn't find the server address (is Tailscale off?)";
+"mac.error.cannotConnect" = "Can't connect to the server (Tailscale is off or Portboard has stopped)";
+"mac.error.connectionLost" = "The connection was lost";
+"mac.error.notConnected" = "Not connected to the internet";
+"mac.error.networkUnavailable" = "The network isn't available right now";
+"mac.error.tls" = "Couldn't make a secure (TLS) connection (is the address right? tailnet addresses are https://…ts.net)";
+"mac.error.badResponse" = "The server sent an unexpected response";
+"mac.error.other" = "Couldn't connect (error {code})";
+"mac.error.serverDown" = "The Portboard server isn't responding (HTTP {status}) — the portboard service on the server may have stopped";
+"mac.error.denied" = "Access denied (HTTP {status})";
+"mac.error.notFound" = "Portboard isn't at this address (HTTP 404) — check the server address in Settings";
+"mac.error.http" = "Server error (HTTP {status})";
+"mac.error.cancelled" = "Cancelled";
+"mac.error.notJSON" = "Couldn't read the response (not JSON)";
+
+// Automatic retry under the error (PortboardCore Retry)
+"mac.retry.button" = "Try again";
+"mac.retry.connecting" = "Reconnecting…";
+"mac.retry.trying" = "Retrying automatically…";
+"mac.retry.next" = "Retrying automatically… next try at {time} (in {seconds} s)";
+"mac.retry.stopped" = "No more automatic retries. Click Try again below";
+"mac.retry.crashed" = "The dashboard page crashed 3 times in 5 minutes, so it wasn't reloaded again";
+
+// Expose on tailnet, from the menu
+"mac.expose.done" = "✓ :{port} exposed on tailnet: {message}";
+"mac.expose.failed" = "Couldn't expose :{port} on tailnet";
+"mac.expose.enableServe" = "Turn on Serve in Tailscale";
+
+// Settings window
+"mac.settings.server" = "Server";
+"mac.settings.serverAddress" = "Server address";
+"mac.settings.apply" = "Apply";
+"mac.settings.invalidURL" = "Enter an address that starts with http:// or https://";
+"mac.settings.check" = "Check connection";
+"mac.settings.checkIdle" = "Asks /api/whoami who this Mac shows up as";
+"mac.settings.checkFailed" = "Not connected: {message}";
+"mac.settings.serverNote" = "The default is {url} (tailscale serve, tailnet only). Writes (stop, expose) work only from the owner account's write-enabled devices.";
+"mac.settings.notifications" = "Notifications";
+"mac.settings.notifyWatch" = "When a watched (🔔) port or device goes down or comes back";
+"mac.settings.notifyNewDevices" = "When a new device shows up";
+"mac.settings.ntfyCovers" = "Off by default because the ntfy channel already sends the same alerts. Turn them on to get them on both your phone (ntfy) and this Mac.";
+"mac.settings.notifyRemembers" = "States already seen are remembered, so reopening the app doesn't send the same notification again.";
+"mac.settings.openNotificationSettings" = "Open notification settings";
+"mac.settings.notifyNeedsApp" = "Notifications work only when running as Portboard.app";
+"mac.settings.notifyAllowed" = "macOS notifications: allowed";
+"mac.settings.notifyDenied" = "macOS notifications: denied — turn them on in System Settings → Notifications → Portboard";
+"mac.settings.notifyNotAsked" = "macOS notifications: not asked yet (turning on a toggle asks)";
+"mac.settings.notifyUnknown" = "macOS notifications: unknown";
+"mac.settings.poll" = "Refresh interval";
+"mac.settings.pollActive" = "While the app is in front or the menu is open";
+"mac.settings.pollBackground" = "Otherwise (in the background)";
+"mac.settings.seconds" = "{n} sec";
+"mac.settings.minutes" = "{n} min";
+"mac.settings.startup" = "Startup";
+"mac.settings.openAtLogin" = "Open Portboard at login";
+"mac.settings.loginNeedsApp" = "Only available when running as Portboard.app (./build.sh)";
+"mac.settings.loginNeedsApproval" = "Needs approval in System Settings → Login Items";
+"mac.settings.open" = "Open";
+"mac.settings.loginFailed" = "Couldn't change it: {error}";
+
+// Check connection result lines (PortboardCore WhoAmI)
+"mac.whoami.login" = "Login: {login}";
+"mac.whoami.none" = "none";
+"mac.whoami.device" = "Device: {device}";
+"mac.whoami.deviceUnknown" = "unknown";
+"mac.whoami.canWrite" = "Write: allowed (can stop services, expose ports and the like)";
+"mac.whoami.readOnly" = "Write: not allowed — read-only";

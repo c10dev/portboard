@@ -15,7 +15,7 @@ const EST = [
   '0      0                   127.0.0.1:5281              127.0.0.1:55746 users:(("node",pid=77,fd=44))',
   '0      0                   127.0.0.1:41000              127.0.0.1:8790',
   '0      0                   127.0.0.1:8790              127.0.0.1:41000 users:(("node",pid=88,fd=9))',
-  '0      0      [fd7a:115c:a1e0::182b:1a3c]:443   [fd7a:115c:a1e0::6e3a:8d1d]:50000',
+  '0      0      [fd7a:115c:a1e0::10:1]:443   [fd7a:115c:a1e0::10:3]:50000',
   '0      0               192.168.1.205:56930           172.66.0.243:443   users:(("tunnel-client",pid=1769,fd=8))      ',
   '0      0               100.64.10.1:7721           100.99.1.1:65329 users:(("cpool",pid=126354,fd=9))',
   '0      0        [::ffff:192.168.1.205]:3000           [::ffff:172.17.0.1]:40000',
@@ -33,24 +33,24 @@ test('parseEstablished reads rows without a State column and pairs the TCP-info 
   assert.equal(c[0].rttMs, 35.148);
   assert.deepEqual(c[2].processes, [{ name: 'MainThread', pid: 2427190 }]);
   assert.equal(c[2].bytesSent, null);
-  assert.equal(c[6].local.address, 'fd7a:115c:a1e0::182b:1a3c');
+  assert.equal(c[6].local.address, 'fd7a:115c:a1e0::10:1');
   assert.equal(c[9].peer.address, '172.17.0.1');
 });
 
 test('endpoint and parseSs strip the interface suffix outside IPv6 brackets', () => {
-  assert.deepEqual(endpoint('[fd7a:115c:a1e0::182b:1a3c]%tailscale0:443'), { address: 'fd7a:115c:a1e0::182b:1a3c', port: 443 });
+  assert.deepEqual(endpoint('[fd7a:115c:a1e0::10:1]%tailscale0:443'), { address: 'fd7a:115c:a1e0::10:1', port: 443 });
   assert.deepEqual(endpoint('100.64.10.1%tailscale0:443'), { address: '100.64.10.1', port: 443 });
-  const [l] = parseSs('LISTEN 0 4096 [fd7a:115c:a1e0::182b:1a3c]%tailscale0:443 [::]:*');
-  assert.equal(l.address, 'fd7a:115c:a1e0::182b:1a3c');
+  const [l] = parseSs('LISTEN 0 4096 [fd7a:115c:a1e0::10:1]%tailscale0:443 [::]:*');
+  assert.equal(l.address, 'fd7a:115c:a1e0::10:1');
   assert.equal(l.scope, 'tailnet');
 });
 
 const STATUS = JSON.stringify({
-  Self: { HostName: 'devbox', DNSName: 'devbox.tail.ts.net.', OS: 'linux', TailscaleIPs: ['100.64.10.1', 'fd7a:115c:a1e0::182b:1a3c'], Online: true },
+  Self: { HostName: 'devbox', DNSName: 'devbox.tail.ts.net.', OS: 'linux', TailscaleIPs: ['100.64.10.1', 'fd7a:115c:a1e0::10:1'], Online: true },
   Peer: {
     a: {
       HostName: 'Dev’s MacBook Pro', DNSName: 'dev-mac.tail.ts.net.', OS: 'macOS',
-      TailscaleIPs: ['100.64.10.3', 'fd7a:115c:a1e0::6e3a:8d1d'], Online: true, Active: true,
+      TailscaleIPs: ['100.64.10.3', 'fd7a:115c:a1e0::10:3'], Online: true, Active: true,
       CurAddr: '118.235.12.86:45229', Relay: 'tok', LastSeen: '2026-10-17T08:40:00.1Z', LastHandshake: '2026-10-17T10:11:43Z', RxBytes: 5, TxBytes: 7,
     },
     b: { HostName: 'localhost', DNSName: 'iphone.tail.ts.net.', OS: 'iOS', TailscaleIPs: ['100.64.10.7'], Online: true, Active: true, CurAddr: '', Relay: 'tok', LastSeen: '0001-01-01T00:00:00Z' },
@@ -71,10 +71,10 @@ function port(p: Partial<PortEntry> & { port: number; addresses: string[] }): Po
 const SNAP: Snapshot = {
   at: '2026-10-17T10:00:00.000Z',
   host: { hostname: 'devbox', user: 'dev' },
-  tailscale: { available: true, dnsName: 'devbox.tail.ts.net', hostName: 'devbox', ips: ['100.64.10.1', 'fd7a:115c:a1e0::182b:1a3c'] },
+  tailscale: { available: true, dnsName: 'devbox.tail.ts.net', hostName: 'devbox', ips: ['100.64.10.1', 'fd7a:115c:a1e0::10:1'] },
   ports: [
     port({ port: 22, addresses: ['0.0.0.0', '::'], owned: false, kind: 'system', visible: false, scope: 'all', name: 'SSH (sshd)' }), // snapshot() names well-known system ports
-    port({ port: 443, addresses: ['100.64.10.1', 'fd7a:115c:a1e0::182b:1a3c'], owned: false, kind: 'system', visible: false, scope: 'tailnet' }),
+    port({ port: 443, addresses: ['100.64.10.1', 'fd7a:115c:a1e0::10:1'], owned: false, kind: 'system', visible: false, scope: 'tailnet' }),
     port({ port: 3000, addresses: ['*'], scope: 'all' }),
     port({ port: 5281, addresses: ['127.0.0.1'] }),
     port({ port: 7721, addresses: ['100.64.10.1'], scope: 'tailnet' }),

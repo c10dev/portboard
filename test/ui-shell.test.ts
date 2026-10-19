@@ -6,7 +6,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { FakeDocument, FakeElement, fakeWindow, loadPage, runBoot } from './fixtures/fake-dom.ts';
-import { expandShell, pageOptions, PANE as SERVER_PANE, REQUIRED, VIEWS as SERVER_VIEWS } from '../src/core/shell.ts';
+import { lookup } from '../src/core/i18n.ts';
+import { bootLocale, expandShell, pageOptions, PANE as SERVER_PANE, REQUIRED, VIEWS as SERVER_VIEWS } from '../src/core/shell.ts';
 // @ts-expect-error plain browser module, no types
 import { clampWidth, done, layoutFor, loadState, maxWidth, mountShell, PANE, saveState, share, onShared, stepSelection, typingIn, viewOf, VIEWS, WIDTH } from '../public/lib/shell.js';
 // @ts-expect-error plain browser module, no types
@@ -264,13 +265,13 @@ for (const page of Object.keys(PAGES)) {
 }
 
 test('shell markup: the views match lib/shell.js, aria-current follows the page, the boot is safe to inline', () => {
-  assert.deepEqual(SERVER_VIEWS.map((v) => [v.id, v.label, v.href]), VIEWS.map((v: any) => [v.id, v.label, v.href]));
+  assert.deepEqual(SERVER_VIEWS.map((v) => [v.id, lookup(v.label, {}, 'ko'), v.href]), VIEWS.map((v: any) => [v.id, v.label, v.href]));
   assert.deepEqual(pageOptions('<body data-view="dev">'), { view: 'dev', inspector: false });
   assert.deepEqual(pageOptions('<body data-view="nope" data-inspector>'), { view: 'services', inspector: true });
   const dev = served('dev.html');
   assert.match(dev, /<a href="dev.html" class="side-view" role="listitem" data-view="dev" aria-current="page">/);
-  assert.match(dev, /<span class="t-view">개발<\/span>/);
-  assert.match(served('index.html'), /이 서버 devbox<\/span>/);
+  assert.match(dev, /<span class="t-view" data-t="shell.view.dev">개발<\/span>/);
+  assert.match(served('index.html'), /<span data-t="common.thisServer">이 서버<\/span> devbox<\/span>/);
   assert.match(expandShell('<body data-view="services"><span><!--#shell:hostname--></span>', { hostname: '<x>', boot: '' }), /&lt;x&gt;/);
   assert.ok(!/<\/script|<!--/i.test(BOOT), 'nothing in the boot script can end or confuse its inline <script>');
   assert.equal(expandShell('<p>no markers</p>', { boot: '' }), '<p>no markers</p>');
@@ -286,7 +287,7 @@ function mount(width: number, { storage = new Map<string, string>(), session = n
   loadPage(doc, served(page));
   const win: any = fakeWindow(width, storage, session);
   const boot = runBoot(BOOT, doc, win, userAgent);
-  boot.start({ inspector: page === 'index.html' });
+  boot.start({ inspector: page === 'index.html', ...bootLocale('ko') });
   boot.paintSide();
   const api = mountShell(doc, win);
   const $ = (id: string) => doc.getElementById(id)!;
@@ -351,7 +352,7 @@ test('boot: the remembered toggles, app mode, read-only and the cached sidebar a
   loadPage(doc, served('devices.html'));
   const win: any = fakeWindow(1440, new Map([['pb.shell', '{"side":false,"insp":true}'], ['pb.nav', JSON.stringify(nav)]]), new Map([['pb.ro', '{"readonly":true,"reason":"쓰기 허용 목록에 없는 기기예요."}']]));
   const boot = runBoot(BOOT, doc, win, 'Mozilla/5.0 portboard-mac/1.0');
-  boot.start({ inspector: false });
+  boot.start({ inspector: false, ...bootLocale('ko') });
   const root = doc.documentElement;
   assert.deepEqual([root.dataset.side, root.dataset.insp, root.dataset.app, root.dataset.readonly], ['closed', 'closed', 'mac', '1']);
   boot.paintSide();
@@ -372,7 +373,7 @@ test('boot: the remembered toggles, app mode, read-only and the cached sidebar a
   const broken: any = fakeWindow(1440, new Map([['pb.nav', '{oops'], ['pb.shell', 'nope']]));
   broken.sessionStorage = { getItem: () => { throw new Error('denied'); } };
   const b = runBoot(BOOT, bare, broken);
-  assert.doesNotThrow(() => { b.start({ inspector: false }); b.paintSide(); });
+  assert.doesNotThrow(() => { b.start({ inspector: false, ...bootLocale('ko') }); b.paintSide(); });
   assert.equal(bare.documentElement.dataset.side, 'open');
   assert.equal(bare.getElementById('sidePinned')!.hidden, true);
   assert.equal(bare.getElementById('count-dev')!.textContent, '');
@@ -471,7 +472,7 @@ test('boot: the remembered widths and the modes are on <html> before the first p
   globalThis.document = doc as any;
   loadPage(doc, served('index.html'));
   const boot = runBoot(BOOT, doc, fakeWindow(1220, new Map([['pb.shell', '{"side":true,"insp":true,"sideW":420,"inspW":480}']])));
-  boot.start({ inspector: true });
+  boot.start({ inspector: true, ...bootLocale('ko') });
   const root = doc.documentElement;
   assert.equal(root.style['--side-open'], '420px');
   assert.equal(root.style['--insp-open'], '480px');
@@ -480,16 +481,16 @@ test('boot: the remembered widths and the modes are on <html> before the first p
   const plain = new FakeDocument();
   globalThis.document = plain as any;
   loadPage(plain, served('index.html'));
-  runBoot(BOOT, plain, fakeWindow(1440, new Map([['pb.shell', '{"sideW":"wide"}']]))).start({ inspector: true });
+  runBoot(BOOT, plain, fakeWindow(1440, new Map([['pb.shell', '{"sideW":"wide"}']]))).start({ inspector: true, ...bootLocale('ko') });
   assert.equal(plain.documentElement.style['--side-open'], '288px');
   assert.deepEqual([plain.documentElement.dataset.sideMode, plain.documentElement.dataset.inspMode], ['column', 'column']);
 });
 
 test('resize handles: server-rendered separators outside the bar, with the default widths', () => {
   const html = served('index.html');
-  assert.match(html, /<div id="sideHandle" class="pane-handle side-handle" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="shellSide" aria-label="사이드바 너비" aria-valuemin="200" aria-valuemax="420" aria-valuenow="288"/);
-  assert.match(html, /<div id="inspHandle" class="pane-handle insp-handle" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="inspector" aria-label="상세 패널 너비" aria-valuemin="280" aria-valuemax="480" aria-valuenow="300"/);
-  assert.ok(!served('dev.html').includes('inspHandle'), 'no inspector, no handle');
+  assert.match(html, /<div id="sideHandle" class="pane-handle side-handle" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="shellSide" data-t-aria-label="shell.sideHandle" aria-label="사이드바 너비" aria-valuemin="200" aria-valuemax="420" aria-valuenow="288"/);
+  assert.match(html, /<div id="inspHandle" class="pane-handle insp-handle" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="inspector" data-t-aria-label="shell.inspHandle" aria-label="상세 패널 너비" aria-valuemin="280" aria-valuemax="480" aria-valuenow="300"/);
+  assert.ok(!served('dev.html').includes('id="inspHandle"'), 'no inspector, no handle');
   // the Mac app drags the window by header.top only (lib/macapp.js barReport): the handles are not in it
   const { doc, header } = mount(1440, { userAgent: 'Mozilla/5.0 portboard-mac/1.0' });
   assert.ok(!header.contains(doc.getElementById('sideHandle')) && !header.contains(doc.getElementById('inspHandle')));

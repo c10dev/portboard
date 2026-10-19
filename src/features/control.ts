@@ -92,6 +92,7 @@ const tools: Tool[] = [
 
 export const control: FeatureModule = {
   name: 'control',
+  order: 200,
   routes: [
     {
       method: 'GET',

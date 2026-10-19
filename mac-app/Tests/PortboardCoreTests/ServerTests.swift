@@ -2,6 +2,11 @@ import XCTest
 @testable import PortboardCore
 
 final class ServerTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        Strings.useKorean()
+    }
+
     let base = URL(string: "https://devbox.example.ts.net:8443")!
 
     func testDefaultURL() {

@@ -22,6 +22,7 @@
 // (src/features/suggestions.ts) collects the inputs.
 
 import { shortVendor, type NameSource } from './clients.ts';
+import { t } from './i18n.ts';
 
 /** Ids fit the router's generic `:device` segment ([A-Za-z0-9][A-Za-z0-9-]{0,62}) */
 export const SUGGESTION_ID = /^(alert-\d{1,5}|name-[a-z0-9][a-z0-9-]{0,57})$/;
@@ -154,8 +155,8 @@ export function alertSuggestions(ports: AlertCandidate[], inp: AlertInputs): Ale
 }
 
 function alertText(reasons: AlertSuggestion['reasons'], unit: string | null, container: string | null): string {
-  const why = reasons.map((r) => (r === 'pinned' ? '고정한 포트' : r === 'systemd' ? `systemd 서비스 ${unit}` : `오래 도는 컨테이너 ${container}`));
-  return `${why.join(' · ')}예요. 멈추면 알림을 받을까요?`;
+  const why = reasons.map((r) => (r === 'pinned' ? t('suggest.alert.pinned') : r === 'systemd' ? t('suggest.alert.systemd', { unit }) : t('suggest.alert.container', { container })));
+  return t('suggest.alert.text', { why: why.join(' · ') });
 }
 
 // ---------- names ----------
@@ -209,31 +210,31 @@ export function cleanHostname(raw: string): string | null {
   return first.slice(0, 40);
 }
 
-/** Vendor → what kind of device it almost always is (only vendors that make one kind of thing): [IEEE name, brand, kind] */
+/** Vendor → what kind of device it almost always is (only vendors that make one kind of thing): [IEEE name, brand, kind key] */
 const VENDOR_KIND: [RegExp, string, string][] = [
-  [/^Synology/i, 'Synology', 'NAS'],
-  [/^QNAP/i, 'QNAP', 'NAS'],
-  [/^Brother/i, 'Brother', '프린터'],
-  [/^Canon/i, 'Canon', '프린터'],
-  [/^Seiko Epson/i, 'Epson', '프린터'],
-  [/^Kyocera/i, 'Kyocera', '프린터'],
-  [/^Espressif/i, 'Espressif', 'IoT 기기'],
-  [/^Tuya/i, 'Tuya', 'IoT 기기'],
-  [/^Shelly|^Allterco/i, 'Shelly', 'IoT 기기'],
-  [/^Sonos/i, 'Sonos', '스피커'],
-  [/^Roku/i, 'Roku', 'TV 스틱'],
-  [/^Nintendo/i, 'Nintendo', '게임기'],
-  [/^Sony Interactive/i, 'PlayStation', '게임기'],
-  [/^Ubiquiti/i, 'Ubiquiti', '네트워크 장비'],
-  [/^TP-LINK/i, 'TP-Link', '네트워크 장비'],
-  [/^EFM Networks/i, 'ipTIME', '네트워크 장비'],
+  [/^Synology/i, 'Synology', 'suggest.kind.nas'],
+  [/^QNAP/i, 'QNAP', 'suggest.kind.nas'],
+  [/^Brother/i, 'Brother', 'suggest.kind.printer'],
+  [/^Canon/i, 'Canon', 'suggest.kind.printer'],
+  [/^Seiko Epson/i, 'Epson', 'suggest.kind.printer'],
+  [/^Kyocera/i, 'Kyocera', 'suggest.kind.printer'],
+  [/^Espressif/i, 'Espressif', 'suggest.kind.iot'],
+  [/^Tuya/i, 'Tuya', 'suggest.kind.iot'],
+  [/^Shelly|^Allterco/i, 'Shelly', 'suggest.kind.iot'],
+  [/^Sonos/i, 'Sonos', 'suggest.kind.speaker'],
+  [/^Roku/i, 'Roku', 'suggest.kind.tvStick'],
+  [/^Nintendo/i, 'Nintendo', 'suggest.kind.console'],
+  [/^Sony Interactive/i, 'PlayStation', 'suggest.kind.console'],
+  [/^Ubiquiti/i, 'Ubiquiti', 'suggest.kind.network'],
+  [/^TP-LINK/i, 'TP-Link', 'suggest.kind.network'],
+  [/^EFM Networks/i, 'ipTIME', 'suggest.kind.network'],
   [/^Raspberry Pi/i, 'Raspberry Pi', ''],
 ];
 
 /** "Synology NAS", "Brother 프린터"; null when the vendor says nothing beyond its name */
 export function vendorKind(vendor: string): string | null {
   const hit = VENDOR_KIND.find(([re]) => re.test(vendor));
-  return hit ? `${hit[1]}${hit[2] ? ` ${hit[2]}` : ''}` : null;
+  return hit ? `${hit[1]}${hit[2] ? ` ${t(hit[2])}` : ''}` : null;
 }
 
 const hostOf = (endpoint: string) => endpoint.replace(/^\[/, '').replace(/\]?:\d+$/, '');
@@ -261,24 +262,24 @@ export function nameSuggestions(cards: NameCard[], pending: PendingDevice[], inp
   }
 
   const out: NameSuggestion[] = [];
-  for (const t of targets) {
+  for (const tgt of targets) {
     // Now, else remembered while the same MAC is at that address (DHCP may have given it to another device since)
-    const was = t.ip ? inp.seen?.get(t.ip) : undefined;
+    const was = tgt.ip ? inp.seen?.get(tgt.ip) : undefined;
     const peer: { name: string; os: string | null } | null | undefined =
-      (t.ip ? peerAt.get(t.ip) : null) ?? (was && was.mac && was.mac === t.mac && !(t.ip && peerAt.has(t.ip)) ? { name: was.peer, os: was.os } : null);
-    const host = t.ip ? inp.hostnames.get(t.ip) : undefined;
+      (tgt.ip ? peerAt.get(tgt.ip) : null) ?? (was && was.mac && was.mac === tgt.mac && !(tgt.ip && peerAt.has(tgt.ip)) ? { name: was.peer, os: was.os } : null);
+    const host = tgt.ip ? inp.hostnames.get(tgt.ip) : undefined;
     const hostName = host ? cleanHostname(host) : null;
-    const kind = t.vendor ? vendorKind(t.vendor) : null;
-    const guestOs = t.guestOf ? (t.guestOf.type === 'lxc' ? 'Proxmox CT' : 'Proxmox VM') : null;
+    const kind = tgt.vendor ? vendorKind(tgt.vendor) : null;
+    const guestOs = tgt.guestOf ? (tgt.guestOf.type === 'lxc' ? 'Proxmox CT' : 'Proxmox VM') : null;
     const pick: Pick<NameSuggestion, 'name' | 'source' | 'confidence' | 'os' | 'text'> | null = peer
-      ? { name: peer.name, source: 'tailscale', confidence: 'high', os: peer.os, text: `Tailscale 기기 ${peer.name}${peer.os ? ` (${peer.os})` : ''}가 이 주소에서 직접 연결돼 있어요.` }
+      ? { name: peer.name, source: 'tailscale', confidence: 'high', os: peer.os, text: peer.os ? t('suggest.name.tailscaleOs', { name: peer.name, os: peer.os }) : t('suggest.name.tailscale', { name: peer.name }) }
       : hostName
-        ? { name: hostName, source: 'hostname', confidence: 'high', os: guestOs, text: `LAN DNS가 이 주소를 ${host}(으)로 알려 줘요.` }
-        : kind && t.currentSource !== 'proxmox'
-          ? { name: kind, source: 'vendor', confidence: 'low', os: guestOs, text: `MAC 제조사(${shortVendor(t.vendor!)})로 짐작한 이름이에요.` }
+        ? { name: hostName, source: 'hostname', confidence: 'high', os: guestOs, text: t('suggest.name.hostname', { host }) }
+        : kind && tgt.currentSource !== 'proxmox'
+          ? { name: kind, source: 'vendor', confidence: 'low', os: guestOs, text: t('suggest.name.vendor', { vendor: shortVendor(tgt.vendor!) }) }
           : null;
-    if (!pick || pick.name === t.current) continue;
-    out.push({ id: nameId(t.key), kind: 'name', key: t.key, device: t.device, ip: t.ip, current: t.current, currentSource: t.currentSource, ...pick });
+    if (!pick || pick.name === tgt.current) continue;
+    out.push({ id: nameId(tgt.key), kind: 'name', key: tgt.key, device: tgt.device, ip: tgt.ip, current: tgt.current, currentSource: tgt.currentSource, ...pick });
   }
   return out;
 }

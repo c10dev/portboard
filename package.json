@@ -30,8 +30,10 @@
   "scripts": {
     "start": "node src/server.ts",
     "mcp": "node src/mcp.ts",
-    "test": "node --test \"test/**/*.test.ts\"",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "test": "PORTBOARD_LOCALE=ko node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "changelog": "node scripts/changelog.ts",
+    "changelog:check": "node scripts/changelog.ts --check"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

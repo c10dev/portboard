@@ -1,9 +1,11 @@
 // The feature module registry: the one list of features, and the views the servers iterate (routes, local and
 // remote MCP tools, resources, prompts, jobs, collectors, dashboard scripts). Adding a feature is a new file in
-// src/features/ plus one line in FEATURES; see docs/architecture.md "How to add a feature".
+// src/features/ with its own `order`, plus one import and one MODULES line here, both in alphabetical order (by file
+// and by name; test/registry.test.ts checks it), so parallel branches add lines in different places instead of all
+// appending at the same end; see docs/architecture.md "How to add a feature".
 //
-// FEATURES order is the order of tools/list (and of the remote list), so keep new features at the end unless a
-// client-visible order is meant to change.
+// FEATURES is MODULES sorted by each module's `order`: that is the order of tools/list (and of the remote list),
+// routes, jobs and page scripts, so pick a number between the two features the new one should sit between.
 //
 // buildRegistry() refuses a registry that would weaken a security property:
 //   - a tool offered remotely must be read-only (annotations.readOnlyHint), and every remote tool is listed with
@@ -14,67 +16,71 @@
 import type { PromptDef } from '../mcp/prompts.ts';
 import type { FeatureModule, Job, RemoteCall, RemoteResources, Resources, Route, Tool, ToolDef } from './types.ts';
 import { READ_ONLY_ANNOTATIONS } from '../mcp/kit.ts';
-import { ports } from './ports.ts';
-import { ownersFeature } from './owners.ts';
-import { worktreesFeature } from './worktrees.ts';
-import { reservationsFeature } from './reservations.ts';
-import { devServersFeature } from './devservers.ts';
-import { onboardingFeature } from './onboarding.ts';
+import { accessFeature } from './access.ts';
+import { adoptionFeature } from './adoption.ts';
+import { alertsFeature } from './alerts.ts';
+import { claudeSessionFeature } from './claude-session.ts';
+import { claudeFeature } from './claude.ts';
 import { control } from './control.ts';
 import { devicesFeature } from './devices.ts';
-import { usageFeature } from './usage.ts';
-import { freePortsFeature } from './free-ports.ts';
-import { alertsFeature } from './alerts.ts';
-import { knownFeature } from './known.ts';
-import { serviceDetailFeature } from './service-detail.ts';
-import { proxmoxFeature } from './proxmox.ts';
-import { hostPortsFeature } from './host-ports.ts';
-import { selfWatchFeature } from './selfwatch.ts';
-import { overviewFeature } from './overview.ts';
+import { devServersFeature } from './devservers.ts';
 import { digestFeature } from './digest.ts';
-import { suggestionsFeature } from './suggestions.ts';
-import { adoptionFeature } from './adoption.ts';
-import { claudeFeature } from './claude.ts';
-import { claudeSessionFeature } from './claude-session.ts';
-import { accessFeature } from './access.ts';
-import { remoteConnectorFeature } from './remote-connector.ts';
-import { writeDevicesFeature } from './write-devices.ts';
-import { settingsFeature } from './settings.ts';
-import { portRulesFeature } from './port-rules.ts';
-import { newPortsFeature } from './newports.ts';
+import { freePortsFeature } from './free-ports.ts';
+import { hostPortsFeature } from './host-ports.ts';
+import { knownFeature } from './known.ts';
 import { memoryFeature } from './memory.ts';
+import { newPortsFeature } from './newports.ts';
+import { onboardingFeature } from './onboarding.ts';
+import { overviewFeature } from './overview.ts';
+import { ownersFeature } from './owners.ts';
+import { portRulesFeature } from './port-rules.ts';
+import { ports } from './ports.ts';
+import { proxmoxFeature } from './proxmox.ts';
+import { remoteConnectorFeature } from './remote-connector.ts';
+import { reservationsFeature } from './reservations.ts';
+import { selfWatchFeature } from './selfwatch.ts';
+import { serviceDetailFeature } from './service-detail.ts';
+import { settingsFeature } from './settings.ts';
+import { suggestionsFeature } from './suggestions.ts';
+import { usageFeature } from './usage.ts';
+import { worktreesFeature } from './worktrees.ts';
+import { writeDevicesFeature } from './write-devices.ts';
 
-export const FEATURES: FeatureModule[] = [
-  ports,
-  control,
-  devicesFeature,
-  usageFeature,
-  freePortsFeature,
-  alertsFeature,
-  knownFeature,
-  serviceDetailFeature,
-  proxmoxFeature,
-  hostPortsFeature,
-  selfWatchFeature,
-  overviewFeature,
-  ownersFeature,
-  worktreesFeature,
-  reservationsFeature,
-  devServersFeature,
-  onboardingFeature,
-  digestFeature,
-  suggestionsFeature,
+/** Every feature module, alphabetical by name (a test checks it). The order that matters is FEATURES. */
+export const MODULES: FeatureModule[] = [
+  accessFeature,
   adoptionFeature,
+  alertsFeature,
   claudeFeature,
   claudeSessionFeature,
-  portRulesFeature,
-  newPortsFeature,
+  control,
+  devicesFeature,
+  devServersFeature,
+  digestFeature,
+  freePortsFeature,
+  hostPortsFeature,
+  knownFeature,
   memoryFeature,
+  newPortsFeature,
+  onboardingFeature,
+  overviewFeature,
+  ownersFeature,
+  portRulesFeature,
+  ports,
+  proxmoxFeature,
   remoteConnectorFeature,
-  accessFeature,
-  writeDevicesFeature,
+  reservationsFeature,
+  selfWatchFeature,
+  serviceDetailFeature,
   settingsFeature,
+  suggestionsFeature,
+  usageFeature,
+  worktreesFeature,
+  writeDevicesFeature,
 ];
+
+/** MODULES by `order`, then name (a test checks the numbers are unique). */
+export const FEATURES: FeatureModule[] = [...MODULES].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
 
 export const READ_ONLY = READ_ONLY_ANNOTATIONS;
 

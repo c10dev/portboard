@@ -47,7 +47,7 @@ test('forwardedAddr: one IP from X-Forwarded-For, else nothing; isTailnetAddr: t
     assert.equal(forwardedAddr(req('127.0.0.1', { 'x-forwarded-for': bad })), null, JSON.stringify(bad));
   }
   assert.equal(forwardedAddr(req('127.0.0.1')), null);
-  for (const ip of ['100.64.0.1', '100.127.255.254', '100.64.10.1', 'fd7a:115c:a1e0::182b:1a3c']) assert.ok(isTailnetAddr(ip), ip);
+  for (const ip of ['100.64.0.1', '100.127.255.254', '100.64.10.1', 'fd7a:115c:a1e0::10:1']) assert.ok(isTailnetAddr(ip), ip);
   for (const ip of ['100.63.255.255', '100.128.0.1', '192.168.1.5', '127.0.0.1', 'fd00::1', 'not-an-ip']) assert.ok(!isTailnetAddr(ip), ip);
 });
 

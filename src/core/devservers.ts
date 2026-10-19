@@ -12,6 +12,7 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { run } from './exec.ts';
+import { t } from './i18n.ts';
 
 export const UNIT_PREFIX = 'pb-dev-';
 export const SCRIPTS = ['dev', 'start', 'preview', 'serve'] as const;
@@ -149,11 +150,11 @@ export function planStart(o: { dir: string; label: string; script: string; comma
 
 export async function startUnit(plan: StartPlan): Promise<{ ok: boolean; message: string }> {
   const r = await run('systemd-run', plan.args, 15_000);
-  return r.ok ? { ok: true, message: `${plan.unit} 시작 (:${plan.port}, ${plan.fw})` } : { ok: false, message: (r.stderr || r.stdout).trim().slice(0, 300) };
+  return r.ok ? { ok: true, message: t('devservers.started', { unit: plan.unit, port: plan.port, fw: plan.fw }) } : { ok: false, message: (r.stderr || r.stdout).trim().slice(0, 300) };
 }
 
 export async function stopUnit(unit: string): Promise<{ ok: boolean; message: string }> {
   if (!unit.startsWith(UNIT_PREFIX)) return { ok: false, message: 'not a Portboard dev server unit' };
   const r = await run('systemctl', ['--user', 'stop', unit], 20_000);
-  return r.ok ? { ok: true, message: `${unit} 중지` } : { ok: false, message: (r.stderr || r.stdout).trim().slice(0, 300) };
+  return r.ok ? { ok: true, message: t('devservers.stopped', { unit }) } : { ok: false, message: (r.stderr || r.stdout).trim().slice(0, 300) };
 }

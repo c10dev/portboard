@@ -3,12 +3,14 @@
 // 서비스 list, shell.css) and --col-wide (개발) on <html>. lib/shell-boot.js applies the same values before the first
 // paint (test/ui-settings.test.ts keeps the two copies equal); 보통 is the stylesheet's own width, so it sets nothing.
 
+import { t } from './i18n.js';
+
 export const LIST_WIDTH_KEY = 'pb.listWidth';
 
 /** id → [--col-max, --col-wide] in CSS px */
 export const LIST_WIDTHS = { narrow: [680, 808], normal: [808, 960], wide: [1080, 1280] };
 
-export const LIST_WIDTH_LABELS = { narrow: '좁게', normal: '보통', wide: '넓게' };
+export const LIST_WIDTH_LABELS = { narrow: t('listWidth.narrow'), normal: t('listWidth.normal'), wide: t('listWidth.wide') };
 
 /** The remembered width: 'narrow' | 'normal' | 'wide' (anything else, a missing or blocked storage: normal) */
 export function loadListWidth(storage = globalThis.localStorage) {

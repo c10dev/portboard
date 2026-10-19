@@ -3,6 +3,7 @@
 // from elsewhere (a right-click on its row, app.js). In dense rows the ⋯ only shows on hover or focus (shell.css).
 
 import { button, el } from './dom.js';
+import { t } from './i18n.js';
 
 /** items in menu order: the rest as given, then the danger ones; a null where the separator goes (none without both) */
 export function menuOrder(items) {
@@ -20,7 +21,7 @@ export function moreMenu({ ariaLabel, items, open = false, onToggle = () => {} }
   menu.open = open;
   menu.addEventListener('toggle', () => onToggle(menu.open));
   const summary = el('summary', null, '⋯');
-  summary.title = '더 보기';
+  summary.title = t('menu.more');
   summary.setAttribute('aria-label', ariaLabel);
   const panel = el('div', 'menu-panel');
   for (const it of menuOrder(items)) {

@@ -5,6 +5,7 @@
 import { tryJSON } from '../lib/api.js';
 import { modal } from '../lib/dialog.js';
 import { $, el, extLink } from '../lib/dom.js';
+import { locale, t } from '../lib/i18n.js';
 import { ago as agoText, lasting as lastingText } from '../lib/time.js';
 
 let status = null;
@@ -12,29 +13,32 @@ let status = null;
 const DIALOG = `
 <dialog id="swDialog" class="alerts-dlg sw-dlg">
   <header>
-    <strong>데이터 수집 상태</strong>
-    <button type="button" id="swClose">닫기</button>
+    <strong>${t('selfwatch.title')}</strong>
+    <button type="button" id="swClose">${t('common.close')}</button>
   </header>
-  <h4>수집기</h4>
+  <h4>${t('selfwatch.collectors')}</h4>
   <ul id="swList" class="alerts-list"></ul>
   <p id="swMemory" class="alerts-help" hidden></p>
-  <h4>토큰·키 만료</h4>
+  <h4>${t('selfwatch.expiryHead')}</h4>
   <ul id="swExpiry" class="alerts-list"></ul>
   <p id="swHelp" class="alerts-help"></p>
 </dialog>`;
 
-const ago = (iso) => agoText(iso, { suffix: ' 전', floor: true });
-const lasting = (iso) => lastingText(iso, '방금부터');
+const ago = (iso) => agoText(iso, { suffix: true, floor: true });
+const lasting = (iso) => lastingText(iso, t('selfwatch.sinceJustNow'));
+
+/** "실패 5분째" (failing for 5m) */
+const failing = (c) => (c.failingSince ? t('selfwatch.failingFor', { for: lasting(c.failingSince) }) : t('selfwatch.failing'));
 
 function collectorText(c) {
   const err = c.lastError ? ` · ${c.lastError}` : '';
   switch (c.view) {
-    case 'ok': return [`정상${c.lastOk ? ` · ${ago(c.lastOk)} 성공` : ''}`, 'ok'];
-    case 'down': return [`실패 ${c.failingSince ? lasting(c.failingSince) : ''}${c.alerted ? ' · 알림 보냄' : ''}${err}`, 'bad'];
-    case 'failing': return [`실패 ${c.failingSince ? lasting(c.failingSince) : ''}${err}`, 'warn'];
-    case 'setup': return [`설정 전${err}`, 'muted'];
-    case 'off': return [`꺼짐${err}`, 'muted'];
-    default: return ['첫 확인 전', 'muted'];
+    case 'ok': return [c.lastOk ? t('selfwatch.okAt', { ago: ago(c.lastOk) }) : t('selfwatch.ok'), 'ok'];
+    case 'down': return [`${failing(c)}${c.alerted ? ` · ${t('selfwatch.alerted')}` : ''}${err}`, 'bad'];
+    case 'failing': return [`${failing(c)}${err}`, 'warn'];
+    case 'setup': return [`${t('selfwatch.setup')}${err}`, 'muted'];
+    case 'off': return [`${t('selfwatch.off')}${err}`, 'muted'];
+    default: return [t('selfwatch.firstCheck'), 'muted'];
   }
 }
 
@@ -42,11 +46,11 @@ function expiryText(i) {
   const left = i.expiresAt ? Math.round((Date.parse(i.expiresAt) - Date.now()) / 86400000) : null;
   const note = i.note ? ` · ${i.note}` : '';
   switch (i.status) {
-    case 'never': return [`만료 없음${note}`, 'ok'];
-    case 'ok': return [`${left}일 남음 (${new Date(i.expiresAt).toLocaleDateString()})${note}`, 'ok'];
-    case 'soon': return [`곧 만료 · ${Math.max(0, left)}일 남음${note}`, 'warn'];
-    case 'expired': return [`만료됨${note}`, 'bad'];
-    default: return [`알 수 없음${note}`, 'muted'];
+    case 'never': return [`${t('selfwatch.never')}${note}`, 'ok'];
+    case 'ok': return [`${t('selfwatch.left', { n: left, date: new Date(i.expiresAt).toLocaleDateString(locale()) })}${note}`, 'ok'];
+    case 'soon': return [`${t('selfwatch.soon', { n: Math.max(0, left) })}${note}`, 'warn'];
+    case 'expired': return [`${t('selfwatch.expired')}${note}`, 'bad'];
+    default: return [`${t('selfwatch.unknown')}${note}`, 'muted'];
   }
 }
 
@@ -60,11 +64,11 @@ function paintChip() {
   b.hidden = false;
   b.classList.toggle('alarm', bad);
   b.classList.toggle('warn', !bad && (soon > 0 || !!mem));
-  $('swText').textContent = bad ? status.summary : mem ? '메모리 부족' : soon ? `토큰 ${soon}개 만료 임박` : status.summary;
+  $('swText').textContent = bad ? status.summary : mem ? t('selfwatch.chip.lowMem') : soon ? t('selfwatch.chip.expiring', { n: soon }) : status.summary;
   b.title = bad
-    ? `데이터 수집 · ${status.collectors.filter((c) => c.view === 'failing' || c.view === 'down').map((c) => c.label).join(', ')} 실패`
-    : mem ? `메모리 · ${mem.reasons.join(', ')} (사용 가능 ${mem.availablePct}%, 스왑 ${mem.swapPct}%) · 기기 탭에서 보기`
-    : '데이터 수집 · 모든 수집기 정상';
+    ? t('selfwatch.chip.failTitle', { labels: status.collectors.filter((c) => c.view === 'failing' || c.view === 'down').map((c) => c.label).join(', ') })
+    : mem ? t('selfwatch.chip.memTitle', { reasons: mem.reasons.join(', '), avail: mem.availablePct, swap: mem.swapPct })
+    : t('selfwatch.chip.okTitle');
 }
 
 function paintDialog() {
@@ -78,20 +82,18 @@ function paintDialog() {
   const mem = status.memory;
   const memLine = $('swMemory');
   memLine.hidden = !mem?.pressure;
-  if (mem?.pressure) memLine.replaceChildren(`메모리 부족: ${mem.reasons.join(', ')} · 사용 가능 ${mem.availablePct}% · 스왑 ${mem.swapPct}%. `, Object.assign(el('a', 'sw-runbook', '기기 탭 메모리 →'), { href: 'devices.html#memory' }));
-  if (!status.collectors.length) $('swList').replaceChildren(el('li', 'muted', '아직 보고한 수집기가 없어요 (시작 직후).'));
+  if (mem?.pressure) memLine.replaceChildren(t('selfwatch.memLine', { reasons: mem.reasons.join(', '), avail: mem.availablePct, swap: mem.swapPct }), Object.assign(el('a', 'sw-runbook', t('selfwatch.memLink')), { href: 'devices.html#memory' }));
+  if (!status.collectors.length) $('swList').replaceChildren(el('li', 'muted', t('selfwatch.noCollectors')));
   const items = status.expiry.items;
   $('swExpiry').replaceChildren(...(items.length ? items : [null]).map((i) => {
-    if (!i) return el('li', 'muted', status.expiry.checkedAt ? '만료를 확인할 토큰이 없어요.' : '아직 확인 전이에요.');
+    if (!i) return el('li', 'muted', status.expiry.checkedAt ? t('selfwatch.noTokens') : t('selfwatch.notChecked'));
     const li = el('li', 'alerts-item');
     const [text, tone] = expiryText(i);
     li.append(el('span', `dot ${tone}`), el('strong', null, i.name), el('span', `alerts-state ${tone}`, text));
-    if (i.runbook) li.append(extLink('교체 절차 ↗', i.runbook, 'sw-runbook'));
+    if (i.runbook) li.append(extLink(t('selfwatch.runbook'), i.runbook, 'sw-runbook'));
     return li;
   }));
-  $('swHelp').textContent =
-    `${status.checkEverySec / 60}분마다 확인해요. 수집기가 ${status.thresholdMin}분 넘게 계속 실패하면 다운 알림 채널로 한 번 알리고 (같은 수집기는 1시간에 한 번까지), ` +
-    '다시 되면 알려요. 토큰은 만료 7일 전에 한 번 알려요. 설정 전·꺼진 수집기는 알리지 않아요.';
+  $('swHelp').textContent = t('selfwatch.help', { every: status.checkEverySec / 60, threshold: status.thresholdMin });
 }
 
 async function refresh() {
@@ -113,7 +115,7 @@ function init() {
     b.id = 'swChip';
     b.type = 'button';
     b.hidden = true;
-    b.setAttribute('aria-label', '데이터 수집 상태');
+    b.setAttribute('aria-label', t('selfwatch.title'));
     b.append(el('span', 'sw-dot'), el('span', 'sw-text'));
     b.lastElementChild.id = 'swText';
     if (controls.id === 'shellFoot') controls.insertBefore(b, $('obChip')?.nextSibling ?? controls.firstChild);

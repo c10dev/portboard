@@ -13,6 +13,7 @@ import { modal } from './dialog.js';
 import { $, el, h } from './dom.js';
 import { rank, segments, words } from './fuzzy.js';
 import { ariaKeys, isMacPlatform, keyLabel, keysOf, on, SHORTCUTS } from './keys.js';
+import { t } from './i18n.js';
 
 const RECENT_KEY = 'pb.palette.recent';
 const MAX_RECENT = 8;
@@ -53,22 +54,22 @@ function pushRecent(key) {
 const PALETTE_KEYS = SHORTCUTS.find((s) => s.id === 'palette');
 
 const DIALOG = `
-<dialog id="palette" class="palette" aria-label="검색·명령">
+<dialog id="palette" class="palette" aria-label="${t('palette.name')}">
   <div class="pal-head">
-    <button type="button" id="palBack" class="pal-back" aria-label="뒤로" hidden>←</button>
+    <button type="button" id="palBack" class="pal-back" aria-label="${t('palette.back')}" hidden>←</button>
     <input id="palQ" type="search" autocomplete="off" spellcheck="false" enterkeyhint="go" role="combobox" aria-expanded="true" aria-controls="palList" aria-autocomplete="list">
-    <button type="button" id="palClose" class="pal-close">닫기</button>
+    <button type="button" id="palClose" class="pal-close">${t('common.close')}</button>
   </div>
   <div id="palCtx" class="pal-ctx" hidden></div>
-  <ul id="palList" class="pal-list" role="listbox" aria-label="결과"></ul>
-  <p class="pal-foot"><kbd>↑</kbd><kbd>↓</kbd> 이동 · <kbd>Enter</kbd> 실행 · <kbd>→</kbd> 다른 동작 · <kbd>Esc</kbd> 닫기</p>
+  <ul id="palList" class="pal-list" role="listbox" aria-label="${t('palette.results')}"></ul>
+  <p class="pal-foot">${t('palette.foot')}</p>
 </dialog>`;
 
 /**
  * Wire the palette on this page. commands(): items that need no fetch (tabs, 새로고침); load(): the fetched items;
  * kinds: { kind: label } in the order an empty query lists them; verbs: see the top.
  */
-export function initPalette({ commands = () => [], load = async () => [], kinds = {}, verbs = [], placeholder = '검색하거나 명령 입력' }) {
+export function initPalette({ commands = () => [], load = async () => [], kinds = {}, verbs = [], placeholder = t('palette.placeholder') }) {
   const link = el('link');
   link.rel = 'stylesheet';
   link.href = new URL('../palette.css', import.meta.url).href;
@@ -147,14 +148,14 @@ export function initPalette({ commands = () => [], load = async () => [], kinds 
       const item = byId.get(id);
       const action = actionKey ? item?.actions.find((a) => a.key === actionKey) : null;
       if (!item || (actionKey && !action)) continue;
-      out.push({ item, action, hits: [], group: '최근' });
+      out.push({ item, action, hits: [], group: t('palette.recent') });
       if (out.length >= SHOW_RECENT) break;
     }
     for (const [kind, label] of Object.entries(kinds)) {
       const of = all.filter((it) => it.kind === kind);
       const shown = kind === 'cmd' ? of : of.slice(0, PER_KIND);
       out.push(...shown.map((item) => ({ item, hits: [], group: label })));
-      if (of.length > shown.length) out.push({ more: `${label} ${of.length - shown.length}개 더 · 입력해서 찾아요`, group: label });
+      if (of.length > shown.length) out.push({ more: t('palette.more', { kind: label, n: of.length - shown.length }), group: label });
     }
     return out;
   }
@@ -167,7 +168,7 @@ export function initPalette({ commands = () => [], load = async () => [], kinds 
     const ctx = $('palCtx');
     $('palBack').hidden = ctx.hidden = !focus;
     if (focus) ctx.replaceChildren(el('span', 'pal-kind', kinds[focus.kind] ?? ''), el('strong', null, focus.title));
-    input.placeholder = focus ? '동작 검색' : placeholder;
+    input.placeholder = focus ? t('palette.searchActions') : placeholder;
 
     const es = entries();
     rows = es.filter((e) => e.item);
@@ -184,15 +185,15 @@ export function initPalette({ commands = () => [], load = async () => [], kinds 
       nodes.push(row(e, n++));
     }
     if (!rows.length) nodes.push(emptyRow());
-    if (loading && !loadedAt) nodes.push(el('li', 'pal-more', '포트·기기·워크트리를 불러오는 중…'));
+    if (loading && !loadedAt) nodes.push(el('li', 'pal-more', t('palette.loading')));
     list.replaceChildren(...nodes);
     mark();
   }
 
   function emptyRow() {
     const li = el('li', 'pal-empty');
-    li.append(el('strong', null, `"${input.value.trim()}"에 맞는 ${focus ? '동작이' : '항목이'} 없어요`));
-    if (!focus) li.append(el('span', null, '포트 번호·이름·프로젝트, 기기 이름·IP, 브랜치로 찾아요. ㅍㅌ처럼 초성도 돼요.'));
+    li.append(el('strong', null, focus ? t('palette.none.actions', { q: input.value.trim() }) : t('palette.none.items', { q: input.value.trim() })));
+    if (!focus) li.append(el('span', null, t('palette.none.help')));
     return li;
   }
 
@@ -213,7 +214,7 @@ export function initPalette({ commands = () => [], load = async () => [], kinds 
     if (action && !e.actionHits) li.append(el('span', 'pal-verb', action.label));
     else if (!focus && item.actions.length > 1) {
       li.append(h('button', {
-        type: 'button', class: 'pal-drill', title: '다른 동작', 'aria-label': `${item.title}: 다른 동작`, tabindex: '-1',
+        type: 'button', class: 'pal-drill', title: t('palette.drill'), 'aria-label': t('palette.drill.aria', { title: item.title }), tabindex: '-1',
         onclick: (ev) => { ev.stopPropagation(); drill(item); },
       }, '›'));
     } else if (!focus && item.actions[0] && !item.keys?.length) {
@@ -301,7 +302,7 @@ export function initPalette({ commands = () => [], load = async () => [], kinds 
   // The shell's pages carry the button (src/core/shell.ts): wire it, and say the platform's key (Ctrl K off a Mac)
   const mac = isMacPlatform();
   const [main, ...alts] = keysOf(PALETTE_KEYS, mac).map((k) => keyLabel(k, mac));
-  const keyTitle = `검색·명령 (${[main, ...alts].join(' 또는 ')})`;
+  const keyTitle = t('palette.btn.title', { keys: [main, ...alts].join(` ${t('keys.or')} `) });
   const existing = $('paletteBtn');
   if (existing) {
     existing.addEventListener('click', () => open());
@@ -312,7 +313,7 @@ export function initPalette({ commands = () => [], load = async () => [], kinds 
   const controls = document.querySelector('.top .controls');
   if (controls && !existing) {
     controls.prepend(h('button', {
-      type: 'button', id: 'paletteBtn', class: 'palette-btn', title: keyTitle, 'aria-label': '검색·명령',
+      type: 'button', id: 'paletteBtn', class: 'palette-btn', title: keyTitle, 'aria-label': t('palette.name'),
       'aria-keyshortcuts': ariaKeys(PALETTE_KEYS, mac), onclick: () => open(),
     }, el('span', 'pb-ico', '🔍'), el('kbd', null, main)));
   }

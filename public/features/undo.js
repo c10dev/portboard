@@ -2,6 +2,7 @@
 // off apply at once, and a 되돌리기 toast (lib/toast.js) re-posts the previous prefs exactly. Stop, restart, worktree
 // removal and tailnet 공개 keep their confirm. Used by the 서비스 tab's savePrefs (app.js) and by features/alerts.js.
 
+import { t } from '../lib/i18n.js';
 import { toast } from '../lib/toast.js';
 
 /**
@@ -12,13 +13,13 @@ import { toast } from '../lib/toast.js';
 export function prefsUndo(before, patch) {
   if (!before || !patch) return null;
   const said = [];
-  if (patch.pinned === false && before.pinned) said.push('고정을 풀었어요');
-  if (patch.hidden === true && !before.hidden) said.push('숨겼어요');
-  if (patch.alert === false && before.alert) said.push('다운 알림을 껐어요');
+  if (patch.pinned === false && before.pinned) said.push(t('undo.unpinned'));
+  if (patch.hidden === true && !before.hidden) said.push(t('undo.hidden'));
+  if (patch.alert === false && before.alert) said.push(t('undo.alertOff'));
   if (patch.label !== undefined && before.label) {
     const next = typeof patch.label === 'string' ? patch.label.trim() : '';
-    if (!next) said.push(`이름 "${before.label}"을(를) 지웠어요`);
-    else if (next !== before.label) said.push(`이름을 "${next}"(으)로 바꿨어요`);
+    if (!next) said.push(t('undo.labelCleared', { name: before.label }));
+    else if (next !== before.label) said.push(t('undo.renamed', { name: next }));
   }
   if (!said.length) return null;
   const prev = {};
@@ -35,9 +36,9 @@ export function offerUndo(key, u, repost, show = toast) {
   return show(u.text, false, {
     key: `undo:${key}:${Object.keys(u.prev).sort().join(',')}`,
     action: {
-      label: '되돌리기',
+      label: t('undo.action'),
       onClick: async () => {
-        if ((await repost(u.prev)) !== false) show('되돌렸어요');
+        if ((await repost(u.prev)) !== false) show(t('undo.done'));
       },
     },
   });

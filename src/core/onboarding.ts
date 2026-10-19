@@ -28,6 +28,7 @@ import { loadWriteDevices, ownerFromStatus } from './access.ts';
 import { runShared } from './exec.ts';
 import { site, SITE, tildePath, type Site } from './site.ts';
 import { connectorView } from '../remote/admin.ts';
+import { t } from './i18n.ts';
 
 const DAY = 86_400_000;
 const DOCS = 'https://github.com/c10dev/portboard/blob/main/docs';
@@ -96,7 +97,7 @@ export interface Item {
   key: string;
   title: string;
   status: ItemStatus;
-  /** one line, Korean */
+  /** one line, in the language of the request (i18n.ts) */
   detail: string;
   /** the next step; null once it's ok */
   action: Action | null;
@@ -108,7 +109,7 @@ export interface Checklist {
   items: Item[];
   ok: number;
   total: number;
-  /** "설정 7/9" */
+  /** "설정 7/9" / "Setup 7/9" */
   summary: string;
 }
 
@@ -118,189 +119,194 @@ const command = (text: string, label?: string): Action => ({ kind: 'command', te
 export const MENUBAR_FRESH_MS = 7 * DAY;
 
 function alertItem(f: Facts): Item {
-  const base = { key: 'alerts', title: '알림 채널' };
-  if (f.alertChannel.length) return { ...base, status: 'ok', detail: `${f.alertChannel.join(' · ')}로 다운 알림을 보내요`, action: null };
+  const base = { key: 'alerts', title: t('setup.alerts.title') };
+  if (f.alertChannel.length) return { ...base, status: 'ok', detail: t('setup.alerts.ok', { kinds: f.alertChannel.join(' · ') }), action: null };
   return {
     ...base,
     status: 'missing',
-    detail: 'compute-pool 알림 채널(ntfy·webhook)이 없어서 다운 알림을 못 보내요',
+    detail: t('setup.alerts.missing'),
     action: command(
-      'umask 077; t=$(openssl rand -hex 16); printf \'{"ntfy":{"topic":"%s"}}\\n\' "$t" > ~/.local/state/compute-pool/alerts.json; echo "ntfy 앱에서 구독할 토픽: $t"',
-      'ntfy 토픽 만들기',
+      `umask 077; t=$(openssl rand -hex 16); printf '{"ntfy":{"topic":"%s"}}\\n' "$t" > ~/.local/state/compute-pool/alerts.json; echo "${t('setup.alerts.topicEcho')}: $t"`,
+      t('setup.alerts.action'),
     ),
   };
 }
 
 function proxmoxItem(f: Facts, now: number): Item {
-  const base = { key: 'proxmox', title: 'Proxmox API 토큰' };
+  const base = { key: 'proxmox', title: t('setup.proxmox.title') };
   const p = f.proxmox;
-  const doc = link(`${DOCS}/runbooks/proxmox-token.md`, '토큰 만드는 법');
-  if (!p.configured && !p.error) return { ...base, status: 'missing', detail: `proxmox.json이 없어서 ${SITE.pve.node}의 VM·CT를 못 봐요`, action: doc };
-  if (p.error) return { ...base, status: 'warn', detail: `proxmox.json을 읽을 수 없어요: ${p.error}`, action: doc };
-  if (p.looseMode) return { ...base, status: 'warn', detail: 'proxmox.json을 다른 사용자도 읽을 수 있어요', action: command('chmod 600 ~/.config/portboard/proxmox.json') };
+  const doc = link(`${DOCS}/runbooks/proxmox-token.md`, t('setup.proxmox.doc'));
+  if (!p.configured && !p.error) return { ...base, status: 'missing', detail: t('setup.proxmox.missing', { node: SITE.pve.node }), action: doc };
+  if (p.error) return { ...base, status: 'warn', detail: t('setup.proxmox.unreadable', { error: p.error }), action: doc };
+  if (p.looseMode) return { ...base, status: 'warn', detail: t('setup.proxmox.loose'), action: command('chmod 600 ~/.config/portboard/proxmox.json') };
   const c = p.collector;
-  if (c && (c.view === 'failing' || c.view === 'down')) return { ...base, status: 'warn', detail: `Proxmox API 호출이 실패해요${c.lastError ? ` (${c.lastError})` : ''}`, action: doc };
+  if (c && (c.view === 'failing' || c.view === 'down')) return { ...base, status: 'warn', detail: c.lastError ? t('setup.proxmox.failingWhy', { error: c.lastError }) : t('setup.proxmox.failing'), action: doc };
   const e = p.expiry;
-  if (e?.status === 'expired') return { ...base, status: 'warn', detail: `토큰이 만료됐어요. ${SITE.pve.node}에서 새로 만들고 proxmox.json을 바꾸세요`, action: doc };
+  if (e?.status === 'expired') return { ...base, status: 'warn', detail: t('setup.proxmox.expired', { node: SITE.pve.node }), action: doc };
   if (e?.status === 'soon') {
     const left = e.expiresAt ? Math.max(0, Math.ceil((Date.parse(e.expiresAt) - now) / DAY)) : null;
-    return { ...base, status: 'warn', detail: `토큰이 곧 만료돼요${left !== null ? ` (${left}일 남음)` : ''}`, action: doc };
+    return { ...base, status: 'warn', detail: left !== null ? t('setup.proxmox.soonDays', { n: left }) : t('setup.proxmox.soon'), action: doc };
   }
   const expiry =
-    e?.status === 'never' ? ' · 만료 없음'
-    : e?.status === 'ok' && e.expiresAt ? ` · ${Math.ceil((Date.parse(e.expiresAt) - now) / DAY)}일 남음`
-    : e?.status === 'unknown' ? ' · 만료일은 확인 못 함'
+    e?.status === 'never' ? t('setup.proxmox.noExpiry')
+    : e?.status === 'ok' && e.expiresAt ? t('setup.proxmox.daysLeft', { n: Math.ceil((Date.parse(e.expiresAt) - now) / DAY) })
+    : e?.status === 'unknown' ? t('setup.proxmox.expiryUnknown')
     : '';
-  return { ...base, status: 'ok', detail: `연결됨${expiry}`, action: null };
+  return { ...base, status: 'ok', detail: `${t('setup.connected')}${expiry ? ` · ${expiry}` : ''}`, action: null };
 }
 
+/** A collector's lastError code → its catalog key */
 const SSH_ERROR: Record<string, string> = {
-  'no-key': '읽기 전용 키(~/.ssh/portboard_ro)가 없어요',
-  'not-installed': '키가 아직 그쪽에 등록되지 않았어요',
-  'no-user': 'Windows 사용자 이름이 설정되지 않았어요',
-  'host-key': 'known_hosts의 호스트 키가 없거나 달라요',
-  'bad-config': '설정 파일이 잘못됐어요',
+  'no-key': 'setup.ssh.noKey',
+  'not-installed': 'setup.ssh.notInstalled',
+  'no-user': 'setup.ssh.noUser',
+  'host-key': 'setup.ssh.hostKey',
+  'bad-config': 'setup.ssh.badConfig',
 };
 
 function sshItem(key: string, title: string, what: string, c: CollectorFact | null, setupUrl: string): Item {
   const base = { key, title };
-  const setup = link(setupUrl, '설치 방법');
-  if (!c || c.view === 'pending') return { ...base, status: 'warn', detail: '아직 확인 전이에요 (대시보드가 시작된 직후)', action: null };
-  if (c.view === 'ok') return { ...base, status: 'ok', detail: `${what}를 SSH로 읽고 있어요`, action: null };
-  if (c.view === 'off') return { ...base, status: 'ok', detail: '꺼 둠 (설정에서 enabled: false)', action: null };
-  const why = (c.lastError && SSH_ERROR[c.lastError]) ?? (c.lastError ? `실패 (${c.lastError})` : '실패');
-  if (c.view === 'setup') return { ...base, status: 'missing', detail: `${what}를 못 읽어요: ${why}`, action: setup };
-  return { ...base, status: 'warn', detail: `${what}를 읽다가 실패하고 있어요: ${why}`, action: setup };
+  const setup = link(setupUrl, t('setup.ssh.howTo'));
+  if (!c || c.view === 'pending') return { ...base, status: 'warn', detail: t('setup.ssh.pending'), action: null };
+  if (c.view === 'ok') return { ...base, status: 'ok', detail: t('setup.ssh.ok', { what }), action: null };
+  if (c.view === 'off') return { ...base, status: 'ok', detail: t('setup.ssh.off'), action: null };
+  const code = c.lastError && SSH_ERROR[c.lastError];
+  const why = code ? t(code) : c.lastError ? t('setup.ssh.failedCode', { code: c.lastError }) : t('setup.ssh.failed');
+  if (c.view === 'setup') return { ...base, status: 'missing', detail: t('setup.ssh.setup', { what, why }), action: setup };
+  return { ...base, status: 'warn', detail: t('setup.ssh.failing', { what, why }), action: setup };
 }
 
 function macItem(f: Facts): Item {
-  const base = { key: 'mac-agent', title: 'Mac 에이전트' };
-  const doc = link('https://github.com/c10dev/compute-pool/blob/main/docs/install.md#mac-pull-worker-opportunistic', 'compute-pool 설치 문서');
+  const base = { key: 'mac-agent', title: t('setup.mac.title') };
+  const doc = link(`${DOCS}/integrations/compute-pool.md#mac-agent`, t('setup.mac.doc'));
   const m = f.macAgent;
-  if (!m) return { ...base, status: 'warn', detail: 'compute-pool 모니터가 응답하지 않아 확인 못 했어요', action: command('systemctl --user status compute-pool-monitor') };
-  if (!m.present) return { ...base, status: 'missing', detail: 'compute-pool에 Mac 에이전트가 없어요', action: doc };
-  if (!m.connected) return { ...base, status: 'warn', detail: `Mac 에이전트가 연결돼 있지 않아요${m.state ? ` (${m.state})` : ''}`, action: command(`cpool agent --coordinator ${(f.site ?? SITE).host} --host mac`, 'Mac에서 실행') };
-  return { ...base, status: 'ok', detail: '연결됨', action: null };
+  if (!m) return { ...base, status: 'warn', detail: t('setup.mac.noMonitor'), action: command('systemctl --user status compute-pool-monitor') };
+  if (!m.present) return { ...base, status: 'missing', detail: t('setup.mac.missing'), action: doc };
+  if (!m.connected) return { ...base, status: 'warn', detail: m.state ? t('setup.mac.disconnectedState', { state: m.state }) : t('setup.mac.disconnected'), action: command(`cpool agent --coordinator ${(f.site ?? SITE).host} --host mac`, t('setup.mac.run')) };
+  return { ...base, status: 'ok', detail: t('setup.connected'), action: null };
 }
 
 function menubarItem(f: Facts, now: number): Item {
-  const base = { key: 'menubar', title: 'Mac 메뉴바' };
+  const base = { key: 'menubar', title: t('setup.menubar.title') };
   // The native Mac app (mac-app/, docs/mac-app/) replaces the SwiftBar plugin: build it from the main checkout
   const s = f.site ?? SITE;
   // rsync's remote path is relative to the remote home when it starts there (~/x → x)
   const from = tildePath(s.checkout).replace(/^~\//, '');
   const install = command(
     `rsync -a --exclude node_modules --exclude .git ${s.user}@${s.dnsName}:${from}/ ~/portboard/ && ~/portboard/mac-app/build.sh --install`,
-    'Mac에서 앱 빌드·설치',
+    t('setup.menubar.install'),
   );
-  if (f.menubarSeenAt !== null && now - f.menubarSeenAt < MENUBAR_FRESH_MS) return { ...base, status: 'ok', detail: 'Mac 앱(또는 메뉴바 플러그인)이 대시보드를 읽고 있어요', action: null };
-  if (f.menubarSeenAt !== null) return { ...base, status: 'warn', detail: `Mac 앱·메뉴바 요청이 ${Math.floor((now - f.menubarSeenAt) / DAY)}일째 없어요`, action: install };
-  return { ...base, status: 'missing', detail: 'Mac 앱이나 메뉴바 플러그인의 요청을 본 적이 없어요. Mac에서 Portboard 앱을 빌드해 설치하세요', action: install };
+  if (f.menubarSeenAt !== null && now - f.menubarSeenAt < MENUBAR_FRESH_MS) return { ...base, status: 'ok', detail: t('setup.menubar.ok'), action: null };
+  if (f.menubarSeenAt !== null) return { ...base, status: 'warn', detail: t('setup.menubar.stale', { n: Math.floor((now - f.menubarSeenAt) / DAY) }), action: install };
+  return { ...base, status: 'missing', detail: t('setup.menubar.missing'), action: install };
 }
 
 /** 승인 코드 만들기 is on the 설정 tab (POST /api/remote/approval-code); `node src/remote.ts approve` still works on the server. */
-const APPROVE = link('settings.html#remote', '승인 코드 만들기 (설정 탭)');
+const approve = () => link('settings.html#remote', t('setup.remote.approve'));
 
 function remoteItem(f: Facts): Item {
-  const base = { key: 'remote', title: 'claude.ai 커넥터' };
+  const base = { key: 'remote', title: t('setup.remote.title') };
   const r = f.remote;
-  const doc = link(`${DOCS}/remote-mcp/README.md#going-public-not-done`, '연결 방법');
-  if (r.unreadable) return { ...base, status: 'warn', detail: 'remote.json을 읽을 수 없어요', action: doc };
-  if (r.attention) return { ...base, status: 'warn', detail: `연결 ${r.attention}개가 확인이 필요해요 (만료 임박·응답 없음·만료됨). 설정 탭에서 다시 연결하세요`, action: APPROVE };
-  if (r.liveTokens > 0) return { ...base, status: 'ok', detail: `연결된 클라이언트 ${r.clients}개`, action: null };
-  if (r.clients > 0) return { ...base, status: 'warn', detail: '등록된 클라이언트는 있지만 유효한 토큰이 없어요 (다시 연결하세요)', action: APPROVE };
+  const doc = link(`${DOCS}/remote-mcp/README.md#going-public-not-done`, t('setup.remote.doc'));
+  if (r.unreadable) return { ...base, status: 'warn', detail: t('setup.remote.unreadable'), action: doc };
+  if (r.attention) return { ...base, status: 'warn', detail: t('setup.remote.attention', { n: r.attention }), action: approve() };
+  if (r.liveTokens > 0) return { ...base, status: 'ok', detail: t('setup.remote.ok', { n: r.clients }), action: null };
+  if (r.clients > 0) return { ...base, status: 'warn', detail: t('setup.remote.noToken'), action: approve() };
   // Public already: what is left is the approval code and adding the connector in claude.ai
   if (r.publicUrl) {
     return {
       ...base,
       status: 'missing',
-      detail: '공개 주소는 있지만 연결된 클라이언트가 없어요. 승인 코드를 만들고 claude.ai 설정 → 커넥터 → 커스텀 커넥터 추가에서 연결하세요',
-      action: APPROVE,
+      detail: t('setup.remote.public'),
+      action: approve(),
     };
   }
-  return { ...base, status: 'missing', detail: '아직 claude.ai나 ChatGPT에 연결하지 않았어요', action: doc };
+  return { ...base, status: 'missing', detail: t('setup.remote.missing'), action: doc };
 }
 
 function claudeCodeItem(f: Facts): Item {
   const base = { key: 'claude-code', title: 'Claude Code MCP' };
   const add = command(`claude plugin marketplace add ${(f.site ?? SITE).checkout} && claude plugin install portboard@portboard`);
-  if (!f.claudeCode) return { ...base, status: 'warn', detail: '~/.claude.json이 없어서 확인 못 했어요', action: add };
-  if (f.claudeCode.plugin) return { ...base, status: 'ok', detail: 'portboard 플러그인이 켜져 있어요 (MCP·포트 안내 훅·스킬)', action: null };
-  if (f.claudeCode.registered) return { ...base, status: 'ok', detail: 'portboard MCP 서버가 등록돼 있어요 (플러그인으로 바꾸면 포트 안내 훅도 생겨요)', action: null };
-  return { ...base, status: 'missing', detail: 'Claude Code에 portboard MCP 서버가 없어요', action: add };
+  if (!f.claudeCode) return { ...base, status: 'warn', detail: t('setup.claude.unknown'), action: add };
+  if (f.claudeCode.plugin) return { ...base, status: 'ok', detail: t('setup.claude.plugin'), action: null };
+  if (f.claudeCode.registered) return { ...base, status: 'ok', detail: t('setup.claude.registered'), action: null };
+  return { ...base, status: 'missing', detail: t('setup.claude.missing'), action: add };
 }
 
 function usageItem(f: Facts): Item {
-  const base = { key: 'usage', title: '쓰기 시작하기' };
+  const base = { key: 'usage', title: t('setup.usage.title') };
   const u = f.usage;
   const parts = [
-    u.pinned && `고정 ${u.pinned}`,
-    u.labels && `이름 ${u.labels}`,
-    u.alerts + u.deviceAlerts && `알림 ${u.alerts + u.deviceAlerts}`,
-    u.names && `LAN 이름 ${u.names}`,
+    u.pinned && t('setup.usage.pinned', { n: u.pinned }),
+    u.labels && t('setup.usage.labels', { n: u.labels }),
+    u.alerts + u.deviceAlerts && t('setup.usage.alerts', { n: u.alerts + u.deviceAlerts }),
+    u.names && t('setup.usage.lanNames', { n: u.names }),
   ].filter(Boolean);
   if (parts.length) return { ...base, status: 'ok', detail: parts.join(' · '), action: null };
   return {
     ...base,
     status: 'missing',
-    detail: '고정·이름·알림이 하나도 없어요. 서비스 행의 ⋯ 메뉴에서 자주 쓰는 포트를 고정하거나 🔔 알림을 켜 보세요',
-    action: link(`${DOCS}/dashboard.md`, '대시보드 안내'),
+    detail: t('setup.usage.missing'),
+    action: link(`${DOCS}/dashboard.md`, t('setup.usage.doc')),
   };
 }
 
 const PERSONAL_OS = /^(macos|ios|android|windows)$/i;
 
 function writeDevicesItem(f: Facts): Item {
-  const base = { key: 'write-devices', title: '쓰기 허용 기기' };
+  const base = { key: 'write-devices', title: t('setup.write.title') };
   const w = f.writeDevices;
-  const doc = link(`${DOCS}/security.md#write-devices`, '쓰기 허용 기기');
+  const doc = link(`${DOCS}/security.md#write-devices`, t('setup.write.title'));
   if (w.error) {
     return {
       ...base,
       status: 'warn',
-      detail: `${w.path}을(를) 쓸 수 없어서 https 주소에서는 아무것도 바꿀 수 없어요: ${w.error}`,
+      detail: t('setup.write.error', { path: w.path, error: w.error }),
       action: /600/.test(w.error) ? command(`chmod 600 ${w.path}`) : doc,
     };
   }
   const devices = w.ownerDevices ?? [];
   if (w.list) {
     const others = devices.filter((d) => !w.list!.some((e) => e.toLowerCase().split('.')[0] === d.name.toLowerCase())).length;
-    return { ...base, status: 'ok', detail: `https 주소에서는 ${w.list.join(', ')}만 바꿀 수 있어요${others ? ` (다른 소유자 기기 ${others}대는 읽기 전용)` : ''}`, action: null };
+    const list = w.list.join(', ');
+    return { ...base, status: 'ok', detail: others ? t('setup.write.okOthers', { list, n: others }) : t('setup.write.ok', { list }), action: null };
   }
   const names = devices.map((d) => d.name);
-  const who = w.ownerDevices === null ? '소유자 계정으로 로그인한 모든 기기(서버 포함)가' : `소유자 계정으로 로그인한 기기 ${names.length}대(${names.join(', ')})가 모두`;
+  const who = w.ownerDevices === null ? t('setup.write.whoAll') : t('setup.write.whoSome', { n: names.length, names: names.join(', ') });
   const picks = devices.filter((d) => d.os && PERSONAL_OS.test(d.os)).map((d) => d.name.replace(/[^A-Za-z0-9-]/g, ''));
-  const json = JSON.stringify({ writeDevices: picks.length ? picks : ['<노트북 이름>', '<휴대폰 이름>'] });
+  const json = JSON.stringify({ writeDevices: picks.length ? picks : [t('setup.write.laptop'), t('setup.write.phone')] });
   return {
     ...base,
     status: 'warn',
-    detail: `쓰기 가능한 기기 제한 안 됨 — ${who} https 주소에서 서비스를 멈추고 공개할 수 있어요. 쓸 기기만 access.json의 writeDevices에 적으세요`,
-    action: command(`umask 077; printf '%s\\n' '${json}' > ${w.path}`, picks.length ? '개인 기기만 허용하기' : '허용 기기 정하기'),
+    detail: t('setup.write.open', { who }),
+    action: command(`umask 077; printf '%s\\n' '${json}' > ${w.path}`, picks.length ? t('setup.write.personal') : t('setup.write.choose')),
   };
 }
 
 /** The items that hold a secret link to its rotation runbook (#31); the connector also to where its tokens are managed. */
-const LINKS: Record<string, { href: string; label: string }[]> = {
-  alerts: [{ href: RUNBOOKS.ntfy, label: 'ntfy 토픽 교체 절차' }],
-  proxmox: [{ href: RUNBOOKS.proxmox, label: '토큰 교체 절차' }],
-  'pve-ports': [{ href: RUNBOOKS.ssh, label: '키 교체 절차' }],
-  'win-ports': [{ href: RUNBOOKS.ssh, label: '키 교체 절차' }],
+const links = (): Record<string, { href: string; label: string }[]> => ({
+  alerts: [{ href: RUNBOOKS.ntfy, label: t('setup.links.ntfy') }],
+  proxmox: [{ href: RUNBOOKS.proxmox, label: t('setup.links.token') }],
+  'pve-ports': [{ href: RUNBOOKS.ssh, label: t('setup.links.key') }],
+  'win-ports': [{ href: RUNBOOKS.ssh, label: t('setup.links.key') }],
   'write-devices': [
-    { href: 'settings.html#write-devices', label: '설정 탭에서 고르기' },
-    { href: `${DOCS}/security.md#write-devices`, label: '쓰기 허용 기기 설명' },
+    { href: 'settings.html#write-devices', label: t('setup.links.pick') },
+    { href: `${DOCS}/security.md#write-devices`, label: t('setup.links.writeDoc') },
   ],
   remote: [
-    { href: 'settings.html#remote', label: '승인 코드·토큰 관리 (설정 탭)' },
-    { href: RUNBOOKS.remote, label: '토큰 교체 절차' },
+    { href: 'settings.html#remote', label: t('setup.links.remote') },
+    { href: RUNBOOKS.remote, label: t('setup.links.token') },
   ],
-};
+});
 
 export function assess(f: Facts, now = Date.now()): Checklist {
+  const LINKS = links();
+  const node = SITE.pve.node;
   const items = [
     alertItem(f),
     proxmoxItem(f, now),
-    sshItem('pve-ports', `${SITE.pve.node}·CT 읽기 키`, `${SITE.pve.node}과 컨테이너 포트`, f.pvePorts, PVE_SETUP_URL),
-    sshItem('win-ports', 'Windows 읽기 키', '데스크톱 Windows 포트', f.winPorts, WIN_SETUP_URL),
+    sshItem('pve-ports', t('setup.pvePorts.title', { node }), t('setup.pvePorts.what', { node }), f.pvePorts, PVE_SETUP_URL),
+    sshItem('win-ports', t('setup.winPorts.title'), t('setup.winPorts.what'), f.winPorts, WIN_SETUP_URL),
     macItem(f),
     menubarItem(f, now),
     remoteItem(f),
@@ -309,7 +315,7 @@ export function assess(f: Facts, now = Date.now()): Checklist {
     usageItem(f),
   ].map((i) => (LINKS[i.key] ? { ...i, links: LINKS[i.key] } : i));
   const ok = items.filter((i) => i.status === 'ok').length;
-  return { items, ok, total: items.length, summary: `설정 ${ok}/${items.length}` };
+  return { items, ok, total: items.length, summary: t('setup.summary', { ok, total: items.length }) };
 }
 
 // ---------- reading the facts ----------

@@ -10,6 +10,7 @@ import type { FeatureModule } from './types.ts';
 
 export const hostPortsFeature: FeatureModule = {
   name: 'host-ports',
+  order: 1000,
   jobs: [
     {
       name: 'host-ports',

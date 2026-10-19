@@ -2,6 +2,7 @@
   "host": "devbox",
   "tailnet": "example.ts.net",
   "user": "dev",
+  "locale": "en",
   "checkout": "/home/dev/projects/portboard",
   "reposRoot": ["~/projects"],
   "poolUrl": "http://127.0.0.1:7720",

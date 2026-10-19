@@ -30,7 +30,7 @@ test('ruleFacts: matched rules in order, then where the name and the new-port no
 test('설정: the 포트 규칙 section of the modal (with write controls) and its menu item; the inspector links to it', () => {
   const modal = read('public/features/settings-modal.js');
   assert.match(modal, /id: 'port-rules', write: true, body: 'rulesBody', script: 'port-rules\.js'/);
-  assert.match(read('public/lib/settings-route.js'), /'port-rules': '포트 규칙'/);
+  assert.match(read('public/lib/settings-route.js'), /'port-rules': t\('settings\.section\.port-rules'\)/);
   assert.match(read('public/features/port-inspector.js'), /settings\.html#port-rules/);
 });
 

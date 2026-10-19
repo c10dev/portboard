@@ -4,6 +4,7 @@
 
 import { dl, el } from '../lib/dom.js';
 import { gib, pct } from '../lib/format.js';
+import { t } from '../lib/i18n.js';
 import { paths, sparkline, svg } from '../lib/sparkline.js';
 
 /** Last answers per timeframe */
@@ -15,8 +16,8 @@ export async function loadTrends(timeframe = 'hour', { force = false } = {}) {
   if (!force && cache[timeframe] && Date.now() - cache[timeframe].fetched < 55_000) return cache[timeframe];
   loading[timeframe] = fetch(`/api/proxmox/trends?timeframe=${timeframe}`)
     .then((r) => (r.ok ? r.json() : null))
-    .then((t) => {
-      if (t) cache[timeframe] = { ...t, fetched: Date.now() };
+    .then((res) => {
+      if (res) cache[timeframe] = { ...res, fetched: Date.now() };
       return cache[timeframe];
     })
     .catch(() => cache[timeframe])
@@ -28,19 +29,19 @@ export const trendsOf = (timeframe) => cache[timeframe];
 
 /** The trend for a host card (pveHost) or a guest ({node, vmid}), or null */
 export function trendFor(timeframe, ref) {
-  const t = cache[timeframe];
-  if (!t?.ok) return null;
-  const s = ref.vmid != null ? t.guests[`${ref.node}/${ref.vmid}`] : t.nodes[ref.node];
+  const tr = cache[timeframe];
+  if (!tr?.ok) return null;
+  const s = ref.vmid != null ? tr.guests[`${ref.node}/${ref.vmid}`] : tr.nodes[ref.node];
   return s && !s.error && s.cpu.some((v) => v !== null) ? s : null;
 }
 
 /** Why there are no trends (shown in the detail), or null */
 export function trendProblem(timeframe, ref) {
-  const t = cache[timeframe];
-  if (!t) return null;
-  if (!t.ok) return t.configured ? `추이를 못 읽었어요: ${t.error ?? '알 수 없는 오류'}` : null;
-  const s = ref.vmid != null ? t.guests[`${ref.node}/${ref.vmid}`] : t.nodes[ref.node];
-  if (s?.error) return `추이를 못 읽었어요: ${s.error}`;
+  const tr = cache[timeframe];
+  if (!tr) return null;
+  if (!tr.ok) return tr.configured ? t('proxmox.trend.error', { error: tr.error ?? t('proxmox.trend.unknownError') }) : null;
+  const s = ref.vmid != null ? tr.guests[`${ref.node}/${ref.vmid}`] : tr.nodes[ref.node];
+  if (s?.error) return t('proxmox.trend.error', { error: s.error });
   return null;
 }
 
@@ -55,14 +56,14 @@ export function cpuScale(vals) {
 }
 
 /** "CPU ▁▂▅ 8% · 메모리 ▇▇▇ 85%" for a card; the last hour */
-export function trendRow(series, { title = '지난 1시간' } = {}) {
+export function trendRow(series, { title = t('proxmox.lastHour') } = {}) {
   const row = el('div', 'trend');
-  row.title = `${title} · 눌러서 24시간 보기`;
+  row.title = t('proxmox.trend.tap', { title });
   const cpuS = cpuScale(series.cpu);
-  for (const [kind, label, vals, scale] of [['cpu', 'CPU', series.cpu, cpuS], ['mem', '메모리', series.mem, 1]]) {
+  for (const [kind, label, vals, scale] of [['cpu', 'CPU', series.cpu, cpuS], ['mem', t('proxmox.mem'), series.mem, 1]]) {
     const cell = el('span', `trend-cell ${kind}`);
     const now = last(vals);
-    cell.append(el('span', 'trend-k', label), sparkline(vals, { kind, scale, label: `${label} ${title} · 지금 ${pctText(now)} · 최대 ${pctText(Math.max(...finite(vals)))}` }), el('span', 'trend-v', pctText(now)));
+    cell.append(el('span', 'trend-k', label), sparkline(vals, { kind, scale, label: t('proxmox.trend.label', { label, title, now: pctText(now), max: pctText(Math.max(...finite(vals))) }) }), el('span', 'trend-v', pctText(now)));
     row.append(cell);
   }
   return row;
@@ -82,10 +83,10 @@ function chart(series, kind, label) {
   const max = nums.length ? Math.max(...nums) : null;
   const box = el('div', `tchart ${kind}`);
   const head = el('div', 'tchart-h');
-  const read = el('span', 'tchart-read', `지금 ${pctText(last(vals))}`);
-  head.append(el('strong', null, label), el('span', 'tchart-stat', `평균 ${pctText(avg)} · 최대 ${pctText(max)}`), read);
+  const read = el('span', 'tchart-read', t('proxmox.chart.now', { v: pctText(last(vals)) }));
+  head.append(el('strong', null, label), el('span', 'tchart-stat', t('proxmox.chart.stat', { avg: pctText(avg), max: pctText(max) })), read);
   const w = 300, h = 64;
-  const s = svg('svg', { viewBox: `0 0 ${w} ${h}`, preserveAspectRatio: 'none', class: `spark big ${kind}`, role: 'img', 'aria-label': `${label} 최근 24시간 · 평균 ${pctText(avg)} · 최대 ${pctText(max)}` });
+  const s = svg('svg', { viewBox: `0 0 ${w} ${h}`, preserveAspectRatio: 'none', class: `spark big ${kind}`, role: 'img', 'aria-label': t('proxmox.chart.aria', { label, avg: pctText(avg), max: pctText(max) }) });
   s.append(svg('line', { x1: 0, x2: w, y1: h / 2, y2: h / 2, class: 'grid', 'vector-effect': 'non-scaling-stroke' }));
   const { line, area } = paths(vals, w, h, scale);
   const cursor = svg('line', { x1: 0, x2: 0, y1: 0, y2: h, class: 'cursor', 'vector-effect': 'non-scaling-stroke', visibility: 'hidden' });
@@ -102,9 +103,9 @@ function chart(series, kind, label) {
   };
   s.addEventListener('pointermove', at);
   s.addEventListener('pointerdown', at);
-  s.addEventListener('pointerleave', () => { cursor.setAttribute('visibility', 'hidden'); read.textContent = `지금 ${pctText(last(vals))}`; });
+  s.addEventListener('pointerleave', () => { cursor.setAttribute('visibility', 'hidden'); read.textContent = t('proxmox.chart.now', { v: pctText(last(vals)) }); });
   const axis = el('div', 'tchart-x');
-  axis.append(el('span', null, '24시간 전'), el('span', null, '12시간 전'), el('span', null, '지금'));
+  axis.append(el('span', null, t('proxmox.chart.ago24')), el('span', null, t('proxmox.chart.ago12')), el('span', null, t('proxmox.chart.nowAxis')));
   box.append(head, plot, axis);
   return box;
 }
@@ -112,18 +113,18 @@ function chart(series, kind, label) {
 /** The detail panel's 24 h block for a host or guest; fetches the day series on first use, then calls redraw. */
 export function dayBlock(ref, sub, redraw) {
   const box = el('div', 'd-trend');
-  const h = el('div', 'd-recent-h', '최근 24시간');
+  const h = el('div', 'd-recent-h', t('proxmox.day.head'));
   box.append(h);
   const day = trendFor('day', ref);
   // the 24 h series is fetched when a detail first needs it, and again once it is a minute old
   const cached = trendsOf('day');
   if (!cached || Date.now() - cached.fetched > 60_000) loadTrends('day').then(redraw);
   if (day) {
-    box.append(chart(day, 'cpu', `CPU${day.maxcpu ? ` · ${day.maxcpu}코어` : ''}`), chart(day, 'mem', `메모리${day.maxmem ? ` · ${gib(day.maxmem)}` : ''}`));
-    box.append(el('p', 'muted small', `Proxmox가 기록한 ${Math.round(day.step / 60)}분 평균${sub ? ` · ${sub}` : ''}. CPU 눈금은 값에 맞춰 바뀌어요.`));
+    box.append(chart(day, 'cpu', `CPU${day.maxcpu ? ` · ${t('proxmox.cores', { n: day.maxcpu })}` : ''}`), chart(day, 'mem', `${t('proxmox.mem')}${day.maxmem ? ` · ${gib(day.maxmem)}` : ''}`));
+    box.append(el('p', 'muted small', t('proxmox.day.note', { min: Math.round(day.step / 60), sub: sub ? ` · ${sub}` : '' })));
   } else {
     const problem = trendProblem('day', ref);
-    box.append(el('p', 'muted', problem ?? (cached ? '기록이 없어요 (꺼져 있었거나 새로 만든 게스트).' : '불러오는 중…')));
+    box.append(el('p', 'muted', problem ?? (cached ? t('proxmox.day.empty') : t('common.loading'))));
   }
   return box;
 }
@@ -141,7 +142,7 @@ export function pveRef(c) {
 function upText(s) {
   if (!s) return null;
   const d = Math.floor(s / 86400);
-  return d ? `${d}일` : `${Math.floor(s / 3600)}시간`;
+  return d ? t('time.day', { n: d }) : t('time.hour', { n: Math.floor(s / 3600) });
 }
 
 /** "Proxmox pve1 · CPU 3%/8코어 · 메모리 40% · 디스크 12% · 가동 9일" */
@@ -149,10 +150,10 @@ export function hostLine(h) {
   return [
     `Proxmox ${h.node}`,
     h.status !== 'online' ? h.status : null,
-    h.cpu != null ? `CPU ${Math.round(h.cpu * 100)}%${h.maxcpu ? `/${h.maxcpu}코어` : ''}` : null,
-    pct(h.mem, h.maxmem) && `메모리 ${pct(h.mem, h.maxmem)}`,
-    pct(h.disk, h.maxdisk) && `디스크 ${pct(h.disk, h.maxdisk)}`,
-    upText(h.uptime) && `가동 ${upText(h.uptime)}`,
+    h.cpu != null ? `CPU ${Math.round(h.cpu * 100)}%${h.maxcpu ? `/${t('proxmox.cores', { n: h.maxcpu })}` : ''}` : null,
+    pct(h.mem, h.maxmem) && t('proxmox.host.mem', { pct: pct(h.mem, h.maxmem) }),
+    pct(h.disk, h.maxdisk) && t('proxmox.host.disk', { pct: pct(h.disk, h.maxdisk) }),
+    upText(h.uptime) && t('proxmox.host.up', { up: upText(h.uptime) }),
   ].filter(Boolean).join(' · ');
 }
 
@@ -165,25 +166,25 @@ export function guestList(h, ctx) {
     const target = card ? card.id : `guest:${h.node}/${g.vmid}`;
     const name = el('button', 'guest-name');
     name.type = 'button';
-    name.title = card ? '이 기기 보기' : '24시간 추이 보기';
+    name.title = card ? t('proxmox.guest.view') : t('proxmox.guest.viewTrend');
     name.addEventListener('click', (ev) => { ev.stopPropagation(); ctx.showDetail(target); });
     name.append(el('span', `gtype ${g.type}`, g.type === 'lxc' ? 'CT' : 'VM'), el('span', 'vmid', g.vmid), el('span', 'gname', g.name));
-    if (card?.kind === 'self') name.append(el('span', 'tag', '이 서버'));
-    else if (card && card.kind !== 'lan' && !card.online && g.status === 'running') name.append(el('span', 'tag warn', 'Tailscale 꺼짐'));
+    if (card?.kind === 'self') name.append(el('span', 'tag', t('proxmox.guest.self')));
+    else if (card && card.kind !== 'lan' && !card.online && g.status === 'running') name.append(el('span', 'tag warn', t('proxmox.guest.tsOff')));
     const meta = [
       g.status === 'running' ? null : g.status,
       g.status === 'running' && g.cpu != null ? `CPU ${Math.round(g.cpu * 100)}%` : null,
       g.status === 'running' && g.mem != null ? `${gib(g.mem)}/${gib(g.maxmem)}` : null,
-      g.ports ? `포트 ${g.ports.ports.length}` : null,
+      g.ports ? t('proxmox.ports', { n: g.ports.ports.length }) : null,
     ].filter(Boolean).join(' · ');
     li.append(el('span', 'gdot'), name);
     const tr = trendFor('hour', { node: h.node, vmid: g.vmid });
     if (tr) {
-      const sp = sparkline(tr.cpu, { kind: 'cpu', scale: cpuScale(tr.cpu), label: `${g.name} CPU 지난 1시간` });
+      const sp = sparkline(tr.cpu, { kind: 'cpu', scale: cpuScale(tr.cpu), label: t('proxmox.guest.spark', { name: g.name }) });
       sp.classList.add('mini');
       const b = el('button', 'guest-spark');
       b.type = 'button';
-      b.title = `${g.name} CPU 지난 1시간 · 눌러서 24시간 보기`;
+      b.title = t('proxmox.guest.sparkTap', { name: g.name });
       b.append(sp);
       b.addEventListener('click', (ev) => { ev.stopPropagation(); ctx.showDetail(target); });
       li.append(b);
@@ -205,19 +206,19 @@ export function findGuest(id, data) {
 
 /** The detail of a Proxmox guest with no card of its own (jellyfin): its line from the tree and the 24 h trend */
 export function guestDetail({ node, vmid, g }, redraw) {
-  const t = g.type === 'lxc' ? 'CT' : 'VM';
+  const type = g.type === 'lxc' ? 'CT' : 'VM';
   return [
-    el('div', 'd-kicker', `Proxmox ${node}의 ${t === 'CT' ? '컨테이너' : '가상 머신'}`),
+    el('div', 'd-kicker', type === 'CT' ? t('proxmox.guest.kickerCt', { node }) : t('proxmox.guest.kickerVm', { node })),
     el('h3', 'd-title', g.name),
     dl([
-      ['Proxmox', `${node} · ${t} ${vmid} · ${g.status}`],
-      ['CPU', g.status === 'running' && g.cpu != null ? `${pctText(g.cpu)}${g.maxcpu ? ` / ${g.maxcpu}코어` : ''}` : null],
-      ['메모리', g.mem != null ? `${gib(g.mem)} / ${gib(g.maxmem)}` : null],
-      ['가동', upText(g.uptime)],
+      ['Proxmox', `${node} · ${type} ${vmid} · ${g.status}`],
+      ['CPU', g.status === 'running' && g.cpu != null ? `${pctText(g.cpu)}${g.maxcpu ? ` / ${t('proxmox.cores', { n: g.maxcpu })}` : ''}` : null],
+      [t('proxmox.mem'), g.mem != null ? `${gib(g.mem)} / ${gib(g.maxmem)}` : null],
+      [t('proxmox.uptime'), upText(g.uptime)],
       ['LAN IP', g.lanIp ?? (g.ips.join(', ') || null)],
       ['MAC', g.macs.join('\n')],
     ]),
-    dayBlock({ node, vmid }, `${node}의 ${t} ${vmid}`, redraw),
-    el('p', 'muted small', '이 서버에 접속한 적이 없어서 따로 기기 카드는 없어요.'),
+    dayBlock({ node, vmid }, t('proxmox.guest.sub', { node, type, vmid }), redraw),
+    el('p', 'muted small', t('proxmox.guest.noCard')),
   ];
 }

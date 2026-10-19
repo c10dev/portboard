@@ -61,6 +61,7 @@ function lookDeps(ctx: ServerContext): LookDeps {
 
 export const newPortsFeature: FeatureModule = {
   name: 'new-ports',
+  order: 2400,
   routes: [
     {
       method: 'GET',

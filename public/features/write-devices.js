@@ -5,6 +5,7 @@
 import { errorText, post, tryJSON } from '../lib/api.js';
 import { toggle } from '../lib/controls.js';
 import { $, el, h } from '../lib/dom.js';
+import { t } from '../lib/i18n.js';
 import { toast } from '../lib/toast.js';
 
 let view = null;
@@ -14,17 +15,17 @@ const OS = { macOS: 'Mac', iOS: 'iPhone·iPad', android: 'Android', windows: 'Wi
 /** A device row: its name and what it is on the left, a switch (a real checkbox, which save() reads) on the right */
 function box(name, checked, opts = {}) {
   const id = `wd-${name.replace(/[^\w-]/g, '_')}`;
-  const sw = toggle({ id, value: name, checked, disabled: !!opts.locked, write: true, label: `${name}에서 바꾸기 허용` });
+  const sw = toggle({ id, value: name, checked, disabled: !!opts.locked, write: true, label: t('writeDevices.allow', { name }) });
   return h(
     'li',
     { class: 'st-row' },
     h(
       'label',
       // data-write on the label: a read-only viewer can't toggle it by clicking the name either
-      { class: 'st-row-text', for: id, title: opts.locked ? '지금 이 기기로 보고 있어요: 빼면 이 기기에서 더 바꿀 수 없어요' : null, dataset: { write: '1' } },
-      h('span', { class: 'st-row-label' }, h('strong', null, name), opts.current ? h('span', { class: 'badge info' }, '지금 쓰는 기기') : null),
+      { class: 'st-row-text', for: id, title: opts.locked ? t('writeDevices.locked') : null, dataset: { write: '1' } },
+      h('span', { class: 'st-row-label' }, h('strong', null, name), opts.current ? h('span', { class: 'badge info' }, t('writeDevices.current')) : null),
       opts.os || opts.other
-        ? h('span', { class: 'st-row-desc' }, opts.os ? OS[opts.os] ?? opts.os : '', opts.other ? '목록에만 있음 (이름이 바뀌었거나 노드 ID)' : '')
+        ? h('span', { class: 'st-row-desc' }, opts.os ? OS[opts.os] ?? opts.os : '', opts.other ? t('writeDevices.other') : '')
         : null,
     ),
     h('div', { class: 'st-row-ctl' }, sw),
@@ -32,10 +33,10 @@ function box(name, checked, opts = {}) {
 }
 
 function stateLine(v) {
-  if (v.error) return `${v.path}을(를) 쓸 수 없어서 https 주소에서는 아무것도 바꿀 수 없어요: ${v.error}. 저장하면 새로 써요.`;
-  if (!v.list && !v.env.length) return '아직 제한하지 않았어요: 소유자 계정으로 로그인한 기기는 모두 https 주소에서 바꿀 수 있어요. 쓸 기기만 고르고 저장하세요.';
+  if (v.error) return t('writeDevices.state.error', { path: v.path, error: v.error });
+  if (!v.list && !v.env.length) return t('writeDevices.state.open');
   const n = (v.list ?? []).length;
-  return `${n}대만 https 주소에서 바꿀 수 있어요 (${v.path}).`;
+  return t('writeDevices.state.limited', { n, path: v.path });
 }
 
 function paint() {
@@ -55,16 +56,16 @@ function paint() {
     ...[
       h('p', { class: 'set-note', style: 'margin-top:0' }, stateLine(v)),
       v.devices === null
-        ? h('p', { class: 'set-note' }, 'tailscale status를 읽지 못해 기기 목록을 만들 수 없어요.')
-        : h('ul', { class: 'wd-list st-rows', id: 'wdList', 'aria-label': '쓰기 허용 기기' }, items),
-      v.env.length ? h('p', { class: 'set-note' }, `환경 변수 PORTBOARD_WRITE_DEVICES로도 허용돼요 (여기서 바꿀 수 없어요): ${v.env.join(', ')}`) : null,
+        ? h('p', { class: 'set-note' }, t('writeDevices.noTailscale'))
+        : h('ul', { class: 'wd-list st-rows', id: 'wdList', 'aria-label': t('writeDevices.title') }, items),
+      v.env.length ? h('p', { class: 'set-note' }, t('writeDevices.env', { list: v.env.join(', ') })) : null,
       h(
         'div',
         { class: 'ac-actions' },
-        h('button', { type: 'button', class: 'btn primary', id: 'wdSave', dataset: { write: '1' }, onclick: save }, '저장'),
-        h('span', { class: 'set-note', style: 'margin:0' }, current ? `지금 쓰는 기기(${current})는 뺄 수 없어요.` : v.source === 'loopback' ? '이 서버에서 직접 열었어요 (loopback은 항상 바꿀 수 있어요).' : ''),
+        h('button', { type: 'button', class: 'btn primary', id: 'wdSave', dataset: { write: '1' }, onclick: save }, t('writeDevices.save')),
+        h('span', { class: 'set-note', style: 'margin:0' }, current ? t('writeDevices.keepCurrent', { name: current }) : v.source === 'loopback' ? t('writeDevices.loopback') : ''),
       ),
-      h('p', { class: 'set-note' }, '서버 자신(127.0.0.1로 직접 연결하는 Claude 세션·스크립트)은 이 목록과 상관없이 항상 바꿀 수 있어요. 목록에 없는 기기도 보기는 계속 돼요.'),
+      h('p', { class: 'set-note' }, t('writeDevices.serverNote')),
     ].filter(Boolean),
   );
 }
@@ -73,12 +74,12 @@ async function save() {
   const picked = [...document.querySelectorAll('#wdList input[type=checkbox]')].filter((i) => i.checked).map((i) => i.value);
   const r = await post('/api/settings/write-devices', { writeDevices: picked });
   if (!r.ok) {
-    toast(`저장하지 못했어요: ${errorText(r)}`, true, { ms: 7000 });
+    toast(t('writeDevices.saveFailed', { error: errorText(r) }), true, { ms: 7000 });
     return;
   }
   view = r.body;
   paint();
-  toast(r.body.message ?? '저장했어요');
+  toast(r.body.message ?? t('writeDevices.saved'));
 }
 
 async function refresh() {
@@ -86,7 +87,7 @@ async function refresh() {
   if (!body) return;
   const next = await tryJSON('/api/settings/write-devices');
   if (!next) {
-    body.replaceChildren(el('p', 'set-note', '쓰기 허용 기기를 읽지 못했어요.'));
+    body.replaceChildren(el('p', 'set-note', t('writeDevices.loadFailed')));
     return;
   }
   view = next;

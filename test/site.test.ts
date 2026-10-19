@@ -194,5 +194,5 @@ test('tildePath', () => {
 test('portboard.example.json is a valid site file with every key', async () => {
   const r = parseSiteFile(await readFile(new URL('../portboard.example.json', import.meta.url), 'utf8'));
   assert.equal(r.error, null);
-  assert.deepEqual(Object.keys(r.file).sort(), ['checkout', 'dashboardUrl', 'host', 'poolUrl', 'publicUrl', 'pve', 'reposRoot', 'tailnet', 'user', 'windows']);
+  assert.deepEqual(Object.keys(r.file).sort(), ['checkout', 'dashboardUrl', 'host', 'locale', 'poolUrl', 'publicUrl', 'pve', 'reposRoot', 'tailnet', 'user', 'windows']);
 });

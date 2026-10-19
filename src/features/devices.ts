@@ -21,6 +21,7 @@ declare module '../mcp/kit.ts' {
 
 export const devicesFeature: FeatureModule = {
   name: 'devices',
+  order: 300,
   routes: [
     {
       method: 'GET',
@@ -55,8 +56,8 @@ export const devicesFeature: FeatureModule = {
           ' tree is the network hierarchy: roots are the subnet routers and Proxmox hosts (kind host), each with its guests ' +
           '(kind guest: vmid, qemu/lxc, status, lanOnly when it has no Tailscale) and the LANs it routes (kind subnet: cidr, ' +
           'role primary or standby); a subnet lists the LAN machines in it with reach (tailnet: has its own Tailscale address; ' +
-          'routed: only through that router; arp: only seen in this server\'s ARP table). Then the group "직접 연결" (the other ' +
-          'tailnet devices, path direct or relay) and "그 밖의 LAN 기기" (LAN clients outside every routed subnet). Each device appears once.',
+          'routed: only through that router; arp: only seen in this server\'s ARP table). Then the group with key direct (the other ' +
+          'tailnet devices, path direct or relay) and the group with key other (LAN clients outside every routed subnet). Each device appears once.',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },
         annotations: { readOnlyHint: true, openWorldHint: false },
       },

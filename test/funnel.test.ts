@@ -6,13 +6,14 @@ import { parseEstablished } from '../src/core/conn.ts';
 import { emptyHistory, record, samplesOf, withHistory } from '../src/core/history.ts';
 import type { PortEntry, Snapshot } from '../src/core/index.ts';
 import { parseServe } from '../src/core/tailscale.ts';
-import { buildTopology, FUNNEL_LABEL } from '../src/core/topology.ts';
+import { buildTopology, funnelLabel } from '../src/core/topology.ts';
 import { buildUsage } from '../src/core/usage.ts';
 import { usageReport } from '../src/features/usage.ts';
 import { redactUsage } from '../src/remote/redact.ts';
 
+const FUNNEL_LABEL = funnelLabel();
 const DNS = 'devbox.tail.ts.net';
-const SELF_IPS = ['100.64.10.1', 'fd7a:115c:a1e0::182b:1a3c'];
+const SELF_IPS = ['100.64.10.1', 'fd7a:115c:a1e0::10:1'];
 
 test('parseServe marks AllowFunnel entries', () => {
   const entries = parseServe(

@@ -6,6 +6,7 @@ import { errorText, post as write, tryJSON } from '../lib/api.js';
 import { badge } from '../lib/badge.js';
 import { modal } from '../lib/dialog.js';
 import { $, el } from '../lib/dom.js';
+import { locale, t, tn } from '../lib/i18n.js';
 import { done } from '../lib/shell.js';
 import { lasting as since } from '../lib/time.js';
 import { toast } from '../lib/toast.js';
@@ -35,16 +36,16 @@ export async function refreshAlerts() {
 const DIALOG = `
 <dialog id="alertsDialog" class="alerts-dlg">
   <header>
-    <strong>다운 알림</strong>
-    <button type="button" id="alertsClose">닫기</button>
+    <strong>${t('alerts.title')}</strong>
+    <button type="button" id="alertsClose">${t('common.close')}</button>
   </header>
   <p id="alertsChannel" class="alerts-channel"></p>
-  <h4>감시 중</h4>
+  <h4>${t('alerts.watching')}</h4>
   <ul id="alertsList" class="alerts-list"></ul>
-  <h4 id="alertsRecentH" hidden>최근 보낸 알림</h4>
+  <h4 id="alertsRecentH" hidden>${t('alerts.recent')}</h4>
   <ul id="alertsRecent" class="alerts-recent"></ul>
-  <p class="alerts-help">30초마다 확인해요. 두 번 연속 리스닝이 없거나 (HTTP 포트는) 응답이 없으면 한 번 알리고, 다시 살아나면 얼마나 꺼져 있었는지 알려요. 같은 포트는 10분에 한 번까지만 보내요. Portboard에서 재시작·중지한 포트는 2분 동안 알리지 않아요. compute-pool 호스트는 compute-pool이 직접 알려요.</p>
-  <footer><button type="button" id="alertsTest" data-write="1">테스트 알림 보내기</button></footer>
+  <p class="alerts-help">${t('alerts.help')}</p>
+  <footer><button type="button" id="alertsTest" data-write="1">${t('alerts.test')}</button></footer>
 </dialog>`;
 
 /** Wire the header button and dialog. render: repaint with the new status; reload: refetch the page's data after a toggle. */
@@ -74,15 +75,15 @@ function paintButton() {
   btn.classList.toggle('alarm', down > 0);
   btn.classList.toggle('none', !status.channel.configured);
   btn.title = !status.channel.configured
-    ? '다운 알림 · 알림 채널 없음'
-    : down ? `다운 알림 · ${down}개 응답 없음` : `다운 알림 · ${n}개 감시 중`;
+    ? t('alerts.button.noChannel')
+    : down ? t('alerts.button.down', { n: down }) : t('alerts.button.watching', { n });
 }
 
 function stateText(w) {
-  if (w.down) return [`응답 없음 · ${since(w.since)}${w.alerted ? ' · 알림 보냄' : ''}`, 'bad'];
-  if (w.quietUntil) return [`Portboard가 재시작·중지 · ${new Date(w.quietUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}까지 알림 멈춤`, 'warn'];
-  if (w.since) return ['확인 중 (한 번 응답 없음)', 'warn'];
-  return [status.lastCheck ? '정상' : '첫 확인 전', 'ok'];
+  if (w.down) return [`${t('alerts.state.down', { since: since(w.since) })}${w.alerted ? ` · ${t('alerts.state.alerted')}` : ''}`, 'bad'];
+  if (w.quietUntil) return [t('alerts.state.quiet', { time: new Date(w.quietUntil).toLocaleTimeString(locale(),  { hour: '2-digit', minute: '2-digit' }) }), 'warn'];
+  if (w.since) return [t('alerts.state.checking'), 'warn'];
+  return [status.lastCheck ? t('alerts.state.ok') : t('alerts.state.pending'), 'ok'];
 }
 
 function paintDialog() {
@@ -92,26 +93,25 @@ function paintDialog() {
   chLine.replaceChildren();
   chLine.className = `alerts-channel ${ch.configured ? 'ok' : 'bad'}`;
   if (ch.configured) {
-    chLine.append(el('strong', null, 'compute-pool 알림 채널'), document.createTextNode(` (${ch.kinds.join(' + ')})로 보내요.`));
+    chLine.append(...tn('alerts.channel.on', { kinds: ch.kinds.join(' + ') }));
   } else {
-    chLine.append(el('strong', null, '알림 채널 없음'),
-      document.createTextNode(' — compute-pool의 ~/.local/state/compute-pool/alerts.json에 ntfy topic이나 webhook이 있어야 해요. 그 전에는 아무것도 보내지 않아요.'));
+    chLine.append(...tn('alerts.channel.off'));
   }
   $('alertsTest').disabled = !ch.configured;
 
   const list = $('alertsList');
   if (!status.watching.length) {
-    list.replaceChildren(el('li', 'muted', '아직 고른 게 없어요. 포트 줄의 🔔이나 ⋯ → 다운 알림 켜기, 기기 탭의 기기 상세에서 고르세요.'));
+    list.replaceChildren(el('li', 'muted', t('alerts.none')));
   } else {
     list.replaceChildren(...status.watching.map((w) => {
       const li = el('li', 'alerts-item');
       const [text, tone] = stateText(w);
-      li.append(el('span', `dot ${tone}`), el('span', 'alerts-port', w.kind === 'port' ? String(w.port) : '기기'),
+      li.append(el('span', `dot ${tone}`), el('span', 'alerts-port', w.kind === 'port' ? String(w.port) : t('alerts.device')),
         el('strong', null, w.name), el('span', `alerts-state ${tone}`, text));
-      const off = el('button', 'alerts-off', '끄기');
+      const off = el('button', 'alerts-off', t('alerts.off'));
       off.dataset.write = '1';
       off.type = 'button';
-      off.title = '이 알림 끄기';
+      off.title = t('alerts.off.title');
       off.addEventListener('click', () => (w.kind === 'port' ? setPortAlert(w.port, false) : setDeviceAlert(w.id, false)));
       li.append(off);
       return li;
@@ -121,7 +121,7 @@ function paintDialog() {
   const recent = $('alertsRecent');
   recent.replaceChildren(...status.recent.map((r) => {
     const li = el('li', r.ok ? '' : 'failed');
-    li.append(el('time', null, new Date(r.t).toLocaleString()), document.createTextNode(` ${r.title}${r.ok ? '' : ' (보내기 실패)'}`));
+    li.append(el('time', null, new Date(r.t).toLocaleString(locale())), document.createTextNode(` ${r.title}${r.ok ? '' : ` (${t('alerts.sendFailed')})`}`));
     return li;
   }));
   $('alertsRecentH').hidden = !status.recent.length;
@@ -150,7 +150,7 @@ async function post(url, body, undo = null) {
   try {
     r = await write(url, body);
     if (!r.ok) toast(errorText(r), true);
-    else if (status && !status.channel.configured && (body.alert || body.on)) toast('켜 두었어요. 다만 알림 채널 없음이라 아직 보내지 않아요.', true);
+    else if (status && !status.channel.configured && (body.alert || body.on)) toast(t('alerts.onNoChannel'), true);
     else if (undo) offerUndo(undo.key, undo, async (prev) => (await post(url, prev)).ok);
   } catch (err) {
     toast(err.message, true);
@@ -165,14 +165,14 @@ async function post(url, body, undo = null) {
 export const setPortAlert = (port, on) =>
   post(`/api/ports/${port}/prefs`, { alert: on }, on ? null : { key: port, ...prefsUndo({ port, alert: true }, { alert: false }) });
 export const setDeviceAlert = (id, on) =>
-  post(`/api/devices/${encodeURIComponent(id)}/alert`, { on }, on ? null : { key: `device:${id}`, text: `${watchOf(`device:${id}`)?.name ?? '기기'} 다운 알림을 껐어요`, prev: { on: true } });
+  post(`/api/devices/${encodeURIComponent(id)}/alert`, { on }, on ? null : { key: `device:${id}`, text: t('alerts.deviceOff', { name: watchOf(`device:${id}`)?.name ?? t('alerts.device') }), prev: { on: true } });
 
 /** 🔔 toggle for a port row (faint when off, like ☆) */
 export function bell(on, label, toggle) {
   const b = el('button', `bell${on ? ' on' : ''}`, '🔔');
   b.dataset.write = '1';
   b.type = 'button';
-  b.title = on ? `${label}: 다운 알림 켜짐 (누르면 끄기)` : `${label}: 다운되면 알림 받기`;
+  b.title = on ? t('alerts.bell.on', { label }) : t('alerts.bell.off', { label });
   b.setAttribute('aria-label', b.title);
   b.setAttribute('aria-pressed', String(on));
   b.addEventListener('click', (ev) => { ev.stopPropagation(); toggle(!on); });
@@ -187,8 +187,8 @@ export function portBell(p) {
 export function portAlertBadge(p) {
   const w = p.alert ? watchOf(`port:${p.port}`) : null;
   if (!w) return null;
-  if (w.down) return badge(`응답 없음 ${since(w.since)}`, 'bad');
-  if (w.quietUntil) return badge('알림 2분 멈춤', 'warn');
+  if (w.down) return badge(t('alerts.badge.down', { since: since(w.since) }), 'bad');
+  if (w.quietUntil) return badge(t('alerts.badge.quiet'), 'warn');
   return null;
 }
 
@@ -212,14 +212,14 @@ export function missingRows(ports, needle = '') {
       const nameLine = el('div', 'name-line');
       const name = el('a', 'name', w.name);
       name.href = `service.html#${w.port}`;
-      name.title = `${w.port} 상세`;
+      name.title = t('inspector.title.port', { port: w.port });
       nameLine.append(name);
       const badges = el('div', 'badges');
       const [text, tone] = stateText(w);
-      badges.append(badge(w.down || w.since ? '리스닝 없음' : '리스닝 없음 · 확인 중', 'warn'), badge(text, tone));
-      main.append(nameLine, el('div', 'meta', '다운 알림을 켠 포트예요. 다시 리스닝하면 원래 줄로 돌아와요.'), badges, uptimeLine(w.uptime ?? null));
+      badges.append(badge(w.down || w.since ? t('ports.badge.notListening') : t('alerts.missing.checking'), 'warn'), badge(text, tone));
+      main.append(nameLine, el('div', 'meta', t('alerts.missing.meta')), badges, uptimeLine(w.uptime ?? null));
       const actions = el('div', 'actions');
-      const off = el('button', null, '알림 끄기');
+      const off = el('button', null, t('alerts.missing.off'));
       off.dataset.write = '1';
       off.type = 'button';
       off.addEventListener('click', () => setPortAlert(w.port, false));

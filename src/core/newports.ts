@@ -23,6 +23,7 @@
 
 import type { Message, NtfyAction } from './alerts.ts';
 import type { OnNew } from './prefs.ts';
+import { t } from './i18n.ts';
 
 export const DEBOUNCE_MS = 10 * 60_000;
 export const MAX_EVENTS = 50;
@@ -153,13 +154,13 @@ export type NewPorts = ReturnType<typeof createNewPorts>;
 export function newPortText(list: NewPortEvent[], dashboard: string | null): Message {
   const base = dashboard?.replace(/\/+$/, '') ?? null;
   const one = list.length === 1 ? list[0] : null;
-  const title = one ? `portboard: ${one.port} ${one.name} 시작됨` : `portboard: 새 서버 ${list.length}개 시작됨`;
+  const title = one ? t('newportsMsg.title.one', { port: one.port, name: one.name }) : t('newportsMsg.title.many', { n: list.length });
   const lines = list.slice(0, 8).map((e) => `:${e.port} ${e.name}${e.project ? ` (${e.project})` : ''}`);
-  if (list.length > 8) lines.push(`… 그리고 ${list.length - 8}개 더`);
+  if (list.length > 8) lines.push(t('newportsMsg.more', { n: list.length - 8 }));
   const actions: NtfyAction[] = [];
-  if (one?.open) actions.push({ action: 'view', label: '열기', url: one.open });
+  if (one?.open) actions.push({ action: 'view', label: t('newportsMsg.open'), url: one.open });
   if (one && !one.open && one.canExpose && base) {
-    actions.push({ action: 'http', label: 'tailnet 공개', url: `${base}/api/ports/${one.port}/expose`, method: 'POST', headers: { 'X-Portboard': '1' }, clear: true });
+    actions.push({ action: 'http', label: t('newportsMsg.expose'), url: `${base}/api/ports/${one.port}/expose`, method: 'POST', headers: { 'X-Portboard': '1' }, clear: true });
   }
   const click = base ? `${base}/${one ? `#${one.port}` : ''}` : undefined;
   return { key: one ? `new-port:${one.port}` : 'new-port', kind: 'new-port', title, body: lines.join('\n'), high: false, ...(click ? { click } : {}), ...(actions.length ? { actions } : {}) };

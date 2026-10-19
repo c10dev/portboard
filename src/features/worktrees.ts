@@ -189,6 +189,7 @@ const removeTool: Tool = {
 
 export const worktreesFeature: FeatureModule = {
   name: 'worktrees',
+  order: 1400,
   routes: [
     {
       method: 'GET',

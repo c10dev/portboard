@@ -4,6 +4,8 @@
 //   groupKey(port) → 'compose:webapp' | 'container:…' | 'unit:syncthing.service' | 'pid:1234' | 'sys:tailscaled' | null
 //   assignGroups(ports) → sets group (only when two or more ports share a key) and role on each entry
 
+import { t } from './i18n.ts';
+
 export interface PortGroup {
   key: string;
   name: string;
@@ -108,6 +110,6 @@ function roleOf(p: Groupable, groupName: string, project: string | null, prefix:
   }
   if (p.container) return p.probe?.http ? 'HTTP' : 'TCP';
   if (p.systemOwner) return p.detectedName.replace(/\s*\([^)]*\)$/, '');
-  if (p.probe?.http) return p.probe.title && shortName(p.probe.title) !== groupName ? p.probe.title : '웹 (HTTP)';
+  if (p.probe?.http) return p.probe.title && shortName(p.probe.title) !== groupName ? p.probe.title : t('groupsMsg.web');
   return 'TCP';
 }

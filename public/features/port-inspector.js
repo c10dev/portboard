@@ -11,6 +11,7 @@ import { lastUsedText, portBadges } from './ports.js';
 import { ruleFacts } from './port-rules.js';
 import { usingChip } from '../lib/badge.js';
 import { button, el, h } from '../lib/dom.js';
+import { t } from '../lib/i18n.js';
 
 const TAIL_LINES = 40;
 const TAIL_MS = 15_000;
@@ -21,8 +22,8 @@ export function inspectorFacts(p) {
   const procs = p.processes.flatMap((x, i) => {
     const n = p.processes.length > 1 ? ` ${i + 1}` : '';
     return [
-      [`명령${n}`, x.cmdline],
-      [`경로${n}`, x.cwd],
+      [`${t('ports.fact.command')}${n}`, x.cmdline],
+      [`${t('ports.fact.path')}${n}`, x.cwd],
       [`PID${n}`, x.pid],
       [`systemd${n}`, x.unit && `${x.unit}${x.unitDescription ? ` — ${x.unitDescription}` : ''}`],
     ];
@@ -30,16 +31,16 @@ export function inspectorFacts(p) {
   return {
     what: keep([
       ...procs,
-      ['컨테이너', p.container],
+      [t('ports.fact.container'), p.container],
       ['compose', p.composeProject],
-      ['묶음', p.group ? `${p.group.name} (${p.group.ports.join(', ')})` : null],
-      ['제어', controlText(p.control)],
-      ['페이지 제목', p.probe?.title],
-      ['시스템', p.kind === 'system' ? (p.systemOwner ?? '다른 사용자/시스템 프로세스') : null],
+      [t('ports.fact.group'), p.group ? `${p.group.name} (${p.group.ports.join(', ')})` : null],
+      [t('ports.fact.control'), controlText(p.control)],
+      [t('ports.fact.title'), p.probe?.title],
+      [t('inspector.fact.system'), p.kind === 'system' ? (p.systemOwner ?? t('ports.meta.otherUser')) : null],
     ]),
     reach: keep([
-      ['주소', p.addresses.join(', ')],
-      ['직접 URL', p.urls.direct],
+      [t('ports.fact.address'), p.addresses.join(', ')],
+      [t('ports.fact.directUrl'), p.urls.direct],
       ['Tailnet URL', p.urls.served],
       ['SSH', p.urls.ssh],
     ]),
@@ -55,10 +56,10 @@ let tail = null;
 function logsSection(p) {
   if (tail?.port !== p.port) {
     clearInterval(tail?.timer);
-    const pre = el('pre', null, '불러오는 중…');
+    const pre = el('pre', null, t('common.loading'));
     const src = el('p', 'insp-src');
     const node = h('section', { class: 'insp-sec insp-logs' },
-      h('div', { class: 'insp-logs-head' }, el('h3', null, `로그 · 마지막 ${TAIL_LINES}줄`), h('button', { type: 'button', title: '다시 읽기', onclick: () => load() }, '↻')),
+      h('div', { class: 'insp-logs-head' }, el('h3', null, t('inspector.logs', { n: TAIL_LINES })), h('button', { type: 'button', title: t('inspector.logs.reload'), onclick: () => load() }, '↻')),
       src, pre);
     const load = async () => {
       const r = await fetchLogs(p.port, TAIL_LINES);
@@ -89,17 +90,17 @@ export function renderInspector(insp, p, ctx) {
   const same = body.dataset.port === String(p?.port ?? '');
   if (!p) {
     stopTail();
-    insp.setTitle('상세');
+    insp.setTitle(t('inspector.title'));
     delete body.dataset.port;
-    body.replaceChildren(el('p', 'insp-empty', ctx.emptyText ?? '포트를 고르면 여기에 상세가 나와요. ↑↓로 옮겨 다닐 수 있어요.'));
+    body.replaceChildren(el('p', 'insp-empty', ctx.emptyText ?? t('inspector.empty')));
     return;
   }
-  insp.setTitle(`${p.port} 상세`);
+  insp.setTitle(t('inspector.title.port', { port: p.port }));
   body.dataset.port = String(p.port);
 
   const proc = p.processes[0];
   const sub = [p.label ? p.detectedName : null, proc?.project, proc?.unit, p.composeProject && `compose · ${p.composeProject}`].filter(Boolean).join(' · ');
-  const name = h('a', { class: 'name', href: `service.html#${p.port}`, title: '상세 페이지' }, p.name);
+  const name = h('a', { class: 'name', href: `service.html#${p.port}`, title: t('inspector.page') }, p.name);
   const head = h('div', { class: 'insp-port' },
     h('div', { class: 'insp-title' }, el('span', 'port', String(p.port)), name, p.listening || p.alert ? portBell(p) : null),
     sub ? el('div', 'insp-sub', sub) : null,
@@ -107,31 +108,31 @@ export function renderInspector(insp, p, ctx) {
 
   const busy = ctx.busy.has(p.port);
   const actions = h('div', { class: 'insp-actions' }, reachButtons(p, { busy, act: (kind) => ctx.act(p.port, kind) }));
-  if (p.control) actions.append(button('로그', () => ctx.openLogs(p)));
-  if (p.canRestart) actions.append(button('재시작', () => ctx.confirmAct(p, 'restart', restartQuestion(p)), { disabled: busy, write: true }));
-  if (p.canStop) actions.append(button('중지', () => ctx.confirmAct(p, 'stop', stopQuestion(p)), { disabled: busy, danger: true, write: true }));
-  actions.append(h('a', { class: 'btn', href: `service.html#${p.port}` }, '상세 페이지'));
+  if (p.control) actions.append(button(t('inspector.logsButton'), () => ctx.openLogs(p)));
+  if (p.canRestart) actions.append(button(t('control.restart'), () => ctx.confirmAct(p, 'restart', restartQuestion(p)), { disabled: busy, write: true }));
+  if (p.canStop) actions.append(button(t('control.stop'), () => ctx.confirmAct(p, 'stop', stopQuestion(p)), { disabled: busy, danger: true, write: true }));
+  actions.append(h('a', { class: 'btn', href: `service.html#${p.port}` }, t('inspector.page')));
 
   const { what, reach } = inspectorFacts(p);
   const parts = [head, actions];
-  parts.push(section('무엇인지', facts(what), h('dl', { class: 'insp-owner' })));
-  if (reach.length) parts.push(section('주소', facts(reach)));
+  parts.push(section(t('inspector.sec.what'), facts(what), h('dl', { class: 'insp-owner' })));
+  if (reach.length) parts.push(section(t('inspector.sec.reach'), facts(reach)));
   // 포트 규칙 (features/port-rules.js): which rules matched, and where the name and the new-port notice came from
   const rules = ruleFacts(p);
-  if (rules.length) parts.push(section('규칙', facts(rules), h('a', { class: 'muted', href: 'settings.html#port-rules' }, '설정 › 포트 규칙에서 바꾸기')));
+  if (rules.length) parts.push(section(t('inspector.sec.rules'), facts(rules), h('a', { class: 'muted', href: 'settings.html#port-rules' }, t('inspector.rules.edit'))));
 
   const up = portUptime(p);
-  parts.push(section('업/다운', up ?? el('p', 'muted', p.alert ? '아직 확인한 기록이 없어요.' : '🔔 다운 알림을 켜면 업타임이 쌓여요.')));
+  parts.push(section(t('inspector.sec.uptime'), up ?? el('p', 'muted', p.alert ? t('inspector.uptime.none') : t('inspector.uptime.off'))));
 
   const who = p.listening ? ctx.usage?.byPort[p.port] ?? [] : [];
   const last = lastUsedText(p.port, ctx.usage);
   const uses = h('ul', { class: 'insp-list' });
-  if (who.length) uses.append(...who.map((u) => h('li', null, usingChip(u, { title: true }), el('span', 'muted', ` · 연결 ${u.connections}`))));
-  else uses.append(el('li', 'muted', '지금 연결한 기기나 프로세스가 없어요.'));
-  if (last) uses.append(el('li', 'muted', `마지막 사용: ${last}`));
+  if (who.length) uses.append(...who.map((u) => h('li', null, usingChip(u, { title: true }), el('span', 'muted', ` · ${t('inspector.connections', { n: u.connections })}`))));
+  else uses.append(el('li', 'muted', t('inspector.users.none')));
+  if (last) uses.append(el('li', 'muted', t('inspector.lastUsed', { last })));
   const h7 = ctx.usage?.history?.byPort[p.port];
-  if (h7?.devices7d > 1) uses.append(el('li', 'muted', `최근 7일 기기 ${h7.devices7d}대`));
-  parts.push(section('누가 쓰나', uses));
+  if (h7?.devices7d > 1) uses.append(el('li', 'muted', t('ports.devices7d', { n: h7.devices7d })));
+  parts.push(section(t('inspector.sec.users'), uses));
 
   if (p.control) {
     const logs = logsSection(p);

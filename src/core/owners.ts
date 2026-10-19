@@ -15,6 +15,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { GIT_NO_HOOKS, run } from './exec.ts';
 import { stillEnded, type EndedLookup } from './claude-sessions.ts';
+import { t } from './i18n.ts';
 
 export interface SessionRef {
   id: string;
@@ -55,10 +56,18 @@ export interface Owner {
 export type CleanupReason = 'cwd-gone' | 'session-ended' | 'branch-merged' | 'session-ended-hook';
 
 export const REASON_TEXT: Record<CleanupReason, string> = {
-  'cwd-gone': '작업 폴더가 지워짐',
-  'session-ended': '띄운 Claude 세션이 끝남',
-  'branch-merged': '브랜치가 이미 머지됨',
-  'session-ended-hook': '띄운 Claude 세션이 끝남 (SessionEnd 훅)',
+  get 'cwd-gone'() {
+    return t('ownersMsg.reason.cwdGone');
+  },
+  get 'session-ended'() {
+    return t('ownersMsg.reason.sessionEnded');
+  },
+  get 'branch-merged'() {
+    return t('ownersMsg.reason.branchMerged');
+  },
+  get 'session-ended-hook'() {
+    return t('ownersMsg.reason.sessionEndedHook');
+  },
 };
 
 const HOME = homedir();

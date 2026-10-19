@@ -4,6 +4,7 @@
 // again while it is up merges into it as "(×3)". The stack is role=status, so screen readers announce toasts politely.
 
 import { extLink } from './dom.js';
+import { t } from './i18n.js';
 
 /** No toast goes away sooner */
 export const MIN_MS = 6000;
@@ -35,7 +36,7 @@ export function createToasts(root) {
   root.setAttribute('aria-live', 'polite');
   // only the toast that comes in is read, not the whole stack again
   root.setAttribute('aria-atomic', 'false');
-  root.setAttribute('aria-label', '알림');
+  root.setAttribute('aria-label', t('toast.label'));
   // never hidden: a live region that is hidden when a toast goes in may not announce it (the empty stack is 0 px tall)
   root.hidden = false;
   /** front first: { key, count, at, timer, node, text } */
@@ -55,7 +56,7 @@ export function createToasts(root) {
     const msg = doc.createElement('span');
     msg.className = 'toast-text';
     msg.append(it.count > 1 ? `${text} (×${it.count})` : text);
-    if (link) msg.append(extLink(' 설정 열기', link));
+    if (link) msg.append(extLink(` ${t('toast.openSettings')}`, link));
     const parts = [msg];
     if (action) {
       const b = doc.createElement('button');
@@ -69,8 +70,8 @@ export function createToasts(root) {
     const x = doc.createElement('button');
     x.type = 'button';
     x.className = 'toast-close';
-    x.title = '닫기';
-    x.setAttribute('aria-label', '알림 닫기');
+    x.title = t('common.close');
+    x.setAttribute('aria-label', t('toast.close'));
     x.textContent = '×';
     x.addEventListener('click', () => close(it));
     parts.push(x);
@@ -153,8 +154,8 @@ export function toast(text, error = false, opts = {}) {
 export async function copy(text) {
   try {
     await navigator.clipboard.writeText(text);
-    toast('복사했어요');
+    toast(t('toast.copied'));
   } catch {
-    window.prompt('복사하세요', text);
+    window.prompt(t('toast.copyPrompt'), text);
   }
 }

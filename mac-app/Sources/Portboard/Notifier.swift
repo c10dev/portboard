@@ -26,13 +26,13 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     /// "허용됨" / "꺼짐" / … for the settings window
     func authorizationText() async -> String {
-        guard available else { return "Portboard.app으로 실행해야 알림을 보낼 수 있어요" }
+        guard available else { return L10n.t("mac.settings.notifyNeedsApp") }
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         switch settings.authorizationStatus {
-        case .authorized, .provisional: return "macOS 알림: 허용됨"
-        case .denied: return "macOS 알림: 거부됨 — 시스템 설정 → 알림 → Portboard에서 켜세요"
-        case .notDetermined: return "macOS 알림: 아직 묻지 않음 (토글을 켜면 물어봐요)"
-        default: return "macOS 알림: 확인 못 함"
+        case .authorized, .provisional: return L10n.t("mac.settings.notifyAllowed")
+        case .denied: return L10n.t("mac.settings.notifyDenied")
+        case .notDetermined: return L10n.t("mac.settings.notifyNotAsked")
+        default: return L10n.t("mac.settings.notifyUnknown")
         }
     }
 

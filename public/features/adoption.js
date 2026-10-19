@@ -4,6 +4,7 @@
 
 import { tryJSON } from '../lib/api.js';
 import { $, el, h } from '../lib/dom.js';
+import { t, tn } from '../lib/i18n.js';
 import { ago } from '../lib/time.js';
 
 const STYLE = `
@@ -25,13 +26,13 @@ const STYLE = `
 
 // [key, label, better when it goes up?]
 const ROWS = [
-  ['sessions', '세션', null],
-  ['mcp', 'Portboard MCP 호출', true],
-  ['inspect', '직접 포트 조회 (ss·lsof·netstat)', false],
-  ['kill', '포트로 프로세스 종료', false],
-  ['hardcoded', '고정 포트로 서버 시작', false],
-  ['nudges', 'Portboard 안내 표시', null],
-  ['followed', '안내 뒤 MCP 사용', true],
+  ['sessions', t('adoption.row.sessions'), null],
+  ['mcp', t('adoption.row.mcp'), true],
+  ['inspect', t('adoption.row.inspect'), false],
+  ['kill', t('adoption.row.kill'), false],
+  ['hardcoded', t('adoption.row.hardcoded'), false],
+  ['nudges', t('adoption.row.nudges'), null],
+  ['followed', t('adoption.row.followed'), true],
 ];
 
 function bars(byDay, key) {
@@ -55,20 +56,20 @@ function change(cur, prev, upIsGood) {
 }
 
 function render(box, doc) {
-  box.replaceChildren(h('h3', {}, 'Claude 세션 포트 사용'));
+  box.replaceChildren(h('h3', {}, t('adoption.title')));
   const help = el('p', 'wt-help');
-  help.append('이 서버의 Claude Code 세션이 포트를 어떻게 다뤘는지(대화 기록에서 센 숫자만). ', h('code', {}, 'ss -ltn'), '·하드코딩 포트가 줄고 Portboard MCP 호출이 늘면 좋아요. 하루 한 번 검사해요.');
+  help.append(...tn('adoption.help'));
   box.append(help);
   const cur = doc?.current;
   if (!cur) {
-    box.append(el('p', 'more-line', doc?.scanning ? '검사 중…' : '아직 검사 안 함'));
+    box.append(el('p', 'more-line', doc?.scanning ? t('adoption.scanning') : t('adoption.notYet')));
     return;
   }
   const prev = doc.previous?.totals;
   const table = h(
     'table',
     {},
-    h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', {}, `이번 주 (${cur.from.slice(5)}–${cur.to.slice(5)})`), h('th', {}, '지난 주'), h('th', {}, '변화'), h('th', {}, '일별'))),
+    h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', {}, t('adoption.thisWeek', { from: cur.from.slice(5), to: cur.to.slice(5) })), h('th', {}, t('adoption.lastWeek')), h('th', {}, t('adoption.change')), h('th', {}, t('adoption.daily')))),
   );
   const body = el('tbody');
   for (const [key, label, upIsGood] of ROWS) {
@@ -79,20 +80,20 @@ function render(box, doc) {
   box.append(h('div', { class: 'adopt-wrap' }, table));
 
   if (cur.topPorts.length) {
-    const p = el('p', 'more-line', '많이 쓴 포트: ');
-    cur.topPorts.slice(0, 6).forEach((t, i) => {
+    const p = el('p', 'more-line', t('adoption.topPorts'));
+    cur.topPorts.slice(0, 6).forEach((x, i) => {
       if (i) p.append(' · ');
-      const c = h('code', { title: `서버 시작 ${t.start} · 조회 ${t.inspect} · 종료 ${t.kill}` }, String(t.port));
-      p.append(c, ` ${t.total}`);
+      const c = h('code', { title: t('adoption.portTitle', { start: x.start, inspect: x.inspect, kill: x.kill }) }, String(x.port));
+      p.append(c, ` ${x.total}`);
     });
     box.append(p);
   }
   const projects = cur.byProject.filter((x) => x.mcp || x.inspect || x.kill || x.hardcoded).slice(0, 5);
   if (projects.length) {
-    box.append(el('p', 'more-line', `프로젝트별 (MCP / 직접 조회·종료 / 고정 포트): ${projects.map((x) => `${x.project} ${x.mcp}/${x.inspect + x.kill}/${x.hardcoded}`).join(' · ')}`));
+    box.append(el('p', 'more-line', t('adoption.byProject', { list: projects.map((x) => `${x.project} ${x.mcp}/${x.inspect + x.kill}/${x.hardcoded}`).join(' · ') })));
   }
-  const files = doc.files ? ` · 기록 ${doc.files.read}개 · ${Math.round(doc.files.bytes / 1e6)} MB` : '';
-  box.append(el('p', 'more-line', `검사: ${ago(doc.at, { suffix: ' 전' }) || '방금'}${files}${doc.scanning ? ' · 다시 검사 중…' : ''}`));
+  const files = doc.files ? ` · ${t('adoption.files', { n: doc.files.read, mb: Math.round(doc.files.bytes / 1e6) })}` : '';
+  box.append(el('p', 'more-line', `${t('adoption.scannedAt', { when: ago(doc.at, { suffix: true }) || t('time.justNow') })}${files}${doc.scanning ? ` · ${t('adoption.rescanning')}` : ''}`));
 }
 
 async function load(box, tries = 0) {
@@ -105,7 +106,7 @@ async function load(box, tries = 0) {
 function init() {
   if ($('adoption')) return;
   if (!$('adoptionStyle')) document.head.append(h('style', { id: 'adoptionStyle', text: STYLE }));
-  const box = h('section', { id: 'adoption', class: 'adopt', 'aria-label': 'Claude 세션 포트 사용' });
+  const box = h('section', { id: 'adoption', class: 'adopt', 'aria-label': t('adoption.title') });
   const anchor = document.querySelector('main .resv') ?? document.querySelector('main .wt-h');
   if (anchor) anchor.before(box);
   else document.querySelector('main')?.append(box);

@@ -5,6 +5,7 @@
 
 import { tryJSON } from '../lib/api.js';
 import { $, el } from '../lib/dom.js';
+import { t } from '../lib/i18n.js';
 
 async function refresh() {
   // the page works without it
@@ -15,7 +16,7 @@ async function refresh() {
   a.hidden = left === 0;
   a.classList.toggle('warn', list.items.some((i) => i.status === 'warn'));
   $('obText').textContent = list.summary;
-  a.title = `설정 탭에서 보기 · 남은 것 ${left}개: ${list.items.filter((i) => i.status !== 'ok').map((i) => i.title).join(', ')}`;
+  a.title = t('onboarding.chip.title', { n: left, items: list.items.filter((i) => i.status !== 'ok').map((i) => i.title).join(', ') });
 }
 
 function init() {
@@ -31,7 +32,7 @@ function init() {
   a.id = 'obChip';
   a.href = 'settings.html#start';
   a.hidden = true;
-  a.setAttribute('aria-label', '설정 체크리스트 (설정 탭)');
+  a.setAttribute('aria-label', t('onboarding.chip'));
   a.append(el('span', 'ob-icon', '☑'), el('span', 'ob-text'));
   a.lastElementChild.id = 'obText';
   const before = $('swChip') ?? $('alertsBtn');

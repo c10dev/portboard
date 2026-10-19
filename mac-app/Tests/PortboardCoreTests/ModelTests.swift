@@ -2,6 +2,11 @@ import XCTest
 @testable import PortboardCore
 
 final class ModelTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        Strings.useKorean()
+    }
+
     func testJSONKeepsBoolsAndNumbersApart() {
         let j = json(#"{"a": true, "b": 1, "c": 1.5, "d": "x", "e": null, "f": [1, "2"], "g": {"h": false}}"#)
         XCTAssertEqual(j["a"], .bool(true))

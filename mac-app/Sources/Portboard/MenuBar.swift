@@ -46,7 +46,7 @@ struct MenuContent: View {
         } else if let s = model.snapshot {
             sections(s)
         } else {
-            Text(model.refreshing ? "불러오는 중…" : "아직 읽지 않았어요")
+            Text(L10n.t(model.refreshing ? "common.loading" : "mac.menu.notLoaded"))
             Divider()
         }
         footer
@@ -56,10 +56,10 @@ struct MenuContent: View {
 
     @ViewBuilder
     private func unreachable(_ problem: String) -> some View {
-        Text("Portboard 연결 안 됨")
+        Text(L10n.t("mac.menu.unreachable"))
         Text(problem)
         Text(Problem.hint(base: model.base))
-        Button("다시 시도") { model.refreshNow() }
+        Button(L10n.t("mac.retry.button")) { model.refreshNow() }
         Divider()
     }
 
@@ -80,60 +80,60 @@ struct MenuContent: View {
         }
 
         let used = Summary.inUse(ports: s.ports, usage: s.usage)
-        let usedTitle = s.usage == nil ? "사용 중 서비스 ?" : "사용 중 서비스 \(used.count)"
+        let usedTitle = L10n.t("mac.menu.inUse", ["n": s.usage == nil ? "?" : String(used.count)])
         Section(usedTitle) {
-            if s.usage != nil && used.isEmpty { Text("지금 쓰는 서비스 없음") }
+            if s.usage != nil && used.isEmpty { Text(L10n.t("mac.menu.inUseEmpty")) }
             ForEach(used.prefix(maxRows), id: \.port) { svc in
                 Menu(svc.title) {
                     openButton(svc.url)
-                    Button("서비스 상세 보기") { model.open("service.html#\(svc.port)") }
+                    Button(L10n.t("mac.menu.serviceDetails")) { model.open("service.html#\(svc.port)") }
                 }
             }
-            more(used.count, "대시보드에서 보기", path: "")
+            more(used.count, L10n.t("mac.menu.viewInDashboard"), path: "")
         }
         Divider()
 
         let pinned = Summary.pinned(s.ports)
-        Section("고정한 포트 \(pinned.count)") {
-            if pinned.isEmpty { Text("고정한 포트 없음 (대시보드에서 고정)") }
+        Section(L10n.t("mac.menu.pinned", ["n": pinned.count])) {
+            if pinned.isEmpty { Text(L10n.t("mac.menu.pinnedEmpty")) }
             ForEach(pinned, id: \.port) { p in
                 Menu(Summary.pinnedTitle(p)) {
                     openButton(p.listening ? p.url : nil)
-                    Button("서비스 상세 보기") { model.open("service.html#\(p.port)") }
+                    Button(L10n.t("mac.menu.serviceDetails")) { model.open("service.html#\(p.port)") }
                 }
             }
         }
         Divider()
 
         let cards = Summary.cards(usage: s.usage, devices: s.devices)
-        Section("기기 \(cards.count)") {
-            if cards.isEmpty { Text("기기 정보 없음") }
+        Section(L10n.t("mac.menu.devices", ["n": cards.count])) {
+            if cards.isEmpty { Text(L10n.t("mac.menu.devicesEmpty")) }
             ForEach(Array(cards.prefix(maxRows).enumerated()), id: \.offset) { _, c in
                 deviceMenu(c)
             }
-            more(cards.count, "기기 탭에서 보기", path: "devices.html")
+            more(cards.count, L10n.t("mac.menu.viewInDevices"), path: "devices.html")
         }
 
         let local = Summary.localOnly(s.ports)
         if !local.isEmpty {
             Divider()
-            Section("local only 서비스 \(local.count)") {
+            Section(L10n.t("mac.menu.localOnly", ["n": local.count])) {
                 ForEach(local.prefix(maxRows), id: \.port) { p in
                     localMenu(p)
                 }
-                more(local.count, "대시보드에서 보기", path: "")
+                more(local.count, L10n.t("mac.menu.viewInDashboard"), path: "")
             }
         }
 
         let cleanup = Summary.cleanup(s.owners)
         if !cleanup.isEmpty {
             Divider()
-            Section("정리할 수 있는 서버 \(cleanup.count)") {
+            Section(L10n.t("mac.menu.cleanup", ["n": cleanup.count])) {
                 ForEach(cleanup.prefix(maxRows), id: \.port) { o in
                     // The 정리 banner (모두 정리) is on the 서비스 tab
                     Button(Summary.cleanupTitle(o)) { model.open("") }
                 }
-                more(cleanup.count, "대시보드에서 정리", path: "")
+                more(cleanup.count, L10n.t("mac.menu.cleanupInDashboard"), path: "")
             }
         }
         Divider()
@@ -142,16 +142,16 @@ struct MenuContent: View {
     @ViewBuilder
     private func openButton(_ url: URL?) -> some View {
         if let url {
-            Button("열기 ↗") { model.openURL(url) }
+            Button(L10n.t("mac.menu.open")) { model.openURL(url) }
         } else {
-            Text("열 수 있는 웹 주소 없음")
+            Text(L10n.t("mac.menu.noWebURL"))
         }
     }
 
     @ViewBuilder
     private func more(_ count: Int, _ label: String, path: String) -> some View {
         if count > maxRows {
-            Button("외 \(count - maxRows)개 — \(label)") { model.open(path) }
+            Button(L10n.t("mac.menu.more", ["n": count - maxRows, "label": label])) { model.open(path) }
         }
     }
 
@@ -166,25 +166,25 @@ struct MenuContent: View {
             }
             if let detail = c.pool?.detail, detail != "ok" { Text(Fmt.menuText(detail)) }
             if !c.uses.isEmpty || (c.pool?.detail.map { $0 != "ok" } ?? false) { Divider() }
-            Button("기기 탭에서 보기") { model.open("devices.html#\(Summary.pathEscape(c.anchor))") }
+            Button(L10n.t("mac.menu.viewInDevices")) { model.open("devices.html#\(Summary.pathEscape(c.anchor))") }
         }
     }
 
     private func localMenu(_ p: PortEntry) -> some View {
         Menu("\(p.displayName) :\(p.port)") {
             if p.canExpose {
-                Button("tailnet 공개") { model.expose(p.port) }
+                Button(L10n.t("mac.menu.expose")) { model.expose(p.port) }
             } else {
-                Text("공개 불가: \(p.exposeBlocker ?? "?")")
+                Text(L10n.t("mac.menu.cantExpose", ["reason": p.exposeBlocker ?? "?"]))
             }
             if let ssh = p.sshCommand {
-                Button("SSH 터널 명령 복사") {
+                Button(L10n.t("mac.menu.copySSH")) {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(ssh, forType: .string)
                 }
                 Text(ssh)
             }
-            Button("서비스 상세 보기") { model.open("service.html#\(p.port)") }
+            Button(L10n.t("mac.menu.serviceDetails")) { model.open("service.html#\(p.port)") }
         }
     }
 
@@ -192,17 +192,17 @@ struct MenuContent: View {
 
     @ViewBuilder
     private var footer: some View {
-        Button("대시보드 열기") { model.open("") }
-        Button("브라우저에서 열기") { model.openInBrowser() }
-        Button("새로고침") { model.refreshNow() }
+        Button(L10n.t("mac.menu.openDashboard")) { model.open("") }
+        Button(L10n.t("mac.menu.openInBrowser")) { model.openInBrowser() }
+        Button(L10n.t("common.refresh")) { model.refreshNow() }
             .keyboardShortcut("r")
         if let at = model.lastUpdate {
-            Text("마지막 갱신 \(at.formatted(date: .omitted, time: .standard))")
+            Text(L10n.t("mac.menu.lastUpdate", ["time": at.formatted(date: .omitted, time: .standard)]))
         }
         Divider()
-        SettingsLink { Text("Portboard 앱 설정…") }
+        SettingsLink { Text(L10n.t("mac.menu.settings")) }
             .keyboardShortcut(",")
-        Button("Portboard 종료") { NSApp.terminate(nil) }
+        Button(L10n.t("mac.menu.quit")) { NSApp.terminate(nil) }
             .keyboardShortcut("q")
     }
 }

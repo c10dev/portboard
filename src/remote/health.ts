@@ -18,11 +18,26 @@
 // is the default. soonDays matches the 비밀값 expiry warning (selfwatch.ts EXPIRY_WARN_MS); hideDays is how long the
 // 설정 tab's "n일 동안 숨기기" hides the banner.
 
+import { t } from '../core/i18n.ts';
+
 const DAY = 86_400_000;
 
 export type Health = 'ok' | 'soon' | 'idle' | 'expired';
 
-export const HEALTH_LABEL: Record<Health, string> = { ok: '정상', soon: '만료 임박', idle: '응답 없음', expired: '만료됨' };
+export const HEALTH_LABEL: Record<Health, string> = {
+  get ok() {
+    return t('remoteHealth.ok');
+  },
+  get soon() {
+    return t('remoteHealth.soon');
+  },
+  get idle() {
+    return t('remoteHealth.idle');
+  },
+  get expired() {
+    return t('remoteHealth.expired');
+  },
+};
 
 /** Lower is better: a client takes its best authorization's */
 const RANK: Record<Health, number> = { ok: 0, idle: 1, soon: 2, expired: 3 };

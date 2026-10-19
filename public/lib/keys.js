@@ -16,30 +16,32 @@
 // The Mac app's menu keys (mac-app/, PortboardApp.swift: ⌘1–4, ⌘[, ⌘R, ⇧⌘O) belong to the app: nothing here may use
 // them (test/ui-keys.test.ts checks), and the dialog lists them when the page runs in the app ([data-app="mac"]).
 
-export const GROUPS = { general: '전체', list: '목록', panes: '패널', app: 'Mac 앱' };
+import { t } from './i18n.js';
+
+export const GROUPS = { general: t('keys.group.general'), list: t('keys.group.list'), panes: t('keys.group.panes'), app: t('keys.group.app') };
 
 export const SHORTCUTS = [
-  { id: 'palette', keys: ['Mod+K', '/'], label: '검색·명령', group: 'general', scope: 'any', text: 'palette search command 팔레트 검색' },
-  { id: 'shortcuts', keys: ['Mod+/'], label: '키보드 단축키', group: 'general', scope: 'any', palette: true, text: 'keyboard shortcuts keys help 도움말 키' },
-  { id: 'settings', keys: ['Mod+,'], label: '설정', group: 'general', scope: 'any', app: false, text: 'settings preferences 설정' },
-  { id: 'back', keys: { mac: ['Mod+['], other: ['Alt+ArrowLeft'] }, label: '뒤로', group: 'general', scope: 'native', palette: true, text: 'back history 이전' },
-  { id: 'forward', keys: { mac: ['Mod+]'], other: ['Alt+ArrowRight'] }, label: '앞으로', group: 'general', scope: 'native', palette: true, text: 'forward history 다음' },
-  { id: 'list.next', keys: ['ArrowDown'], label: '다음 행 선택', group: 'list', scope: 'list' },
-  { id: 'list.prev', keys: ['ArrowUp'], label: '이전 행 선택', group: 'list', scope: 'list' },
-  { id: 'sidebar', keys: ['Mod+\\'], label: '사이드바 열기·닫기', group: 'panes', scope: 'any', palette: true, text: 'sidebar toggle 사이드바 탐색' },
-  { id: 'inspector', keys: [], label: '상세 패널 열기·닫기', group: 'panes', scope: 'any', palette: true, text: 'inspector detail panel 상세 패널' },
-  { id: 'close', keys: ['Escape'], label: '필터·사이드바·상세 시트 닫기', group: 'panes', scope: 'any' },
-  { id: 'resize', keys: [], hint: '가장자리 끌기', label: '사이드바·상세 패널 너비 (가장자리에서 ← →)', group: 'panes', scope: 'hint' },
+  { id: 'palette', keys: ['Mod+K', '/'], label: t('keys.palette'), group: 'general', scope: 'any', text: t('keys.find.palette') },
+  { id: 'shortcuts', keys: ['Mod+/'], label: t('keys.shortcuts'), group: 'general', scope: 'any', palette: true, text: t('keys.find.shortcuts') },
+  { id: 'settings', keys: ['Mod+,'], label: t('shell.view.settings'), group: 'general', scope: 'any', app: false, text: t('keys.find.settings') },
+  { id: 'back', keys: { mac: ['Mod+['], other: ['Alt+ArrowLeft'] }, label: t('keys.back'), group: 'general', scope: 'native', palette: true, text: t('keys.find.back') },
+  { id: 'forward', keys: { mac: ['Mod+]'], other: ['Alt+ArrowRight'] }, label: t('keys.forward'), group: 'general', scope: 'native', palette: true, text: t('keys.find.forward') },
+  { id: 'list.next', keys: ['ArrowDown'], label: t('keys.next'), group: 'list', scope: 'list' },
+  { id: 'list.prev', keys: ['ArrowUp'], label: t('keys.prev'), group: 'list', scope: 'list' },
+  { id: 'sidebar', keys: ['Mod+\\'], label: t('keys.sidebar'), group: 'panes', scope: 'any', palette: true, text: t('keys.find.sidebar') },
+  { id: 'inspector', keys: [], label: t('keys.inspector'), group: 'panes', scope: 'any', palette: true, text: t('keys.find.inspector') },
+  { id: 'close', keys: ['Escape'], label: t('keys.close'), group: 'panes', scope: 'any' },
+  { id: 'resize', keys: [], hint: t('keys.resize.hint'), label: t('keys.resize'), group: 'panes', scope: 'hint' },
 ];
 
 /** The Mac app's own menu keys (mac-app/Sources/Portboard/PortboardApp.swift), shown in the dialog in the app */
 export const MAC_APP_KEYS = [
-  { id: 'app.tabs', keys: ['Meta+1', 'Meta+2', 'Meta+3', 'Meta+4'], label: '서비스 · 기기 · 개발 · 설정 탭', group: 'app' },
-  { id: 'app.back', keys: ['Meta+['], label: '뒤로', group: 'app' },
-  { id: 'app.reload', keys: ['Meta+R'], label: '새로고침', group: 'app' },
-  { id: 'app.browser', keys: ['Meta+Shift+O'], label: '브라우저에서 열기', group: 'app' },
+  { id: 'app.tabs', keys: ['Meta+1', 'Meta+2', 'Meta+3', 'Meta+4'], label: t('keys.app.tabs'), group: 'app' },
+  { id: 'app.back', keys: ['Meta+['], label: t('keys.back'), group: 'app' },
+  { id: 'app.reload', keys: ['Meta+R'], label: t('common.refresh'), group: 'app' },
+  { id: 'app.browser', keys: ['Meta+Shift+O'], label: t('keys.app.browser'), group: 'app' },
   // SwiftUI's Settings scene (PortboardApp.swift): the app's own settings window
-  { id: 'app.settings', keys: ['Meta+,'], label: 'Mac 앱 설정', group: 'app' },
+  { id: 'app.settings', keys: ['Meta+,'], label: t('keys.app.settings'), group: 'app' },
 ];
 
 /** A Mac (or the Mac app, whose User-Agent says portboard-mac/): ⌘ glyphs instead of Ctrl words */
@@ -158,7 +160,7 @@ export function paletteEntries(doc = globalThis.document, mac = isMacPlatform())
   return SHORTCUTS.filter((s) => s.palette && r?.handlers.has(s.id)).map((s) => ({
     id: `cmd:key:${s.id}`, kind: 'cmd', weight: 10, title: s.label, text: s.text ?? '',
     keys: keysOf(s, mac).map((k) => keyLabel(k, mac)),
-    actions: [{ key: 'go', label: '실행', run: () => run(s.id, doc) }],
+    actions: [{ key: 'go', label: t('palette.act.run'), run: () => run(s.id, doc) }],
   }));
 }
 
@@ -201,11 +203,11 @@ export function showShortcuts(doc = globalThis.document) {
     return n;
   };
   const head = el('div', 'keys-head');
-  const h = el('h2', null, '키보드 단축키');
+  const h = el('h2', null, t('keys.shortcuts'));
   h.id = 'keysTitle';
   const close = el('button', 'icon-btn', '×');
   close.type = 'button';
-  close.setAttribute('aria-label', '닫기');
+  close.setAttribute('aria-label', t('common.close'));
   close.addEventListener('click', () => d.close());
   head.append(h, close);
   const body = el('div', 'keys-body');
@@ -216,7 +218,7 @@ export function showShortcuts(doc = globalThis.document) {
     for (const r of sec.rows) {
       const dd = el('dd');
       r.keys.forEach((k, i) => {
-        if (i) dd.append(el('span', 'keys-or', '또는'));
+        if (i) dd.append(el('span', 'keys-or', t('keys.or')));
         dd.append(el('kbd', null, k));
       });
       dl.append(el('dt', null, r.label), dd);

@@ -30,42 +30,42 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("서버") {
+            Section(L10n.t("mac.settings.server")) {
                 HStack {
-                    TextField("서버 주소", text: $serverInput, prompt: Text(Server.defaultURL))
+                    TextField(L10n.t("mac.settings.serverAddress"), text: $serverInput, prompt: Text(Server.defaultURL))
                         .onSubmit(applyServer)
-                    Button("적용", action: applyServer)
+                    Button(L10n.t("mac.settings.apply"), action: applyServer)
                         .disabled(Server.normalize(serverInput)?.absoluteString == model.base.absoluteString)
                 }
                 if let serverError {
                     Text(serverError).foregroundStyle(.red).font(.callout)
                 }
                 HStack(alignment: .top) {
-                    Button("연결 확인", action: runCheck)
+                    Button(L10n.t("mac.settings.check"), action: runCheck)
                         .disabled(check == .running)
                     checkResult
                 }
-                Text("기본값은 \(Server.defaultURL) (tailscale serve, tailnet 안에서만). 쓰기(정지·공개)는 소유자 계정의 쓰기 허용 기기에서만 돼요.")
+                Text(L10n.t("mac.settings.serverNote", ["url": Server.defaultURL]))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Section("알림") {
-                Toggle("감시 중인(🔔) 포트·기기가 다운되거나 복구될 때", isOn: $notifyWatch)
-                Toggle("새 기기가 처음 보일 때", isOn: $notifyNewDevices)
+            Section(L10n.t("mac.settings.notifications")) {
+                Toggle(L10n.t("mac.settings.notifyWatch"), isOn: $notifyWatch)
+                Toggle(L10n.t("mac.settings.notifyNewDevices"), isOn: $notifyNewDevices)
                 if notifyDecided && ntfyCovers {
-                    Text("ntfy 알림 채널이 이미 같은 알림을 보내고 있어서 기본으로 꺼 뒀어요. 켜면 휴대폰(ntfy)과 이 Mac에 둘 다 와요.")
+                    Text(L10n.t("mac.settings.ntfyCovers"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("이미 본 상태는 기억해서, 앱을 다시 켜도 같은 알림을 또 보내지 않아요.")
+                    Text(L10n.t("mac.settings.notifyRemembers"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 HStack {
                     Text(notificationStatus).font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Button("시스템 알림 설정 열기") {
+                    Button(L10n.t("mac.settings.openNotificationSettings")) {
                         if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
                             NSWorkspace.shared.open(url)
                         }
@@ -74,24 +74,24 @@ struct SettingsView: View {
                 }
             }
 
-            Section("갱신 주기") {
-                Picker("앱을 보고 있거나 메뉴를 열었을 때", selection: $pollActive) {
+            Section(L10n.t("mac.settings.poll")) {
+                Picker(L10n.t("mac.settings.pollActive"), selection: $pollActive) {
                     ForEach(Poll.choices.filter { $0 <= 120 }, id: \.self) { Text(Poll.label($0)).tag($0) }
                 }
-                Picker("그 밖에 (백그라운드)", selection: $pollBackground) {
+                Picker(L10n.t("mac.settings.pollBackground"), selection: $pollBackground) {
                     ForEach(Poll.choices.filter { $0 >= 60 }, id: \.self) { Text(Poll.label($0)).tag($0) }
                 }
             }
 
-            Section("시작") {
-                Toggle("로그인할 때 Portboard 열기", isOn: Binding(get: { loginOn }, set: setLogin))
+            Section(L10n.t("mac.settings.startup")) {
+                Toggle(L10n.t("mac.settings.openAtLogin"), isOn: Binding(get: { loginOn }, set: setLogin))
                     .disabled(!LoginItem.available)
                 if !LoginItem.available {
-                    Text("Portboard.app으로 실행할 때만 쓸 수 있어요 (./build.sh)").font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.t("mac.settings.loginNeedsApp")).font(.caption).foregroundStyle(.secondary)
                 } else if LoginItem.needsApproval {
                     HStack {
-                        Text("시스템 설정 → 로그인 항목에서 허용이 필요해요").font(.caption)
-                        Button("열기") { LoginItem.openSystemSettings() }.controlSize(.small)
+                        Text(L10n.t("mac.settings.loginNeedsApproval")).font(.caption)
+                        Button(L10n.t("mac.settings.open")) { LoginItem.openSystemSettings() }.controlSize(.small)
                     }
                 }
                 if let loginError {
@@ -121,7 +121,7 @@ struct SettingsView: View {
     private var checkResult: some View {
         switch check {
         case .idle:
-            Text("/api/whoami로 이 Mac이 누구로 보이는지 확인해요").font(.callout).foregroundStyle(.secondary)
+            Text(L10n.t("mac.settings.checkIdle")).font(.callout).foregroundStyle(.secondary)
         case .running:
             ProgressView().controlSize(.small)
         case .ok(let lines):
@@ -131,7 +131,7 @@ struct SettingsView: View {
             .textSelection(.enabled)
         case .failed(let message):
             VStack(alignment: .leading, spacing: 2) {
-                Text("연결 안 됨: \(message)").foregroundStyle(.red).font(.callout)
+                Text(L10n.t("mac.settings.checkFailed", ["message": message])).foregroundStyle(.red).font(.callout)
                 Text(Problem.hint(base: model.base)).font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -139,7 +139,7 @@ struct SettingsView: View {
 
     private func applyServer() {
         guard let url = Server.normalize(serverInput) else {
-            serverError = "http:// 또는 https://로 시작하는 주소를 넣어 주세요"
+            serverError = L10n.t("mac.settings.invalidURL")
             return
         }
         serverError = nil
@@ -172,7 +172,7 @@ struct SettingsView: View {
             try LoginItem.set(on)
             loginError = nil
         } catch {
-            loginError = "바꾸지 못했어요: \(error.localizedDescription)"
+            loginError = L10n.t("mac.settings.loginFailed", ["error": error.localizedDescription])
         }
         loginOn = LoginItem.isEnabled || LoginItem.needsApproval
     }

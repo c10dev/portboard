@@ -14,8 +14,10 @@ Branches don't edit `CHANGELOG.md`. Each branch adds **one fragment** here inste
 ## Releasing
 
 ```bash
-node scripts/changelog.ts --check                     # validates the fragments' format; exits 1 if a fragment is wrong
-node scripts/changelog.ts 0.7.0 "M6 구조 개선"          # folds every fragment into a new version section and deletes the fragments
+npm run changelog:check                               # validates the fragments' format; exits 1 if a fragment is wrong
+npm run changelog -- 0.7.0 "M6 구조 개선"               # folds every fragment into a new version section and deletes the fragments
 ```
+
+`npm test` also parses every fragment here (`test/changelog.test.ts`), so a malformed one fails the tests before the release.
 
 Within each section, fragments are sorted by name. Earlier releases are never touched.

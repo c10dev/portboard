@@ -3,6 +3,11 @@ import XCTest
 
 // The same cases as test/menubar.test.ts (the SwiftBar plugin), on the same fixtures: the app's menu must agree.
 final class SummaryTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        Strings.useKorean()
+    }
+
     func testLiveFixturesInUseAndTitle() {
         let s = Fixture.live()
         let used = Summary.inUse(ports: s.ports, usage: s.usage)

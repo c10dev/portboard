@@ -1,7 +1,7 @@
 import Foundation
 import PortboardCore
 
-/// A failed request, already in plain Korean (PortboardCore.Problem)
+/// A failed request, already in plain words in the app's language (PortboardCore.Problem)
 struct APIError: Error {
     let message: String
 }
@@ -39,7 +39,7 @@ final class APIClient: Sendable {
             let (data, response) = try await session.data(for: r)
             return (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
         } catch let e as URLError {
-            throw APIError(message: Problem.text(urlErrorCode: e.code.rawValue, timeout: Int(Self.timeout)) ?? "취소됨")
+            throw APIError(message: Problem.text(urlErrorCode: e.code.rawValue, timeout: Int(Self.timeout)) ?? L10n.t("mac.error.cancelled"))
         } catch {
             throw APIError(message: error.localizedDescription)
         }
@@ -51,7 +51,7 @@ final class APIClient: Sendable {
         do {
             return try JSON.parse(data)
         } catch {
-            throw APIError(message: "응답을 읽지 못했어요 (JSON이 아님)")
+            throw APIError(message: L10n.t("mac.error.notJSON"))
         }
     }
 

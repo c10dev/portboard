@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { FakeDocument, fakeWindow, loadPage, runBoot } from './fixtures/fake-dom.ts';
-import { expandShell } from '../src/core/shell.ts';
+import { bootLocale, expandShell } from '../src/core/shell.ts';
 import { buildNetTree } from '../src/core/nettree.ts';
 import type { Device } from '../src/core/devices.ts';
 // @ts-expect-error plain browser module, no types
@@ -81,7 +81,7 @@ function boot(storage: Map<string, string>) {
   loadPage(doc, expandShell(read('public/devices.html'), { hostname: 'box', boot: BOOT }));
   const win: any = fakeWindow(1440, storage);
   const b = runBoot(BOOT, doc, win);
-  b.start({ inspector: false });
+  b.start({ inspector: false, ...bootLocale('ko') });
   b.paintSide();
   return { doc, b };
 }

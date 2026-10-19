@@ -1,6 +1,7 @@
 // Badges and chips: the small pills on rows and cards (style.css .badge, .user-chip).
 
 import { el } from './dom.js';
+import { t } from './i18n.js';
 import { routedTitle } from './nettree.js';
 
 /** <span class="badge tone">; tone: '', ok, info, warn, bad, new */
@@ -10,8 +11,8 @@ export function badge(text, tone = '') {
 
 /** What each kind of user chip is, for its tooltip */
 export const USER_KIND = {
-  tailnet: 'Tailscale 기기', lan: 'LAN 기기', local: '이 서버 안의 프로세스', self: '이 서버', pool: 'compute-pool 호스트', other: '기타 주소',
-  routed: '서브넷 라우터를 거쳐 온 tailnet 기기. 출발 주소가 라우터 주소로 바뀌어서 원래 기기는 알 수 없어요.',
+  tailnet: t('badge.user.tailnet'), lan: t('badge.user.lan'), local: t('badge.user.local'), self: t('common.thisServer'), pool: t('badge.user.pool'), other: t('badge.user.other'),
+  routed: t('badge.user.routed'),
 };
 
 /** The 기기 tab's address for a device id (none: the tab itself) */

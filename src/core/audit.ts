@@ -22,6 +22,7 @@
 import { readFile, rename, stat } from 'node:fs/promises';
 import type { Caller, Device, Source } from './access.ts';
 import { appendPrivate } from './atomic.ts';
+import { t } from './i18n.ts';
 
 export type Result = 'ok' | 'denied' | 'error';
 
@@ -127,7 +128,7 @@ export function targetOf(params: { port?: number; device?: string } | null, body
 export function whoOf(c: Caller): string {
   if (c.login) return clean(c.login, 200);
   if (c.source === 'direct') return clean(c.addr ?? 'unknown', 60);
-  if (c.source === 'serve') return '(사용자 없음)';
+  if (c.source === 'serve') return t('auditMsg.noUser');
   return 'local';
 }
 

@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>기기 · Portboard</title>
+  <title data-t="page.title.devices"></title>
   <meta name="theme-color" content="#2f6feb">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Portboard">
@@ -26,8 +26,8 @@
     <!--#shell:tabs-->
     <div class="controls">
       <!--#shell:palette-->
-      <button id="alertsBtn" type="button" class="alerts-btn" title="다운 알림" aria-label="다운 알림">🔔<span id="alertsCount" class="count-pill"></span></button>
-      <button id="refresh" type="button" title="새로고침">↻</button>
+      <button id="alertsBtn" type="button" class="alerts-btn" data-t-title="page.alerts" data-t-aria-label="page.alerts">🔔<span id="alertsCount" class="count-pill"></span></button>
+      <button id="refresh" type="button" data-t-title="common.refresh">↻</button>
       <!--#shell:insp-toggle-->
     </div>
   </header>
@@ -38,41 +38,41 @@
       <h2 id="headline" class="headline"></h2>
       <p id="status" class="status" aria-live="polite"></p>
 
-      <section id="newDevs" class="new-devs" aria-label="새 기기" hidden></section>
+      <section id="newDevs" class="new-devs" data-t-aria-label="page.devices.newDevs" hidden></section>
 
-      <div class="view-switch" role="group" aria-label="보기">
-        <button type="button" id="viewTree" class="seg" data-view-mode="tree" aria-pressed="true">구조</button>
-        <button type="button" id="viewCards" class="seg" data-view-mode="cards" aria-pressed="false">카드</button>
+      <div class="view-switch" role="group" data-t-aria-label="page.devices.view">
+        <button type="button" id="viewTree" class="seg" data-view-mode="tree" aria-pressed="true" data-t="page.devices.tree"></button>
+        <button type="button" id="viewCards" class="seg" data-view-mode="cards" aria-pressed="false" data-t="page.devices.cards"></button>
       </div>
-      <section id="netTree" class="net-tree tree-only" aria-label="네트워크 구조"></section>
+      <section id="netTree" class="net-tree tree-only" data-t-aria-label="page.devices.netTree"></section>
 
-      <section id="active" class="cards cards-only" aria-label="지금 쓰는 기기"></section>
+      <section id="active" class="cards cards-only" data-t-aria-label="page.devices.active"></section>
 
       <p id="pveHint" class="pve-hint" hidden></p>
       <p id="pvePortsHint" class="pve-hint" hidden></p>
       <p id="winPortsHint" class="pve-hint" hidden></p>
 
-      <h3 class="sec-h cards-only">이 서버</h3>
-      <section id="self" class="cards one cards-only" aria-label="이 서버"></section>
+      <h3 class="sec-h cards-only" data-t="common.thisServer"></h3>
+      <section id="self" class="cards one cards-only" data-t-aria-label="common.thisServer"></section>
 
       <h3 class="sec-h cards-only" id="idleH"></h3>
-      <section id="idle" class="idle-chips cards-only" aria-label="지금 안 쓰는 기기"></section>
+      <section id="idle" class="idle-chips cards-only" data-t-aria-label="page.devices.idle"></section>
 
       <h3 class="sec-h" id="idleSvcH"></h3>
-      <ul id="idleSvcList" class="uses idle-svc-list" aria-label="아무도 안 쓰는 서비스"></ul>
-      <a id="idleSvc" class="idle-svc" href="./">서비스 탭에서 보기 →</a>
+      <ul id="idleSvcList" class="uses idle-svc-list" data-t-aria-label="page.devices.idleSvc.list"></ul>
+      <a id="idleSvc" class="idle-svc" href="./" data-t="page.devices.idleSvc"></a>
 
-      <h3 class="sec-h">새 기기 알림</h3>
-      <section id="ndSettings" class="nd-settings" aria-label="새 기기 알림 설정"></section>
+      <h3 class="sec-h" data-t="page.devices.nd"></h3>
+      <section id="ndSettings" class="nd-settings" data-t-aria-label="page.devices.nd.settings"></section>
 
-      <p class="pve-hint"><a href="settings.html#remote">원격 커넥터(claude.ai · ChatGPT)는 설정 탭으로 옮겼어요 →</a></p>
+      <p class="pve-hint"><a href="settings.html#remote" data-t="page.devices.remoteMoved"></a></p>
     </main>
     </div>
     <!--#shell:aside-->
   </div>
 
   <aside id="detail" class="detail" hidden aria-live="polite">
-    <button type="button" class="detail-close" id="detailClose" aria-label="닫기">×</button>
+    <button type="button" class="detail-close" id="detailClose" data-t-aria-label="common.close">×</button>
     <div id="detailBody"></div>
   </aside>
 

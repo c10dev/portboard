@@ -106,6 +106,7 @@ const short = (e: EndedSession) => ({ id: e.id, reason: e.reason, at: e.at, cwd:
 
 export const claudeSessionFeature: FeatureModule = {
   name: 'claude-session',
+  order: 2200,
   routes: [
     {
       method: 'POST',

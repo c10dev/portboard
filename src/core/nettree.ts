@@ -15,6 +15,7 @@
 
 import type { Device } from './devices.ts';
 import type { Guest, ProxmoxStatus, PveHost } from './proxmox.ts';
+import { t } from './i18n.ts';
 
 /** How the tailnet reaches a LAN machine: its own Tailscale address, only through the subnet router, or unknown (ARP) */
 export type Reach = 'tailnet' | 'routed' | 'arp';
@@ -289,8 +290,8 @@ export function buildNetTree(inp: NetTreeInput): NetTree {
     key, kind: 'group', name, device: null, online: null, self: false, os: null, tailscaleIps: [], lanIps: [], path: null, ports: null, children,
   });
   const roots = [...hosts];
-  if (direct.length) roots.push(group('direct', '직접 연결', direct));
-  if (other.length) roots.push(group('other', '그 밖의 LAN 기기', other.sort((a, b) => ipNum(a) - ipNum(b))));
+  if (direct.length) roots.push(group('direct', t('nettreeMsg.direct'), direct));
+  if (other.length) roots.push(group('other', t('nettreeMsg.other'), other.sort((a, b) => ipNum(a) - ipNum(b))));
   return { roots };
 }
 

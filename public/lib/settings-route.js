@@ -3,17 +3,19 @@
 // settings hash alone (isSettingsHash). The old settings.html and its anchors (#remote, from the consent page and the
 // checklist) land on the same sections: settings.html redirects, and a click on such a link opens the modal in place.
 
+import { t } from './i18n.js';
+
 /** The sections in menu order and their names (features/settings-modal.js has their content) */
 export const SETTINGS_LABELS = {
-  start: '시작하기',
-  remote: '원격 커넥터',
-  'write-devices': '쓰기 허용 기기',
-  'port-rules': '포트 규칙',
-  notify: '알림',
-  claude: 'Claude 세션',
-  secrets: '비밀값',
-  display: '화면',
-  about: '정보',
+  start: t('settings.section.start'),
+  remote: t('settings.section.remote'),
+  'write-devices': t('settings.section.write-devices'),
+  'port-rules': t('settings.section.port-rules'),
+  notify: t('settings.section.notify'),
+  claude: t('settings.section.claude'),
+  secrets: t('settings.section.secrets'),
+  display: t('settings.section.display'),
+  about: t('settings.section.about'),
 };
 
 export const SETTINGS_IDS = Object.keys(SETTINGS_LABELS);

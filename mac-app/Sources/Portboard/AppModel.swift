@@ -8,7 +8,7 @@ import PortboardCore
 final class AppModel: ObservableObject {
     /// The last good poll (kept while a later one fails, but the menu then shows the error instead)
     @Published private(set) var snapshot: Snapshot?
-    /// Why /api/ports could not be read, in Korean; nil when it could
+    /// Why /api/ports could not be read, in the app's language; nil when it could
     @Published private(set) var problem: String?
     @Published private(set) var lastUpdate: Date?
     @Published private(set) var refreshing = false
@@ -154,14 +154,14 @@ final class AppModel: ObservableObject {
             do {
                 let reply = try await api.post("/api/ports/\(port)/expose")
                 if reply.ok {
-                    show(flash: "✓ :\(port) tailnet 공개: \(reply.message)")
+                    show(flash: L10n.t("mac.expose.done", ["port": port, "message": reply.message]))
                 } else {
-                    showAlert("tailnet 공개 실패 (:\(port))", reply.message, link: reply.enableURL.map { ("Tailscale에서 Serve 켜기", $0) })
+                    showAlert(L10n.t("mac.expose.failed", ["port": port]), reply.message, link: reply.enableURL.map { (L10n.t("mac.expose.enableServe"), $0) })
                 }
             } catch let e as APIError {
-                showAlert("tailnet 공개 실패 (:\(port))", e.message)
+                showAlert(L10n.t("mac.expose.failed", ["port": port]), e.message)
             } catch {
-                showAlert("tailnet 공개 실패 (:\(port))", "\(error)")
+                showAlert(L10n.t("mac.expose.failed", ["port": port]), "\(error)")
             }
             await refresh()
         }
@@ -186,7 +186,7 @@ final class AppModel: ObservableObject {
         alert.messageText = title
         alert.informativeText = message
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "확인")
+        alert.addButton(withTitle: L10n.t("mac.alert.ok"))
         if let link { alert.addButton(withTitle: link.0) }
         if alert.runModal() == .alertSecondButtonReturn, let link { NSWorkspace.shared.open(link.1) }
     }

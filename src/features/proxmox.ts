@@ -9,6 +9,7 @@ import type { FeatureModule } from './types.ts';
 
 export const proxmoxFeature: FeatureModule = {
   name: 'proxmox',
+  order: 900,
   routes: [
     {
       method: 'GET',

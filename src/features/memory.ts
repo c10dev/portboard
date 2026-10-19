@@ -269,6 +269,7 @@ export function toolSummary(v: MemoryView, top = 10) {
 
 export const memoryFeature: FeatureModule = {
   name: 'memory',
+  order: 2500,
   routes: [{ method: 'GET', path: '/api/memory', handler: async (_r, ctx) => ok(await serverView(ctx)) }],
   tools: [
     {

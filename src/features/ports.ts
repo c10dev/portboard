@@ -114,6 +114,7 @@ const tools: Tool[] = [
 
 export const ports: FeatureModule = {
   name: 'ports',
+  order: 100,
   routes: [
     { method: 'GET', path: '/api/ports', handler: async ({ url }, ctx) => ok(await ctx.snapshot(url.searchParams.has('fresh'))) },
     { method: 'POST', path: '/api/ports/:port/expose', write: true, handler: ({ params }, ctx) => publish(params.port, expose, ctx) },

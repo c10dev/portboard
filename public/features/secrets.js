@@ -3,16 +3,17 @@
 // (docs/runbooks/). Never a value: only what the setup checklist and the self-watch already know.
 
 import { $, el, extLink, h } from '../lib/dom.js';
+import { locale, t } from '../lib/i18n.js';
 import { settingsDoc } from './about.js';
 
 const TONE = { ok: 'ok', warn: 'warn', missing: 'todo' };
-const LABEL = { ok: '정상', warn: '확인 필요', missing: '설정 전' };
+const LABEL = { ok: t('secrets.status.ok'), warn: t('secrets.status.warn'), missing: t('secrets.status.missing') };
 
 function expiry(iso) {
   if (!iso) return null;
   const days = Math.ceil((Date.parse(iso) - Date.now()) / 86_400_000);
-  const date = new Date(iso).toLocaleDateString();
-  return days < 0 ? `만료됨 (${date})` : `만료 ${date} (${days}일 남음)`;
+  const date = new Date(iso).toLocaleDateString(locale());
+  return days < 0 ? t('secrets.expired', { date }) : t('secrets.expires', { date, n: days });
 }
 
 function row(s) {
@@ -24,7 +25,7 @@ function row(s) {
     h('strong', null, s.title),
     h('span', { class: `set-state ${TONE[s.status]}` }, LABEL[s.status]),
     h('p', { class: 'set-detail' }, s.detail),
-    h('div', { class: 'set-extra' }, exp ? h('span', { class: Date.parse(s.expiresAt) - Date.now() < 7 * 86_400_000 ? 'set-state warn' : null }, exp) : null, extLink('교체 절차 ↗', s.runbook)),
+    h('div', { class: 'set-extra' }, exp ? h('span', { class: Date.parse(s.expiresAt) - Date.now() < 7 * 86_400_000 ? 'set-state warn' : null }, exp) : null, extLink(t('secrets.runbook'), s.runbook)),
   );
 }
 
@@ -32,7 +33,7 @@ async function refresh() {
   const body = $('secretsBody');
   if (!body) return;
   const s = await settingsDoc();
-  if (!s) return body.replaceChildren(el('p', 'set-note', '비밀값 상태를 읽지 못했어요.'));
+  if (!s) return body.replaceChildren(el('p', 'set-note', t('secrets.loadFailed')));
   body.replaceChildren(h('ul', { class: 'set-list' }, s.secrets.map(row)));
 }
 

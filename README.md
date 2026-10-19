@@ -4,7 +4,7 @@ A dashboard of every TCP port listening on a Linux server, the devices on your T
 worktrees. Open any service from your laptop or phone with one click, no `ssh -N -L …` needed, and let Claude Code
 pick ports and start dev servers through it instead of guessing.
 
-![The 서비스 tab: ports grouped by service, with who is using them](docs/images/services-1200.png)
+![The Services tab: ports grouped by service, with who is using them](docs/images/services-1200.png)
 
 - **Services.** Every listening port with its owner: process, project folder, systemd unit or docker container, HTTP
   title, bind scope (loopback / tailnet / all), who is connected now and when it was last used.
@@ -21,11 +21,13 @@ pick ports and start dev servers through it instead of guessing.
 - **Zero runtime dependencies.** Node.js and the standard library only. TypeScript runs directly on Node ≥ 22.18
   (type stripping); `typescript` and `@types/node` are dev dependencies for the typecheck.
 
-The dashboard's text is in **Korean**; the code, docs and API are in English.
+The dashboard speaks **English and Korean**. It follows the browser's language unless the server sets one (`locale` in
+`portboard.json` or `PORTBOARD_LOCALE`), and each device can pick its own under Settings › Display › Language
+([docs/i18n](docs/i18n/README.md)). The code, docs and API are in English.
 
-| Devices (기기) | A service's page, dark mode |
+| Devices | A service's page, dark mode |
 |---|---|
-| ![The 기기 tab: tailnet devices, a Proxmox host and its containers, each with its open ports](docs/images/devices-1200.png) | ![A service page: what it is, how to open it, who uses it, its uptime and alerts](docs/images/service-1200-dark.png) |
+| ![The Devices tab: the network map of a Proxmox host, its guests and the tailnet devices](docs/images/devices-1200.png) | ![A service page: what it is, how to open it, who uses it, its uptime and alerts](docs/images/service-1200-dark.png) |
 
 The screenshots use example data: none of these machines exist.
 
@@ -126,8 +128,9 @@ Details: [docs/mac-app](docs/mac-app/README.md).
 
 ## Optional integrations
 
-- **compute-pool**: a separate monitor (`cpool monitor`, `PORTBOARD_POOL_URL`) whose hosts the 기기 tab shows with load
-  and state. Without it the tab lists tailnet devices only.
+- **compute-pool**: a separate monitor (`cpool monitor`, `PORTBOARD_POOL_URL`) whose hosts the Devices tab shows with load
+  and state. Without it the tab lists tailnet devices only. Any endpoint serving the same JSON works:
+  [integrations/compute-pool.md](docs/integrations/compute-pool.md).
 - **Proxmox VE**: an API token for VM/CT state and trends, and a forced-command SSH key for container ports
   ([runbooks](docs/runbooks/README.md)).
 - **ntfy or a webhook** for alerts.

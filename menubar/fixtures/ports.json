@@ -10,7 +10,7 @@
   "hostName": "devbox",
   "ips": [
    "100.64.10.1",
-   "fd7a:115c:a1e0::182b:1a3c"
+   "fd7a:115c:a1e0::10:1"
   ]
  },
  "ports": [
@@ -82,7 +82,7 @@
    "scope": "tailnet",
    "addresses": [
     "100.64.10.1",
-    "fd7a:115c:a1e0::182b:1a3c"
+    "fd7a:115c:a1e0::10:1"
    ],
    "owned": false,
    "kind": "system",
@@ -324,7 +324,7 @@
    "scope": "tailnet",
    "addresses": [
     "100.64.10.1",
-    "fd7a:115c:a1e0::182b:1a3c"
+    "fd7a:115c:a1e0::10:1"
    ],
    "owned": true,
    "kind": "app",
@@ -863,7 +863,7 @@
    "listening": true,
    "scope": "tailnet",
    "addresses": [
-    "fd7a:115c:a1e0::182b:1a3c"
+    "fd7a:115c:a1e0::10:1"
    ],
    "owned": false,
    "kind": "system",

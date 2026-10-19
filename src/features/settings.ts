@@ -30,21 +30,30 @@ import { VERSION } from '../version.ts';
 import { connectorUrlOf } from './remote-connector.ts';
 import { ok } from './router.ts';
 import type { FeatureModule } from './types.ts';
+import { t } from '../core/i18n.ts';
 
 const REPO = 'https://github.com/c10dev/portboard/blob/main';
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 /** scripts/deploy.ts writes it on every successful deploy (production's state dir, whatever this profile is) */
 export const DEPLOYED_PATH = join(homedir(), '.local', 'state', 'portboard', 'deployed.json');
 
+/** A link whose label is a catalog key, read in the language of the request it's sent in */
+const doc = (key: string, href: string) => ({
+  get label() {
+    return t(key);
+  },
+  href,
+});
+
 export const DOC_LINKS = [
   { label: 'README', href: `${REPO}/README.md` },
-  { label: '대시보드 안내', href: `${REPO}/docs/dashboard.md` },
+  doc('settingsApi.docs.dashboard', `${REPO}/docs/dashboard.md`),
   { label: 'REST API', href: `${REPO}/docs/api.md` },
-  { label: '보안 (쓰기 권한)', href: `${REPO}/docs/security.md` },
-  { label: '원격 MCP', href: `${REPO}/docs/remote-mcp/README.md` },
-  { label: '비밀값 교체 절차', href: `${REPO}/docs/runbooks/README.md` },
-  { label: '운영 (배포·재시작)', href: `${REPO}/docs/operations.md` },
-  { label: '변경 기록', href: `${REPO}/CHANGELOG.md` },
+  doc('settingsApi.docs.security', `${REPO}/docs/security.md`),
+  doc('settingsApi.docs.remoteMcp', `${REPO}/docs/remote-mcp/README.md`),
+  doc('settingsApi.docs.runbooks', `${REPO}/docs/runbooks/README.md`),
+  doc('settingsApi.docs.operations', `${REPO}/docs/operations.md`),
+  doc('settingsApi.docs.changelog', `${REPO}/CHANGELOG.md`),
 ];
 
 export interface Deployed {
@@ -123,12 +132,12 @@ export interface Secret {
   runbook: string;
 }
 
-const SECRETS: { key: Secret['key']; item: string; title: string; runbook: string; expiry: (k: string) => boolean }[] = [
-  { key: 'proxmox', item: 'proxmox', title: 'Proxmox API 토큰', runbook: RUNBOOKS.proxmox, expiry: (k) => k === 'proxmox-token' },
-  { key: 'pve-ssh', item: 'pve-ports', title: `${SITE.pve.node}·CT 읽기 전용 SSH 키`, runbook: RUNBOOKS.ssh, expiry: () => false },
-  { key: 'win-ssh', item: 'win-ports', title: 'Windows 읽기 전용 SSH 키', runbook: RUNBOOKS.ssh, expiry: () => false },
-  { key: 'ntfy', item: 'alerts', title: 'ntfy 토픽 (알림 채널)', runbook: RUNBOOKS.ntfy, expiry: () => false },
-  { key: 'connector', item: 'remote', title: '원격 커넥터 토큰', runbook: RUNBOOKS.remote, expiry: (k) => k.startsWith('remote:') },
+const SECRETS: { key: Secret['key']; item: string; title: () => string; runbook: string; expiry: (k: string) => boolean }[] = [
+  { key: 'proxmox', item: 'proxmox', title: () => t('settingsApi.secret.proxmox'), runbook: RUNBOOKS.proxmox, expiry: (k) => k === 'proxmox-token' },
+  { key: 'pve-ssh', item: 'pve-ports', title: () => t('settingsApi.secret.pveSsh', { node: SITE.pve.node }), runbook: RUNBOOKS.ssh, expiry: () => false },
+  { key: 'win-ssh', item: 'win-ports', title: () => t('settingsApi.secret.winSsh'), runbook: RUNBOOKS.ssh, expiry: () => false },
+  { key: 'ntfy', item: 'alerts', title: () => t('settingsApi.secret.ntfy'), runbook: RUNBOOKS.ntfy, expiry: () => false },
+  { key: 'connector', item: 'remote', title: () => t('settingsApi.secret.connector'), runbook: RUNBOOKS.remote, expiry: (k) => k.startsWith('remote:') },
 ];
 
 /** The checklist items that are secrets, with the self-watch's expiry dates. Only statuses and dates: no values. */
@@ -136,7 +145,7 @@ export function secretsOf(items: Item[], sw: SelfWatchStatus | null): Secret[] {
   return SECRETS.map((s) => {
     const it = items.find((i) => i.key === s.item);
     const dates = (sw?.expiry.items ?? []).filter((e) => s.expiry(e.key) && e.expiresAt).map((e) => e.expiresAt!).sort();
-    return { key: s.key, title: s.title, status: it?.status ?? 'warn', detail: it?.detail ?? '확인하지 못했어요', expiresAt: dates[0] ?? null, runbook: s.runbook };
+    return { key: s.key, title: s.title(), status: it?.status ?? 'warn', detail: it?.detail ?? t('settingsApi.secret.unchecked'), expiresAt: dates[0] ?? null, runbook: s.runbook };
   });
 }
 
@@ -152,6 +161,7 @@ const readText = (p: string) => readFile(p, 'utf8').catch(() => null);
 
 export const settingsFeature: FeatureModule = {
   name: 'settings',
+  order: 2900,
   routes: [
     {
       method: 'GET',
@@ -176,7 +186,7 @@ export const settingsFeature: FeatureModule = {
           deployed,
           addresses: addressesOf(ctx.ts.dnsName, serve, remote?.publicUrl),
           site: siteView(here),
-          docs: DOC_LINKS,
+          docs: DOC_LINKS.map((d) => ({ ...d })),
           secrets: secretsOf(assess(facts).items, status),
         });
       },

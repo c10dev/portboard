@@ -11,6 +11,8 @@
 // where it covers the bar, a press is the dialog's. The backdrop around it stays bar. The app sets data-can-go-back and
 // data-fullscreen.
 
+import { t } from './i18n.js';
+
 export const inMacApp = typeof navigator !== 'undefined' && /\bportboard-mac\//.test(navigator.userAgent);
 
 /** Parts of the header that keep their clicks (everything else in it moves the window) */
@@ -38,8 +40,8 @@ export function setupMacApp(doc = document, win = window) {
     b.type = 'button';
     b.id = 'appBack';
     b.className = 'app-back';
-    b.title = '뒤로 (⌘[)';
-    b.setAttribute('aria-label', '뒤로');
+    b.title = t('macapp.back.title');
+    b.setAttribute('aria-label', t('macapp.back'));
     b.textContent = '‹';
     b.addEventListener('click', () => win.history.back());
     brand.prepend(b);

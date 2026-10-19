@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { insertRelease, parseFragment, renderRelease } from '../scripts/changelog.ts';
 
 test('parseFragment accepts known sections and rejects mistakes', () => {
@@ -18,4 +20,11 @@ test('renderRelease orders sections and fragments naturally; insertRelease goes 
   assert.equal(sec, '## 0.7.0 — 2026-10-18 (M6)\n\n### Changed\n- nine\n- twenty-one\n\n### Fixed\n- first\n- second\n');
   const cl = '# Changelog\n\n## 0.6.0 — x\n- old\n';
   assert.equal(insertRelease(cl, sec), `# Changelog\n\n${sec}\n## 0.6.0 — x\n- old\n`);
+});
+
+test('every fragment waiting in changelog.d/ parses (what `npm run changelog:check` checks)', () => {
+  const dir = fileURLToPath(new URL('../changelog.d/', import.meta.url));
+  for (const f of readdirSync(dir).filter((x) => x.endsWith('.md') && x !== 'README.md')) {
+    assert.doesNotThrow(() => parseFragment(f.replace(/\.md$/, ''), readFileSync(dir + f, 'utf8')), f);
+  }
 });

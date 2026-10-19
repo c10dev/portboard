@@ -7,6 +7,7 @@
 // URLs, long tokens and anything after a credential-looking key before it is stored.
 
 import { SITE } from './site.ts';
+import { t } from './i18n.ts';
 
 export interface CollectorHealth {
   name: string;
@@ -36,16 +37,32 @@ export interface Report {
 
 /** Display order and Korean labels for the UI. */
 export const COLLECTORS: Record<string, string> = {
-  usage: '포트·연결 샘플',
+  get usage() {
+    return t('health.collector.usage');
+  },
   pool: 'compute-pool',
   proxmox: 'Proxmox API',
-  'pve-ports': `${SITE.pve.node} 포트 (SSH)`,
-  'win-ports': 'Windows 포트 (SSH)',
-  hostkeys: 'SSH 호스트 키',
-  history: '사용 기록 파일',
-  'known-devices': '새 기기 파일',
-  alerts: '다운 알림 검사',
-  memory: '메모리 샘플',
+  get 'pve-ports'() {
+    return t('health.collector.pvePorts', { node: SITE.pve.node });
+  },
+  get 'win-ports'() {
+    return t('health.collector.winPorts');
+  },
+  get hostkeys() {
+    return t('health.collector.hostkeys');
+  },
+  get history() {
+    return t('health.collector.history');
+  },
+  get 'known-devices'() {
+    return t('health.collector.knownDevices');
+  },
+  get alerts() {
+    return t('health.collector.alerts');
+  },
+  get memory() {
+    return t('health.collector.memory');
+  },
 };
 
 const MAX_ERROR = 120;

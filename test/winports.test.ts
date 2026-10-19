@@ -20,8 +20,8 @@ test('parseWinPorts: BOM, CRLF, IPv4/IPv6, empty process names, .exe and duplica
   assert.equal(r.at, 9);
   assert.equal(r.sockets.length, 23);
   assert.deepEqual(r.sockets[0], { port: 135, address: '0.0.0.0', process: 'svchost' });
-  assert.deepEqual(r.sockets.find((s) => s.port === 9100), { port: 9100, address: '127.0.0.1' }); // access denied
-  assert.ok(r.sockets.some((s) => s.address === '::1' && s.port === 5190));
+  assert.deepEqual(r.sockets.find((s) => s.port === 9229), { port: 9229, address: '127.0.0.1' }); // access denied
+  assert.ok(r.sockets.some((s) => s.address === '::1' && s.port === 5173));
   assert.ok(r.sockets.some((s) => s.address === 'fd7a:115c:a1e0::e901:e71c'));
   assert.ok(!JSON.stringify(r).includes('pid'), 'pids are not kept');
 
@@ -112,7 +112,7 @@ const wslListening = [
   { port: 53, address: '127.0.0.53' },
   { port: 2222, address: '0.0.0.0', process: 'sshd' },
   { port: 3000, address: '100.64.10.2', process: 'node' },
-  { port: 5190, address: '127.0.0.1', process: 'node' },
+  { port: 5173, address: '127.0.0.1', process: 'node' },
 ];
 
 function desktop(listening: typeof wslListening | null = wslListening) {
@@ -130,23 +130,23 @@ test('attachWinPorts: Windows and WSL on one list; wslrelay and unnamed sockets 
   assert.equal(d.portsSource, 'compute-pool');
   assert.deepEqual(d.ports!.sides, { windows: 200, wsl: 100 });
   assert.equal(d.ports!.at, 100);
-  assert.equal(folded, 3); // wslrelay 5190 on 127.0.0.1 and ::1, the unnamed 2222 (mirrored)
+  assert.equal(folded, 3); // wslrelay 5173 on 127.0.0.1 and ::1, the unnamed 2222 (mirrored)
   const rows = d.ports!.ports.map((p) => `${p.side}:${p.port}`);
-  assert.deepEqual(rows.filter((r) => r.endsWith(':5190')), ['wsl:5190']);
+  assert.deepEqual(rows.filter((r) => r.endsWith(':5173')), ['wsl:5173']);
   assert.deepEqual(rows.filter((r) => r.endsWith(':2222')), ['wsl:2222']);
   // a named Windows program on a port WSL also uses is a different socket: both stay
   assert.deepEqual(rows.filter((r) => r.endsWith(':3000')), ['windows:3000', 'wsl:3000']);
   const by = (side: string, port: number) => d.ports!.ports.find((p) => p.side === side && p.port === port)!;
   assert.equal(by('windows', 3000).url, 'http://desktop-pc.t.ts.net:3000');
-  assert.equal(by('windows', 9100).scope, 'loopback'); // "그 기기 안에서만"
-  assert.deepEqual(by('windows', 9100).processes, []);
+  assert.equal(by('windows', 9229).scope, 'loopback'); // "그 기기 안에서만"
+  assert.deepEqual(by('windows', 9229).processes, []);
   assert.equal(by('windows', 139).scope, 'other'); // LAN address only
-  assert.equal(by('windows', 57423).scope, 'tailnet');
-  assert.equal(by('windows', 57423).url, null); // tailscaled
+  assert.equal(by('windows', 52341).scope, 'tailnet');
+  assert.equal(by('windows', 52341).url, null); // tailscaled
   assert.equal(by('windows', 135).url, null); // RPC
   assert.equal(by('windows', 49664).url, null); // lsass
   assert.equal(by('windows', 5357).url, 'http://desktop-pc.t.ts.net:5357'); // http.sys (System) may serve pages
-  assert.equal(by('wsl', 5190).scope, 'loopback');
+  assert.equal(by('wsl', 5173).scope, 'loopback');
   // sorted by port, Windows before WSL on the same port
   const ports = d.ports!.ports.map((p) => p.port);
   assert.deepEqual(ports, [...ports].sort((a, b) => a - b));
@@ -159,7 +159,7 @@ test('attachWinPorts: WSL down → Windows only; no Windows data → the WSL lis
   assert.equal(d.portsSource, 'windows-ssh'); // compute-pool reported no ports, so the list is Windows' alone
   assert.deepEqual(d.ports!.sides, { windows: 200, wsl: null });
   assert.ok(d.ports!.ports.every((p) => p.side === 'windows'));
-  assert.ok(d.ports!.ports.some((p) => p.port === 5190), 'nothing to fold into: the relay socket is listed');
+  assert.ok(d.ports!.ports.some((p) => p.port === 5173), 'nothing to fold into: the relay socket is listed');
 
   const plain = desktop();
   const before = JSON.stringify(plain);
@@ -186,7 +186,7 @@ test('remote list_devices: side and reach stay; addresses, process names, user a
   } as unknown as Devices;
   const out = redactDevices(doc) as any;
   const s = JSON.stringify(out);
-  assert.doesNotMatch(s, /192\.168|100\.118|fd7a:|portboard_ro|wslrelay|svchost|AppleMobile|"addresses"|"processes"/);
+  assert.doesNotMatch(s, /192\.168|100\.118|fd7a:|portboard_ro|wslrelay|svchost|python|"addresses"|"processes"/);
   const d = out.devices.find((x: any) => x.name === 'desktop-pc');
   assert.deepEqual(d.ports.sides, { windows: 200, wsl: 100 });
   assert.deepEqual(d.ports.ports.find((p: any) => p.side === 'windows' && p.port === 3000), { port: 3000, scope: 'all', tailnet: true, lan: false, side: 'windows', url: 'http://desktop-pc.t.ts.net:3000' });
@@ -195,9 +195,9 @@ test('remote list_devices: side and reach stay; addresses, process names, user a
   assert.ok(JSON.stringify(loose).includes('svchost'));
 });
 
-test('live output from desktop-pc (2026-10-17, pids blanked): parses whole, merges with WSL, no relay sockets in mirrored mode', () => {
-  const live = readFileSync(new URL('./fixtures/winports-live-2026-10-17.txt', import.meta.url), 'utf8');
-  const r = parseWinPorts(live, 300)!;
+test('a fuller Windows 11 dev box (example data, mirrored WSL networking): parses whole, merges with WSL, no relay sockets', () => {
+  const full = readFileSync(new URL('./fixtures/winports-desktop-pc-full.txt', import.meta.url), 'utf8');
+  const r = parseWinPorts(full, 300)!;
   assert.equal(r.sockets.length, 35);
   assert.ok(r.sockets.every((s) => s.process), 'every owner was named');
   const list = desktop();
@@ -207,11 +207,12 @@ test('live output from desktop-pc (2026-10-17, pids blanked): parses whole, merg
   const by = (port: number) => win.find((p) => p.port === port)!;
   assert.equal(by(22).scope, 'all');
   assert.equal(by(22).url, null);
-  assert.equal(by(6463).scope, 'loopback'); // Discord RPC
-  assert.equal(by(42050).scope, 'loopback'); // ::1 only
-  assert.equal(by(62612).scope, 'tailnet');
+  assert.equal(by(57124).scope, 'loopback'); // the editor's local server
+  assert.equal(by(9229).scope, 'loopback'); // ::1 only
+  assert.equal(by(61803).scope, 'tailnet');
   assert.equal(by(139).scope, 'other');
-  assert.equal(by(24800).scope, 'all');
-  assert.equal(by(24800).url, null); // deskflow/synergy, not a page
+  assert.equal(by(5432).scope, 'all');
+  assert.equal(by(5432).url, null); // a database, not a page
+  assert.equal(by(8000).url, 'http://desktop-pc.t.ts.net:8000');
   assert.ok(d.ports!.ports.some((p) => p.side === 'wsl' && p.port === 2222));
 });

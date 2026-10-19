@@ -3,50 +3,59 @@
 
 import { badge } from './badge.js';
 import { el } from './dom.js';
+import { t } from './i18n.js';
 import { when } from './time.js';
 
 const ACTIONS = {
-  'POST /api/ports/:port/restart': '재시작',
-  'POST /api/ports/:port/stop': '중지',
-  'POST /api/ports/:port/expose': 'tailnet 공개',
-  'POST /api/ports/:port/unexpose': '공개 해제',
-  'POST /api/ports/:port/prefs': '설정',
-  'POST /api/cleanup': '서버 정리',
-  'POST /api/worktrees/remove': '워크트리 삭제',
-  'POST /api/worktrees/prune': '워크트리 기록 정리',
-  'POST /api/reservations': '포트 예약',
-  'POST /api/reservations/:port/release': '예약 해제',
-  'POST /api/dev-servers/start': '개발 서버 시작',
-  'POST /api/dev-servers/stop': '개발 서버 중지',
-  'POST /api/alerts/test': '테스트 알림',
-  'POST /api/devices/:device/alert': '기기 오프라인 알림',
-  'POST /api/known-devices/ack': '새 기기 확인',
-  'POST /api/known-devices/settings': '새 기기 알림 설정',
-  'POST /api/clients/name': '기기 이름',
-  'POST /api/digest': '요약 알림 설정',
-  'POST /api/digest/send': '요약 지금 보내기',
-  'POST /api/suggestions/:device/dismiss': '제안 무시',
-  'POST /api/claude/session-end': 'Claude 세션 종료',
-  'POST /api/claude/settings': '세션 종료 자동 정리 설정',
-  'mcp expose_port': 'tailnet 공개',
-  'mcp unexpose_port': '공개 해제',
-  'mcp restart_service': '재시작',
-  'mcp stop_service': '중지',
-  'mcp name_device': '기기 이름',
-  'mcp set_alert': '다운 알림',
-  'mcp cleanup_servers': '서버 정리',
-  'mcp remove_worktrees': '워크트리 삭제',
-  'mcp reserve_port': '포트 예약',
-  'mcp release_port': '예약 해제',
-  'mcp start_dev_server': '개발 서버 시작',
-  'mcp stop_dev_server': '개발 서버 중지',
-  'mcp set_digest': '요약 알림 설정',
+  'POST /api/ports/:port/restart': 'audit.action.restart',
+  'POST /api/ports/:port/stop': 'audit.action.stop',
+  'POST /api/ports/:port/expose': 'audit.action.expose',
+  'POST /api/ports/:port/unexpose': 'audit.action.unexpose',
+  'POST /api/ports/:port/prefs': 'audit.action.prefs',
+  'POST /api/cleanup': 'audit.action.cleanup',
+  'POST /api/worktrees/remove': 'audit.action.worktreeRemove',
+  'POST /api/worktrees/prune': 'audit.action.worktreePrune',
+  'POST /api/reservations': 'audit.action.reserve',
+  'POST /api/reservations/:port/release': 'audit.action.release',
+  'POST /api/dev-servers/start': 'audit.action.devStart',
+  'POST /api/dev-servers/stop': 'audit.action.devStop',
+  'POST /api/alerts/test': 'audit.action.alertTest',
+  'POST /api/devices/:device/alert': 'audit.action.deviceAlert',
+  'POST /api/known-devices/ack': 'audit.action.newDeviceAck',
+  'POST /api/known-devices/settings': 'audit.action.newDeviceSettings',
+  'POST /api/clients/name': 'audit.action.deviceName',
+  'POST /api/digest': 'audit.action.digest',
+  'POST /api/digest/send': 'audit.action.digestSend',
+  'POST /api/suggestions/:device/dismiss': 'audit.action.suggestionDismiss',
+  'POST /api/claude/session-end': 'audit.action.claudeSessionEnd',
+  'POST /api/claude/settings': 'audit.action.claudeSettings',
+  'mcp expose_port': 'audit.action.expose',
+  'mcp unexpose_port': 'audit.action.unexpose',
+  'mcp restart_service': 'audit.action.restart',
+  'mcp stop_service': 'audit.action.stop',
+  'mcp name_device': 'audit.action.deviceName',
+  'mcp set_alert': 'audit.action.alert',
+  'mcp cleanup_servers': 'audit.action.cleanup',
+  'mcp remove_worktrees': 'audit.action.worktreeRemove',
+  'mcp reserve_port': 'audit.action.reserve',
+  'mcp release_port': 'audit.action.release',
+  'mcp start_dev_server': 'audit.action.devStart',
+  'mcp stop_dev_server': 'audit.action.devStop',
+  'mcp set_digest': 'audit.action.digest',
 };
-const FIELDS = { label: '이름', pinned: '고정', hidden: '숨김', alert: '다운 알림', time: '시각', name: '이름', note: '메모' };
-const SOURCES = { serve: 'tailnet', loopback: '이 서버', direct: '직접 접속', mcp: 'MCP' };
-const RESULTS = { ok: ['완료', 'ok'], denied: ['거부', 'bad'], error: ['실패', 'warn'] };
+const FIELDS = { label: 'audit.field.name', pinned: 'audit.field.pinned', hidden: 'audit.field.hidden', alert: 'audit.field.alert', time: 'audit.field.time', name: 'audit.field.name', note: 'audit.field.note' };
+const SOURCES = { serve: 'tailnet', loopback: t('audit.source.loopback'), direct: t('audit.source.direct'), mcp: 'MCP' };
+const RESULTS = { ok: ['audit.result.ok', 'ok'], denied: ['audit.result.denied', 'bad'], error: ['audit.result.error', 'warn'] };
 
-export const actionText = (e) => ACTIONS[e.route] ?? e.route;
+const field = (k) => (FIELDS[k] ? t(FIELDS[k]) : k);
+/** "고정 켬" / "Pinned on"; the bare `on` switch has no field name */
+const toggle = (k, on) => (k === 'on' ? t(on ? 'audit.toggle.on' : 'audit.toggle.off') : t(on ? 'audit.toggle.fieldOn' : 'audit.toggle.fieldOff', { field: field(k) }));
+
+// targetText's own `t` is the target: its texts are built out here
+const moreText = (n) => t('audit.target.more', { n });
+const pathsText = (n, list) => t('audit.target.paths', { n, list });
+
+export const actionText = (e) => (ACTIONS[e.route] ? t(ACTIONS[e.route]) : e.route);
 
 const base = (p) => String(p).split('/').filter(Boolean).pop() ?? p;
 
@@ -54,17 +63,17 @@ const base = (p) => String(p).split('/').filter(Boolean).pop() ?? p;
 export function targetText(t = {}, { port = true } = {}) {
   const out = [];
   if (port && t.port) out.push(`:${t.port}`);
-  if (Array.isArray(t.ports) && t.ports.length) out.push(t.ports.map((p) => `:${p}`).join(' ') + (t.portsCount ? ` 외 ${t.portsCount - t.ports.length}개` : ''));
+  if (Array.isArray(t.ports) && t.ports.length) out.push(t.ports.map((p) => `:${p}`).join(' ') + (t.portsCount ? ` ${moreText(t.portsCount - t.ports.length)}` : ''));
   if (t.device) out.push(t.device);
   if (t.key) out.push(t.key);
   if (t.path) out.push(base(t.path));
   if (t.repo) out.push(base(t.repo));
-  if (Array.isArray(t.paths) && t.paths.length) out.push(`${t.pathsCount ?? t.paths.length}개: ${t.paths.slice(0, 3).map(base).join(', ')}${(t.pathsCount ?? t.paths.length) > 3 ? ' …' : ''}`);
+  if (Array.isArray(t.paths) && t.paths.length) out.push(`${pathsText(t.pathsCount ?? t.paths.length, t.paths.slice(0, 3).map(base).join(', '))}${(t.pathsCount ?? t.paths.length) > 3 ? ' …' : ''}`);
   if (t.owner) out.push(t.owner);
-  for (const k of ['pinned', 'hidden', 'alert', 'on']) if (typeof t[k] === 'boolean') out.push(`${FIELDS[k] ?? '켜기'} ${t[k] ? '켬' : '끔'}`);
+  for (const k of ['pinned', 'hidden', 'alert', 'on']) if (typeof t[k] === 'boolean') out.push(toggle(k, t[k]));
   if (t.mode) out.push(t.mode);
   if (t.autoStop) out.push(t.autoStop);
-  if (Array.isArray(t.fields) && t.fields.length) out.push(t.fields.map((f) => FIELDS[f] ?? f).join('·'));
+  if (Array.isArray(t.fields) && t.fields.length) out.push(t.fields.map(field).join('·'));
   return out.join(' · ');
 }
 
@@ -77,9 +86,10 @@ export function deviceText(d) {
 /** <li>: time, action, target, who · device · source, result (with the server's message as the title); a coalesced denial shows ×count */
 export function auditRow(e, opts = {}) {
   const li = el('li', `audit-${e.result}`);
-  const [rt, tone] = RESULTS[e.result] ?? [e.result, ''];
+  const [rk, tone] = RESULTS[e.result] ?? [null, ''];
+  const rt = rk ? t(rk) : e.result;
   const res = badge(e.count > 1 ? `${rt} ×${e.count}` : rt, tone);
-  const since = e.count > 1 && e.since ? ` (${when(e.since)}부터 ${e.count}번)` : '';
+  const since = e.count > 1 && e.since ? ` ${t('audit.since', { since: when(e.since), n: e.count })}` : '';
   if (e.detail || since) res.title = `${e.detail ?? ''}${since}`;
   const target = targetText(e.target, opts);
   const dev = deviceText(e.device);

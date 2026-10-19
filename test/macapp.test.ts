@@ -3,7 +3,7 @@
 // numbers the page and the app must agree on.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { expandShell } from '../src/core/shell.ts';
 // @ts-expect-error plain browser module, no types
 import { barReport, inMacApp, NO_DRAG, setupMacApp } from '../public/lib/macapp.js';
@@ -156,5 +156,70 @@ test('every page header, as served, has the .brand with the shell\'s ← (so no 
     assert.match(html, /<header class="top">\s*<div class="brand">\s*<button type="button" id="sideToggle"/, page);
     assert.match(html, /id="navBack"/, page);
     assert.match(html, /<nav class="tabs shell-tabs"/, page);
+  }
+});
+
+// The app's own text (mac-app/Resources/{en,ko}.lproj/Localizable.strings, read by PortboardCore/L10n.swift)
+
+/** `"key" = "value";` lines of a .strings file; comments left out, `\"` `\\` `\n` unescaped */
+function parseStrings(text: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const line of text.replace(/\/\*[\s\S]*?\*\//g, '').split('\n')) {
+    const m = line.match(/^\s*"((?:[^"\\]|\\.)*)"\s*=\s*"((?:[^"\\]|\\.)*)"\s*;\s*(?:\/\/.*)?$/);
+    if (m) out.set(m[1], m[2].replace(/\\(.)/g, (_, c: string) => (c === 'n' ? '\n' : c)));
+  }
+  return out;
+}
+
+// Swift source without its comments (line, doc and block comments); string literals are kept, so `https://` stays
+function swiftWithoutComments(src: string): string {
+  let out = '';
+  let inString = false;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    const next = src[i + 1];
+    if (inString) {
+      if (c === '\\') { out += c + (next ?? ''); i++; continue; }
+      if (c === '"' || c === '\n') inString = false;
+      out += c;
+    } else if (c === '/' && next === '/') {
+      while (i + 1 < src.length && src[i + 1] !== '\n') i++;
+    } else if (c === '/' && next === '*') {
+      const end = src.indexOf('*/', i + 2);
+      i = end < 0 ? src.length : end + 1;
+    } else {
+      if (c === '"') inString = true;
+      out += c;
+    }
+  }
+  return out;
+}
+
+test('the Mac app\'s text: en and ko have the same keys and placeholders, and every key is used in the Swift sources', () => {
+  const enText = read('mac-app/Resources/en.lproj/Localizable.strings');
+  const en = parseStrings(enText);
+  const ko = parseStrings(read('mac-app/Resources/ko.lproj/Localizable.strings'));
+  assert.ok(ko.size > 100, `${ko.size} keys`);
+  assert.deepEqual([...en.keys()].sort(), [...ko.keys()].sort());
+  const placeholders = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+  for (const [key, text] of ko) assert.deepEqual(placeholders(en.get(key) ?? ''), placeholders(text), key);
+  const hangul = /[ᄀ-ᇿㄱ-ㆎ가-힣]/;
+  assert.doesNotMatch(enText, hangul, 'no Korean in the English file');
+  assert.match(ko.get('shell.view.services') ?? '', hangul);
+
+  const files = (readdirSync(new URL('../mac-app/Sources', import.meta.url), { recursive: true }) as string[])
+    .filter((f) => f.endsWith('.swift'))
+    .map((f) => `mac-app/Sources/${f}`);
+  assert.ok(files.length > 10, files.join(' '));
+  const code = new Map(files.map((f) => [f, swiftWithoutComments(read(f))]));
+  const all = [...code.values()].join('\n');
+  // every L10n.t("key" and every key-like literal (the pool state table, ternaries) is in both files
+  const used = new Set([...all.matchAll(/L10n\.t\(\s*"([^"]+)"/g), ...all.matchAll(/"((?:mac|shell|common)\.[A-Za-z0-9.]+)"/g)].map((m) => m[1]));
+  assert.ok(used.size > 100, `${used.size} keys used`);
+  for (const key of used) assert.ok(en.has(key) && ko.has(key), `${key} is used but missing from the .strings files`);
+  for (const key of ko.keys()) assert.ok(all.includes(`"${key}"`), `${key} is not used in mac-app/Sources`);
+  // no Korean left in the sources outside comments: all user-facing text goes through L10n.t
+  for (const [f, src] of code) {
+    src.split('\n').forEach((line, i) => assert.doesNotMatch(line, hangul, `${f} (code line ${i + 1}): ${line.trim()}`));
   }
 });

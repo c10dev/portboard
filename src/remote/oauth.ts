@@ -10,6 +10,7 @@
 // Redirect URIs must also match an allowlist, so a client registered by a stranger can't send a code anywhere else.
 
 import { createHash } from 'node:crypto';
+import { currentLocale, t } from '../core/i18n.ts';
 
 export const SCOPE = 'portboard:read';
 
@@ -201,12 +202,12 @@ export function consentHtml(p: ConsentPage): string {
     }
   })();
   return `<!doctype html>
-<html lang="ko">
+<html lang="${currentLocale()}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="same-origin">
-<title>Portboard 원격 접근 승인</title>
+<title>${t('oauth.title')}</title>
 <style>
   :root { color-scheme: light dark; --bg: #fafaf9; --fg: #1c1917; --muted: #57534e; --line: #d6d3d1; --accent: #0f766e; --err: #b91c1c; }
   @media (prefers-color-scheme: dark) { :root { --bg: #1c1917; --fg: #f5f5f4; --muted: #a8a29e; --line: #44403c; --accent: #2dd4bf; --err: #f87171; } }
@@ -228,22 +229,22 @@ export function consentHtml(p: ConsentPage): string {
 </head>
 <body>
 <main>
-  <h1>Portboard 원격 접근 승인</h1>
-  <p><b>${esc(p.clientName)}</b> (${esc(redirectHost)})이 <b>${esc(p.host)}</b>의 Portboard에 <b>읽기 전용</b>으로 연결하려고 합니다.</p>
-  <p>방금 <b>직접</b> 커넥터 연결을 시작해서 이 페이지가 열린 경우에만 승인하세요. 다른 사람이 보낸 링크라면 거부하세요: 승인하면 그 사람의 계정이 접근 권한을 받습니다.</p>
+  <h1>${t('oauth.title')}</h1>
+  <p>${t('oauth.lead', { client: esc(p.clientName), redirect: esc(redirectHost), host: esc(p.host) })}</p>
+  <p>${t('oauth.warn')}</p>
   <ul>
-    <li>공유: 포트와 서비스 이름, 상태, 기기 이름과 부하, tailnet 안에서만 열리는 URL</li>
-    <li>공유 안 함: IP·MAC 주소, 프로세스·경로, 로그, 노출·재시작·중지 같은 쓰기 동작</li>
+    <li>${t('oauth.shared')}</li>
+    <li>${t('oauth.notShared')}</li>
   </ul>
   <form method="post" action="authorize" autocomplete="off">
       ${hidden}
-    <label for="code">승인 코드</label>
+    <label for="code">${t('oauth.code')}</label>
     <input id="code" name="approval_code" inputmode="text" maxlength="12" placeholder="XXXX-XXXX" autofocus>
-    <p class="hint">${p.settingsUrl ? `<a href="${esc(p.settingsUrl)}" target="_blank" rel="noopener">코드는 대시보드 설정 탭(tailnet 전용)에서 만들 수 있어요</a>` : '코드는 대시보드 설정 탭(tailnet 전용)에서 만들 수 있어요'}. 10분 동안 한 번만 쓸 수 있습니다. 서버에서는 <code>node src/remote.ts approve</code>로도 만들어요.</p>
+    <p class="hint">${t('oauth.hint', { where: p.settingsUrl ? `<a href="${esc(p.settingsUrl)}" target="_blank" rel="noopener">${t('oauth.where')}</a>` : t('oauth.where') })}</p>
     ${p.error ? `<p class="err">${esc(p.error)}</p>` : ''}
     <div class="row">
-      <button type="submit" name="decision" value="deny">거부</button>
-      <button type="submit" name="decision" value="approve">승인</button>
+      <button type="submit" name="decision" value="deny">${t('oauth.deny')}</button>
+      <button type="submit" name="decision" value="approve">${t('oauth.approve')}</button>
     </div>
   </form>
 </main>
@@ -252,7 +253,7 @@ export function consentHtml(p: ConsentPage): string {
 }
 
 export function errorHtml(message: string): string {
-  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Portboard</title>
+  return `<!doctype html><html lang="${currentLocale()}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Portboard</title>
 <style>:root{color-scheme:light dark}body{font:15px/1.5 system-ui,sans-serif;max-width:30rem;margin:3rem auto;padding:0 1rem}</style></head>
-<body><h1>연결할 수 없습니다</h1><p>${esc(message)}</p></body></html>`;
+<body><h1>${t('oauth.errorTitle')}</h1><p>${esc(message)}</p></body></html>`;
 }

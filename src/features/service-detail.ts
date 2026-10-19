@@ -63,6 +63,7 @@ export function detailReport(d: ServiceDetail) {
 
 export const serviceDetailFeature: FeatureModule = {
   name: 'service-detail',
+  order: 800,
   routes: [
     {
       method: 'GET',

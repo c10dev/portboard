@@ -4,6 +4,7 @@
 
 import { errorText, post, readJSON } from '../lib/api.js';
 import { $, button, extLink } from '../lib/dom.js';
+import { t } from '../lib/i18n.js';
 import { copy, toast } from '../lib/toast.js';
 
 /** "systemd: x.service", "docker: name", "프로세스: pid 1, 2" */
@@ -11,7 +12,7 @@ export function controlText(c) {
   if (!c) return null;
   if (c.type === 'systemd') return `systemd: ${c.unit}`;
   if (c.type === 'docker') return `docker: ${c.container}`;
-  return `프로세스: pid ${c.pids.join(', ')}`;
+  return t('control.process', { pids: c.pids.join(', ') });
 }
 
 /** The address 열기 ↗ opens: the tailnet HTTPS one, else a direct http(s) one; null when there is none */
@@ -22,21 +23,21 @@ export function reachButtons(p, { busy, act }) {
   const out = [];
   const openUrl = openUrlOf(p);
   if (openUrl) {
-    out.push(extLink('열기 ↗', openUrl, 'btn primary'));
+    out.push(extLink(t('control.open'), openUrl, 'btn primary'));
   } else if (p.urls.direct) {
-    out.push(button('주소 복사', () => copy(p.urls.direct.replace(/^tcp:\/\//, ''))));
+    out.push(button(t('control.copyAddress'), () => copy(p.urls.direct.replace(/^tcp:\/\//, ''))));
   }
-  if (p.served) out.push(button('공개 해제', () => act('unexpose'), { disabled: busy, write: true }));
-  else if (p.canExpose) out.push(button('tailnet 공개', () => act('expose'), { disabled: busy, write: true, title: `tailscale serve --https=${p.port} → 127.0.0.1:${p.port}` }));
-  if (p.listening && p.scope === 'loopback' && !p.served && p.urls.ssh) out.push(button('SSH 복사', () => copy(p.urls.ssh)));
+  if (p.served) out.push(button(t('control.unexpose'), () => act('unexpose'), { disabled: busy, write: true }));
+  else if (p.canExpose) out.push(button(t('control.expose'), () => act('expose'), { disabled: busy, write: true, title: `tailscale serve --https=${p.port} → 127.0.0.1:${p.port}` }));
+  if (p.listening && p.scope === 'loopback' && !p.served && p.urls.ssh) out.push(button(t('control.copySsh'), () => copy(p.urls.ssh)));
   return out;
 }
 
-export const restartQuestion = (p) => `${p.port} ${p.name}\n${controlText(p.control)}을(를) 재시작할까요?`;
+export const restartQuestion = (p) => `${p.port} ${p.name}\n${t('control.restartQuestion', { what: controlText(p.control) })}`;
 
 export function stopQuestion(p) {
-  const what = p.control?.type === 'process' ? '프로세스를 종료(SIGTERM)' : '중지';
-  return `${p.port} ${p.name}\n${controlText(p.control)}\n${what}할까요?`;
+  const what = p.control?.type === 'process' ? t('control.stopQuestion.process') : t('control.stopQuestion.stop');
+  return `${p.port} ${p.name}\n${controlText(p.control)}\n${what}`;
 }
 
 /**
@@ -47,8 +48,8 @@ export async function portAction(port, kind, watched) {
   try {
     const r = await post(`/api/ports/${port}/${kind}`);
     const quiet = r.ok && (kind === 'restart' || kind === 'stop') && watched();
-    if (r.body.enableUrl) toast('이 tailnet에서 Serve가 아직 꺼져 있어요. 한 번만 켜주세요 →', true, { link: r.body.enableUrl });
-    else toast(`${r.body.message ?? errorText(r)}${quiet ? ' · 다운 알림 2분 멈춤' : ''}`, !r.ok);
+    if (r.body.enableUrl) toast(t('control.serveOff'), true, { link: r.body.enableUrl });
+    else toast(`${r.body.message ?? errorText(r)}${quiet ? ` · ${t('control.quiet')}` : ''}`, !r.ok);
   } catch (err) {
     toast(err.message, true);
   }
@@ -58,9 +59,9 @@ export async function portAction(port, kind, watched) {
 export async function fetchLogs(port, lines) {
   try {
     const r = await readJSON(`/api/ports/${port}/logs?lines=${lines}`);
-    return { source: r.source ?? '', text: r.lines?.length ? r.lines.join('\n') : (r.message ?? '로그가 없어요.') };
+    return { source: r.source ?? '', text: r.lines?.length ? r.lines.join('\n') : (r.message ?? t('control.logs.none')) };
   } catch (err) {
-    return { source: '', text: `불러오기 실패: ${err.message}` };
+    return { source: '', text: t('services.loadFailed', { error: err.message }) };
   }
 }
 
@@ -89,7 +90,7 @@ export function logsDialog() {
       port = p.port;
       $('logsTitle').textContent = `${p.port} · ${p.name}`;
       $('logsSource').textContent = '';
-      $('logsBody').textContent = '불러오는 중…';
+      $('logsBody').textContent = t('common.loading');
       if (!logs.open) logs.showModal();
       load();
     },

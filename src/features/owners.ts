@@ -16,6 +16,7 @@ import { cleanupReasons, ownerOf, REASON_TEXT, transientUnits, type CleanupReaso
 import { text, type Core } from '../mcp/kit.ts';
 import { ok, reply } from './router.ts';
 import type { FeatureModule, Tool } from './types.ts';
+import { t } from '../core/i18n.ts';
 
 export interface OwnedPort {
   port: number;
@@ -81,11 +82,11 @@ export async function cleanupPorts(requested: number[], snap: Snapshot): Promise
   for (const port of [...new Set(requested)]) {
     const row = doc.ports.find((x) => x.port === port);
     if (!row || !row.reasons.length) {
-      out.push({ port, ok: false, message: '정리 후보가 아니에요 (다시 확인한 결과)' });
+      out.push({ port, ok: false, message: t('ownersMsg.cleanup.notCandidate') });
       continue;
     }
     if (stoppedPids.has(row.pid)) {
-      out.push({ port, ok: true, message: `같은 프로세스(pid ${row.pid})를 이미 중지했어요` });
+      out.push({ port, ok: true, message: t('ownersMsg.cleanup.samePid', { pid: row.pid }) });
       continue;
     }
     const r = await quietStop(port);
@@ -151,6 +152,7 @@ const cleanupTool: Tool = {
 
 export const ownersFeature: FeatureModule = {
   name: 'owners',
+  order: 1300,
   routes: [
     {
       method: 'GET',

@@ -78,12 +78,13 @@ const RULE_FIELDS = {
     enum: [...ON_NEW, null],
     description:
       'When a matching port starts listening: notify (dashboard toast + push through the alert channel), ' +
-      'openBrowserOnce (dashboard toast with 열기 only), silent, ignore (no notice, and hidden). null clears it',
+      'openBrowserOnce (dashboard toast with an Open button only), silent, ignore (no notice, and hidden). null clears it',
   },
 };
 
 export const portRulesFeature: FeatureModule = {
   name: 'port-rules',
+  order: 2300,
   routes: [
     { method: 'GET', path: '/api/port-rules', handler: async () => ok(await portRulesView()) },
     {
@@ -128,7 +129,7 @@ export const portRulesFeature: FeatureModule = {
           'Add, change or remove a port rule (see list_port_rules). key: "3000-3010", "localhost:5173", a command-line ' +
           'regex such as "vite|next dev", or "otherPorts" for the default. A single port ("5173") sets that port\'s own ' +
           'entry, like a rename in the dashboard. Fields left out keep their value, null clears one, remove=true deletes ' +
-          'the whole rule. Example: label every scratchpad preview with {"key": "18891-18899", "label": "스크래치패드 미리보기"}.',
+          'the whole rule. Example: label every scratchpad preview with {"key": "18891-18899", "label": "Scratchpad preview"}.',
         inputSchema: {
           type: 'object',
           properties: { key: { type: 'string', maxLength: 200, description: 'Rule key' }, ...RULE_FIELDS, remove: { type: 'boolean', description: 'Delete the rule' } },

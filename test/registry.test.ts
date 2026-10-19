@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { buildRegistry, FEATURES, READ_ONLY, REGISTRY, uiTags } from '../src/features/registry.ts';
+import { buildRegistry, FEATURES, MODULES, READ_ONLY, REGISTRY, uiTags } from '../src/features/registry.ts';
 import { createRouter } from '../src/features/router.ts';
 import { isEnabled } from '../src/features/jobs.ts';
 import type { FeatureModule, Route, Tool } from '../src/features/types.ts';
@@ -151,6 +151,31 @@ test('local tools/list order (FEATURES order) is the order clients have always s
     'list_port_rules', 'set_port_rule',
     'memory_usage',
   ]);
+});
+
+// ---- adding a feature: no shared append point (parallel branches used to conflict on the end of FEATURES) ----
+
+test('registry.ts: feature imports and MODULES are alphabetical, so a new feature goes in its own place, not at the end', () => {
+  const src = readFileSync(`${ROOT}src/features/registry.ts`, 'utf8');
+  const files = [...src.matchAll(/^import \{ \w+ \} from '\.\/([\w-]+\.ts)';$/gm)].map((m) => m[1]);
+  assert.deepEqual(files, [...files].sort(), 'imports from ./<feature>.ts sorted by file name');
+  const list = /export const MODULES: FeatureModule\[\] = \[\n([\s\S]*?)\];/.exec(src);
+  assert.ok(list, 'MODULES list');
+  const ids = list[1].split('\n').map((l) => l.trim().replace(/,$/, '')).filter(Boolean);
+  const lower = (a: string, b: string) => (a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0);
+  assert.deepEqual(ids, [...ids].sort(lower), 'MODULES sorted by name, ignoring case');
+  assert.equal(ids.length, files.length, 'every imported feature is in MODULES');
+  assert.equal(MODULES.length, FEATURES.length);
+});
+
+test('every feature has its own order number (two branches picking the same one show up here after the merge)', () => {
+  const seen = new Map<number, string>();
+  for (const f of MODULES) {
+    assert.ok(Number.isFinite(f.order), `${f.name}: order`);
+    assert.ok(!seen.has(f.order), `${f.name} and ${seen.get(f.order)} both have order ${f.order}`);
+    seen.set(f.order, f.name);
+  }
+  assert.deepEqual(FEATURES.map((f) => f.order), MODULES.map((f) => f.order).sort((a, b) => a - b));
 });
 
 test('each health.ts collector is declared by exactly one feature, and nothing else is', () => {

@@ -50,3 +50,19 @@ func withPoolState(_ usage: JSON, card id: String, _ state: String) -> JSON {
 func withPort(_ ports: JSON, _ port: Int, _ f: (JSON) -> JSON) -> JSON {
     ports.mapArray("ports") { $0["port"].int == port ? f($0) : $0 }
 }
+
+/// The app's text tables, read from mac-app/Resources like the fixtures (no resource bundle). The assertions are in
+/// Korean, so every test class loads the Korean table in setUp.
+enum Strings {
+    static func file(_ lang: String) -> String {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // PortboardCoreTests
+            .appendingPathComponent("../../Resources/\(lang).lproj/Localizable.strings")
+        return try! String(contentsOf: url, encoding: .utf8)
+    }
+
+    static let korean = L10n.parse(file("ko"))
+    static let english = L10n.parse(file("en"))
+
+    static func useKorean() { L10n.table = korean }
+}

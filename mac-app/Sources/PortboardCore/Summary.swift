@@ -43,23 +43,27 @@ public struct Warning: Equatable, Sendable {
 
 public enum Tone: String, Sendable { case ok, warn, bad, off }
 
-/// The dashboard's compute-pool state table (public/devices.js POOL_STATE): label and tone. Only degraded and the
-/// bad states warn; agent-busy means the Mac is in use, which is normal.
+/// The dashboard's compute-pool state table (public/devices.js POOL_STATE): label (an L10n key) and tone. Only
+/// degraded and the bad states warn; agent-busy means the Mac is in use, which is normal.
 public enum Pool {
-    public static let states: [String: (label: String, tone: Tone)] = [
-        "ok": ("정상", .ok),
-        "degraded": ("일부 문제", .warn),
-        "wsl-down": ("WSL 꺼짐", .bad),
-        "host-down": ("응답 없음", .bad),
-        "auth": ("SSH 인증 실패", .bad),
-        "agent-away": ("에이전트 끊김", .off),
-        "agent-busy": ("사용 중", .warn),
-        "unknown": ("상태 모름", .off),
+    public static let states: [String: (key: String, tone: Tone)] = [
+        "ok": ("mac.pool.ok", .ok),
+        "degraded": ("mac.pool.degraded", .warn),
+        "wsl-down": ("mac.pool.wslDown", .bad),
+        "host-down": ("mac.pool.hostDown", .bad),
+        "auth": ("mac.pool.auth", .bad),
+        "agent-away": ("mac.pool.agentAway", .off),
+        "agent-busy": ("mac.pool.agentBusy", .warn),
+        "unknown": ("mac.pool.unknown", .off),
     ]
     static let warnStates: Set<String> = ["degraded", "wsl-down", "host-down", "auth"]
 
     public static func warns(_ p: PoolStatus?) -> Bool { p?.state.map(warnStates.contains) ?? false }
-    public static func label(_ p: PoolStatus?) -> String { p?.state.flatMap { states[$0]?.label } ?? p?.state ?? "상태 모름" }
+    /// The state's text; a state the table doesn't know is shown as it is
+    public static func label(_ p: PoolStatus?) -> String {
+        guard let state = p?.state else { return L10n.t("mac.pool.unknown") }
+        return states[state].map { L10n.t($0.key) } ?? state
+    }
 }
 
 public enum Summary {
@@ -108,16 +112,16 @@ public enum Summary {
         var bits: [String] = []
         if let cpu = p.cpuPct { bits.append("CPU \(Fmt.jsRound(cpu))%") }
         else if let load = p.load1, let cores = p.cores, cores != 0 { bits.append("load \(String(format: "%.1f", load))/\(Fmt.jsNumber(cores))") }
-        if let total = p.memTotalMb, total != 0, let avail = p.memAvailMb { bits.append("메모리 \(Fmt.jsRound((1 - avail / total) * 100))%") }
+        if let total = p.memTotalMb, total != 0, let avail = p.memAvailMb { bits.append(L10n.t("mac.summary.memory", ["pct": Fmt.jsRound((1 - avail / total) * 100)])) }
         return bits
     }
 
     /// `🟢 name · status [· CPU · 메모리] [· 서비스 n]`
     public static func deviceTitle(_ c: DeviceCard) -> String {
-        var bits = [c.isSelf ? "\(c.displayName) (이 서버)" : c.displayName]
+        var bits = [c.isSelf ? "\(c.displayName) (\(L10n.t("common.thisServer")))" : c.displayName]
         if let p = c.pool { bits.append("pool \(Pool.label(p))"); bits += cpuMem(p) }
-        else { bits.append(c.online ? "온라인" : "오프라인") }
-        if !c.uses.isEmpty { bits.append("서비스 \(c.uses.count)") }
+        else { bits.append(L10n.t(c.online ? "mac.summary.online" : "mac.summary.offline")) }
+        if !c.uses.isEmpty { bits.append(L10n.t("mac.summary.services", ["n": c.uses.count])) }
         return Fmt.menuText("\(dot[tone(c)] ?? "⚪") \(bits.joined(separator: " · "))")
     }
 
@@ -128,7 +132,7 @@ public enum Summary {
 
     /// `📌 name :port · tailnet HTTPS | local only | 리스닝 | 리스닝 없음`
     public static func pinnedTitle(_ p: PortEntry) -> String {
-        let state = !p.listening ? "리스닝 없음" : p.served ? "tailnet HTTPS" : p.scope == "loopback" ? "local only" : "리스닝"
+        let state = !p.listening ? L10n.t("mac.summary.notListening") : p.served ? "tailnet HTTPS" : p.scope == "loopback" ? "local only" : L10n.t("mac.summary.listening")
         return Fmt.menuText("📌 \(p.displayName) :\(p.port) · \(state)")
     }
 
@@ -153,8 +157,8 @@ public enum Summary {
     public static func warnings(_ s: Snapshot) -> [Warning] {
         var bells: [Warning] = []
         for w in down(s.alerts) {
-            if w.isPort, let port = w.port { bells.append(Warning(text: "🔔 \(Fmt.shortName(w.name)) :\(port) 응답 없음", path: "service.html#\(port)")) }
-            else { bells.append(Warning(text: "🔔 \(Fmt.shortName(w.name)) 오프라인", path: "devices.html#\(pathEscape(w.id ?? w.name))")) }
+            if w.isPort, let port = w.port { bells.append(Warning(text: L10n.t("mac.summary.portDown", ["name": Fmt.shortName(w.name), "port": port]), path: "service.html#\(port)")) }
+            else { bells.append(Warning(text: L10n.t("mac.summary.deviceOffline", ["name": Fmt.shortName(w.name)]), path: "devices.html#\(pathEscape(w.id ?? w.name))")) }
         }
         var out: [Warning] = []
         for c in cards(usage: s.usage, devices: s.devices) where Pool.warns(c.pool) {
@@ -162,10 +166,10 @@ public enum Summary {
             out.append(Warning(text: "compute-pool \(who): \(Pool.label(c.pool))", path: "devices.html#\(pathEscape(c.anchor))"))
         }
         for p in pinned(s.ports) where !p.listening {
-            out.append(Warning(text: "고정한 포트 :\(p.port) \(p.displayName) 리스닝 없음", path: ""))
+            out.append(Warning(text: L10n.t("mac.summary.pinnedDown", ["port": p.port, "name": p.displayName]), path: ""))
         }
         for (what, err) in s.errors.sorted(by: { $0.key < $1.key }) where !err.isEmpty {
-            out.append(Warning(text: "/api/\(what) 읽기 실패: \(err)", path: ""))
+            out.append(Warning(text: L10n.t("mac.summary.readFailed", ["what": what, "error": err]), path: ""))
         }
         return bells.map { Warning(text: Fmt.menuText($0.text), path: $0.path) }
             + out.map { Warning(text: Fmt.menuText("⚠ \($0.text)"), path: $0.path) }
@@ -216,9 +220,9 @@ public struct MenuStatus: Equatable, Sendable {
     /// One-line explanation for the top of the menu, nil when all is well
     public var detail: String? {
         var bits: [String] = []
-        if down > 0 { bits.append("감시 중인 포트 \(down)개 응답 없음") }
-        if devicesOff > 0 { bits.append("확인할 기기 \(devicesOff)대") }
-        if cleanup > 0 { bits.append("정리할 서버 \(cleanup)개") }
+        if down > 0 { bits.append(L10n.t("mac.summary.watchedDown", ["n": down])) }
+        if devicesOff > 0 { bits.append(L10n.t("mac.summary.devicesToCheck", ["n": devicesOff])) }
+        if cleanup > 0 { bits.append(L10n.t("mac.summary.serversToClean", ["n": cleanup])) }
         return bits.isEmpty ? nil : bits.joined(separator: " · ")
     }
 

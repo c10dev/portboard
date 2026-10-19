@@ -27,6 +27,8 @@ The Mac app is a Swift package: `cd mac-app && swift test` (macOS, or the `swift
 - **Zero runtime dependencies.** Only Node's standard library at runtime. Don't add packages to `dependencies`.
 - **One feature, one module.** Features register their routes, MCP tools and pages in the registry
   ([docs/architecture.md](docs/architecture.md)). Don't edit `src/server.ts` or `src/mcp.ts` to add a feature.
+  In `src/features/registry.ts` the new import and `MODULES` line go in alphabetical order, not at the end; the
+  module's `order` number sets its place in `tools/list`.
 - **Writes are guarded.** A new POST route is declared a write so it gets the CSRF and owner checks and an audit line
   ([docs/security.md](docs/security.md)). The remote MCP server stays read-only.
 - **Nothing machine-specific in code.** Host names, tailnets, paths and addresses come from the machine or
@@ -35,6 +37,8 @@ The Mac app is a Swift package: `cd mac-app && swift test` (macOS, or the `swift
 - **Tests with the change.** Every behaviour change comes with a test under `test/`.
 - **Docs with the change.** Feature details go in `docs/<topic>.md`, not the README.
 - **Changelog.** Don't edit `CHANGELOG.md`; add `changelog.d/<issue or topic>.md` ([format](changelog.d/README.md)).
+  Parallel branches each add their own file, so they never conflict there. `npm run changelog -- <version>` folds them
+  at release time.
 
 ## Pull requests
 

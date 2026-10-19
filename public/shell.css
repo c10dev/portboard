@@ -362,7 +362,7 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
 @keyframes pb-wait-over { to { visibility: visible; } }
 [data-wait] { position: relative; min-height: 60vh; }
 [data-wait]::before {
-  content: '불러오는 중…'; position: absolute; left: var(--col-pad); top: 16px; color: var(--text-3); font-size: var(--fs-3);
+  content: var(--t-loading, '…'); position: absolute; left: var(--col-pad); top: 16px; color: var(--text-3); font-size: var(--fs-3);
   opacity: 0; animation: pb-wait-note .2s ease .4s forwards;
 }
 @keyframes pb-wait-note { to { opacity: 1; } }

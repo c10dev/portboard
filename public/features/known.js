@@ -5,6 +5,7 @@
 
 import { postOrThrow } from '../lib/api.js';
 import { $, el } from '../lib/dom.js';
+import { locale, t } from '../lib/i18n.js';
 import { agoMonths as ago } from '../lib/time.js';
 import { toast } from '../lib/toast.js';
 
@@ -16,11 +17,11 @@ export const short = (v) => v.replace(/[,.]?\s+(Co\.?,?\s*)?(Ltd|Inc|Corp|GmbH|L
 const nd = (data) => data.newDevices ?? { settings: { connections: true, neighbors: false }, pending: [], alertsOn: true };
 
 function newWhat(p) {
-  return p.scope === 'neighbor' ? 'LAN에 처음 보임' : p.service ? `${p.service.name} :${p.service.port}에 처음 접속` : '처음 접속';
+  return p.scope === 'neighbor' ? t('known.what.lan') : p.service ? t('known.what.service', { service: p.service.name, port: p.service.port }) : t('known.what.connect');
 }
 
 function ackButton(key, ctx, title) {
-  const ok = el('button', 'nd-ack', '확인');
+  const ok = el('button', 'nd-ack', t('known.ack'));
   ok.dataset.write = '1';
   ok.type = 'button';
   if (title) ok.title = title;
@@ -29,7 +30,7 @@ function ackButton(key, ctx, title) {
 }
 
 function nameButton(target, ctx) {
-  const b = el('button', 'name-btn', '이름 붙이기');
+  const b = el('button', 'name-btn', t('devices.nameIt'));
   b.dataset.write = '1';
   b.type = 'button';
   b.addEventListener('click', () => ctx.nameDevice(target));
@@ -44,9 +45,9 @@ export function renderNewDevices(ctx) {
   box.hidden = !list.length;
   if (!list.length) return box.replaceChildren();
   const h = el('div', 'nd-h');
-  h.append(el('strong', null, `새 기기 ${list.length}`), el('span', 'nd-sub', '이 서버에서 처음 본 기기예요. 아는 기기면 이름을 붙이거나 확인을 눌러 주세요.'));
+  h.append(el('strong', null, t('known.head', { n: list.length })), el('span', 'nd-sub', t('known.sub')));
   if (list.length > 1) {
-    const all = el('button', 'nd-ack', '모두 확인');
+    const all = el('button', 'nd-ack', t('known.ackAll'));
     all.dataset.write = '1';
     all.type = 'button';
     all.addEventListener('click', () => acknowledge('all', ctx));
@@ -59,17 +60,17 @@ export function renderNewDevices(ctx) {
     const who = el(card ? 'button' : 'div', 'nd-who');
     if (card) {
       who.type = 'button';
-      who.title = '기기 보기';
+      who.title = t('known.view');
       who.addEventListener('click', () => ctx.showDetail(card.id));
     }
     const sub = [p.kind === 'tailnet' ? 'Tailscale' : `LAN${p.ip ? ` ${p.ip}` : ''}`, p.vendor ? short(p.vendor) : null, newWhat(p), ago(p.since)].filter(Boolean).join(' · ');
-    who.append(el('span', 'badge new', '새 기기'), el('span', 'nd-name', card?.name ?? p.name), el('span', 'nd-meta', sub));
+    who.append(el('span', 'badge new', t('known.badge')), el('span', 'nd-name', card?.name ?? p.name), el('span', 'nd-meta', sub));
     li.append(who);
     const acts = el('span', 'nd-acts');
     if (p.nameKey) {
       acts.append(nameButton({ nameKey: p.nameKey, addresses: p.ip ? [p.ip] : [], id: p.cardId ?? p.key, vendor: p.vendor, nameSource: card?.nameSource ?? 'ip', name: card?.name ?? p.name }, ctx));
     }
-    acts.append(ackButton(p.key, ctx, '아는 기기예요: 새 기기 표시를 지워요'));
+    acts.append(ackButton(p.key, ctx, t('known.ack.title')));
     li.append(acts);
     ul.append(li);
   }
@@ -86,37 +87,37 @@ export function renderSettings(ctx) {
     cb.type = 'checkbox';
     cb.checked = !!s[key];
     cb.addEventListener('change', () => saveSettings({ [key]: cb.checked }, ctx));
-    const t = el('span');
-    t.append(el('span', null, label), el('span', 'nd-help', help));
-    l.append(cb, t);
+    const text = el('span');
+    text.append(el('span', null, label), el('span', 'nd-help', help));
+    l.append(cb, text);
     return l;
   };
   box.replaceChildren(
-    row('connections', '이 서버의 서비스에 처음 접속한 기기', '기본 켜짐. tailnet 기기나 LAN 기기가 처음 연결하면 한 번 알려요.'),
-    row('neighbors', 'LAN에 처음 보인 기기 (ARP/이웃 테이블)', '기본 꺼짐. 이 서버와 패킷을 주고받은 모든 기기가 잡혀서 시끄러울 수 있어요.'),
+    row('connections', t('known.opt.connections'), t('known.opt.connections.help')),
+    row('neighbors', t('known.opt.neighbors'), t('known.opt.neighbors.help')),
     el('p', 'muted small', nd(ctx.data).alertsOn
-      ? '다운 알림과 같은 채널(ntfy)로 보내요. 여러 대가 한꺼번에 보이면 10분에 한 번으로 묶어요. 알림에는 이름·제조사·서비스만 담고 주소는 넣지 않아요.'
-      : 'PORTBOARD_ALERTS=off: 알림은 보내지 않고 새 기기 표시만 해요.'),
+      ? t('known.alertsOn')
+      : t('known.alertsOff')),
   );
 }
 
 async function acknowledge(key, ctx) {
   try {
     await postOrThrow('/api/known-devices/ack', { key });
-    say(key === 'all' ? '모두 확인했어요' : '확인했어요');
+    say(key === 'all' ? t('known.ackedAll') : t('known.acked'));
     await ctx.refresh(true);
   } catch (err) {
-    say(`확인 실패: ${err.message}`, true);
+    say(t('known.ackFailed', { error: err.message }), true);
   }
 }
 
 async function saveSettings(patch, ctx) {
   try {
     await postOrThrow('/api/known-devices/settings', patch);
-    say('새 기기 알림 설정을 저장했어요');
+    say(t('known.saved'));
     await ctx.refresh(true);
   } catch (err) {
-    say(`저장 실패: ${err.message}`, true);
+    say(t('devices.saveFailed', { error: err.message }), true);
   }
 }
 
@@ -124,7 +125,7 @@ async function saveSettings(patch, ctx) {
 export function newBlock(c, ctx) {
   const p = nd(ctx.data).pending.find((x) => x.key === c.newDevice.key);
   const box = el('div', 'nd-detail');
-  box.append(el('strong', null, '새 기기'), el('p', null, `${p ? newWhat(p) : '처음 봄'} · ${ago(c.newDevice.since)} (${new Date(c.newDevice.since).toLocaleString()})${p?.notified ? ' · 알림 보냄' : ''}`));
+  box.append(el('strong', null, t('known.title')), el('p', null, `${p ? newWhat(p) : t('known.what.seen')} · ${ago(c.newDevice.since)} (${new Date(c.newDevice.since).toLocaleString(locale())})${p?.notified ? ` · ${t('known.notified')}` : ''}`));
   const acts = el('div', 'nd-acts');
   if (c.nameKey) acts.append(nameButton(c, ctx));
   acts.append(ackButton(c.newDevice.key, ctx));

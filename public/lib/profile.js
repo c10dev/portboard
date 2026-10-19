@@ -2,6 +2,7 @@
 // so it isn't mistaken for production. GET /api/health → {profile, port}. Shared by every page.
 
 import { tryJSON } from './api.js';
+import { t } from './i18n.js';
 
 export async function showProfile() {
   const health = await tryJSON('/api/health');
@@ -10,8 +11,8 @@ export async function showProfile() {
   if (!h1 || document.querySelector('.profile-badge')) return;
   const badge = document.createElement('span');
   badge.className = 'profile-badge';
-  badge.textContent = `미리보기 · ${health.port}`;
-  badge.title = '미리보기 인스턴스: 설정과 상태는 운영(8790)과 따로, 알림은 꺼짐';
+  badge.textContent = t('profile.badge', { port: health.port });
+  badge.title = t('profile.badge.title');
   (h1.closest('.brand-link') ?? h1).after(badge);
-  document.title = `[미리보기 ${health.port}] ${document.title}`;
+  document.title = t('profile.docTitle', { port: health.port, title: document.title });
 }

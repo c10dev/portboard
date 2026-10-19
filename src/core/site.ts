@@ -26,6 +26,11 @@ import { run } from './exec.ts';
 import { PATHS } from './paths.ts';
 import { dashboardUrl, serveStatus, tailscaleInfo, type ServeEntry } from './tailscale.ts';
 
+/** The UI and server text languages (public/i18n/<locale>.json) */
+export const LOCALES = ['en', 'ko'] as const;
+export type Locale = (typeof LOCALES)[number];
+export const isLocale = (v: unknown): v is Locale => typeof v === 'string' && (LOCALES as readonly string[]).includes(v);
+
 const CODE_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
 /** portboard.json next to the code (the checkout root), read under the user's file */
@@ -58,6 +63,8 @@ export const SITE_DEFAULTS = {
   publicUrl: null as string | null,
   /** pveports.json's defaults (the Proxmox host and its containers, read over SSH): off until a host is set */
   pve: { host: 'pve', user: 'root', key: '~/.ssh/portboard_ro', node: 'pve', enabled: false },
+  /** The language of the text the server writes (alerts, the setup checklist, MCP text) and of the shell it renders */
+  locale: 'en' as Locale,
   /** winports.json's defaults (a desktop's Windows side, read over SSH): off until a host is set */
   windows: { host: 'windows', user: null as string | null, key: '~/.ssh/portboard_ro', device: 'windows', enabled: false },
 };
@@ -72,6 +79,7 @@ export interface SiteFile {
   poolUrl?: string;
   dashboardUrl?: string;
   publicUrl?: string;
+  locale?: string;
   pve?: Record<string, unknown>;
   windows?: Record<string, unknown>;
 }
@@ -108,10 +116,12 @@ export interface Site {
   dashboardUrl: string | null;
   /** the public Funnel URL: portboard.json's publicUrl, else https://<dnsName> */
   publicUrl: string;
+  /** 'en' | 'ko': PORTBOARD_LOCALE, else portboard.json's locale, else en */
+  locale: Locale;
   pve: typeof SITE_DEFAULTS.pve;
   windows: typeof SITE_DEFAULTS.windows;
   /** where each value came from */
-  sources: Record<'host' | 'tailnet' | 'dnsName' | 'user' | 'checkout' | 'reposRoots' | 'poolUrl' | 'dashboardUrl' | 'publicUrl', SiteSource>;
+  sources: Record<'host' | 'tailnet' | 'dnsName' | 'user' | 'checkout' | 'reposRoots' | 'poolUrl' | 'dashboardUrl' | 'publicUrl' | 'locale', SiteSource>;
   /** the portboard.json path read (whether or not it exists) */
   file: string;
   /** the file exists and was used */
@@ -124,7 +134,7 @@ export interface Site {
 
 type Env = Record<string, string | undefined>;
 
-const STRING_KEYS = ['host', 'tailnet', 'user', 'checkout', 'poolUrl', 'dashboardUrl', 'publicUrl'] as const;
+const STRING_KEYS = ['host', 'tailnet', 'user', 'checkout', 'poolUrl', 'dashboardUrl', 'publicUrl', 'locale'] as const;
 const OBJECT_KEYS = ['pve', 'windows'] as const;
 
 /** Parses portboard.json. A key of the wrong type is dropped (and reported); the rest still apply. */
@@ -142,7 +152,7 @@ export function parseSiteFile(text: string | null): { file: SiteFile; found: boo
   const bad: string[] = [];
   for (const k of STRING_KEYS) {
     if (r[k] === undefined) continue;
-    if (typeof r[k] === 'string' && r[k]) file[k] = r[k] as string;
+    if (typeof r[k] === 'string' && r[k] && (k !== 'locale' || isLocale(r[k]))) file[k] = r[k] as string;
     else bad.push(k);
   }
   if (r.reposRoot !== undefined) {
@@ -217,6 +227,8 @@ export function resolveSite(input: ResolveInput = {}): Site {
   // Funnel serves this machine at https://<dnsName>; with no tailnet known there is nothing to derive
   const [publicFound, publicSrc] = pick<string | null>(null, null, f.publicUrl, D.publicUrl);
   const publicUrl = publicFound ?? (dnsName.includes('.') ? `https://${dnsName}` : `https://${host}`);
+  // an unknown PORTBOARD_LOCALE is ignored (the file or the default applies)
+  const [locale, localeSrc] = pick<Locale>(isLocale(env.PORTBOARD_LOCALE) ? env.PORTBOARD_LOCALE : null, null, isLocale(f.locale) ? f.locale : null, D.locale);
 
   return {
     host,
@@ -229,6 +241,7 @@ export function resolveSite(input: ResolveInput = {}): Site {
     poolUrl,
     dashboardUrl: dash,
     publicUrl,
+    locale,
     // Merged here, validated by pveports.ts / winports.ts with their own files on top
     pve: { ...D.pve, ...(f.pve as Partial<typeof D.pve>) },
     windows: { ...D.windows, ...(f.windows as Partial<typeof D.windows>) },
@@ -242,6 +255,7 @@ export function resolveSite(input: ResolveInput = {}): Site {
       poolUrl: poolSrc,
       dashboardUrl: dash === null ? 'default' : dashSrc,
       publicUrl: publicSrc,
+      locale: localeSrc,
     },
     file: input.path ?? PATHS.site,
     fileFound: input.found ?? false,

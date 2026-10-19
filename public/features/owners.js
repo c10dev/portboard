@@ -4,6 +4,7 @@
 
 import { post, tryJSON } from '../lib/api.js';
 import { el } from '../lib/dom.js';
+import { t } from '../lib/i18n.js';
 import { done } from '../lib/shell.js';
 
 let doc = null;
@@ -12,16 +13,16 @@ let busy = false;
 let claude = null;
 
 const AUTO_STOP = [
-  ['off', '자동 중지 안 함 (기본)'],
-  ['scratchpad', 'scratchpad·임시 유닛만 자동 중지'],
-  ['all', '그 세션의 서버 모두 자동 중지'],
+  ['off', t('owners.autoStop.off')],
+  ['scratchpad', t('owners.autoStop.scratchpad')],
+  ['all', t('owners.autoStop.all')],
 ];
 
 /** "Claude 세션 'x'이 끝났어요" for the sessions whose SessionEnd hook made candidates */
 function endedLine(cands) {
   const names = [...new Set(cands.filter((c) => c.reasons.includes('session-ended-hook')).map((c) => c.owner.session.title ?? c.owner.session.id.slice(0, 8)))];
   if (!names.length) return null;
-  return el('p', 'owners-ended', `Claude 세션 ${names.map((n) => `‘${n}’`).join(', ')}이 끝났어요 — 그 세션이 띄운 서버예요.`);
+  return el('p', 'owners-ended', t('owners.ended', { names: names.map((n) => `‘${n}’`).join(', '), n: names.length }));
 }
 
 function autoStopMenu() {
@@ -29,9 +30,9 @@ function autoStopMenu() {
   const menu = el('details', 'menu');
   const sum = el('summary', null, '⋯');
   sum.dataset.write = '1';
-  sum.title = '세션 종료 시 자동 정리';
+  sum.title = t('owners.autoStop.title');
   const panel = el('div', 'menu-panel');
-  panel.append(el('span', 'muted', 'Claude 세션이 끝나면 (SessionEnd 훅)'));
+  panel.append(el('span', 'muted', t('owners.autoStop.when')));
   for (const [mode, label] of AUTO_STOP) {
     const b = el('button', null, `${mode === current ? '✓ ' : ''}${label}`);
     b.type = 'button';
@@ -48,10 +49,10 @@ function autoStopMenu() {
 
 function ownerLabel(o) {
   const parts = [];
-  if (o.session) parts.push(`세션: ${o.session.title ?? o.session.id.slice(0, 8)}${o.session.alive ? '' : ' (끝남)'}`);
-  if (o.worktree) parts.push(`${o.worktree.repoName}@${o.worktree.branch ?? '?'}${o.worktree.merged ? ' (머지됨)' : ''}`);
+  if (o.session) parts.push(t('owners.label.session', { name: `${o.session.title ?? o.session.id.slice(0, 8)}${o.session.alive ? '' : ` ${t('owners.endedTag')}`}` }));
+  if (o.worktree) parts.push(`${o.worktree.repoName}@${o.worktree.branch ?? '?'}${o.worktree.merged ? ` ${t('owners.mergedTag')}` : ''}`);
   if (o.scratchpad && !o.session) parts.push('scratchpad');
-  if (o.cwdGone) parts.push('폴더 없음');
+  if (o.cwdGone) parts.push(t('owners.cwdGone'));
   return parts.join(' · ');
 }
 
@@ -73,12 +74,12 @@ function decorate() {
     if (facts) {
       const o = row.owner;
       const add = (k, v) => { if (v) facts.append(el('dt', null, k), el('dd', null, v)); };
-      add('세션', o.session && `${o.session.title ?? o.session.id.slice(0, 8)}${o.session.alive ? '' : ' (끝남)'}`);
-      add('워크트리', o.worktree && `${o.worktree.repoName}@${o.worktree.branch ?? '?'}${o.worktree.merged ? ' (머지됨)' : ''} · ${o.worktree.path}`);
-      add('정리 후보', row.reasons.length ? row.reasonText.join(', ') : null);
+      add(t('owners.fact.session'), o.session && `${o.session.title ?? o.session.id.slice(0, 8)}${o.session.alive ? '' : ` ${t('owners.endedTag')}`}`);
+      add(t('owners.fact.worktree'), o.worktree && `${o.worktree.repoName}@${o.worktree.branch ?? '?'}${o.worktree.merged ? ` ${t('owners.mergedTag')}` : ''} · ${o.worktree.path}`);
+      add(t('owners.fact.candidate'), row.reasons.length ? row.reasonText.join(', ') : null);
     }
     const b = el('span', `badge owner-badge${row.reasons.length ? ' warn' : ''}`, label);
-    b.title = row.reasons.length ? `정리 후보: ${row.reasonText.join(', ')}` : `pid ${row.pid}${row.unit ? ` · ${row.unit} (systemd-run)` : ''}${row.owner.worktree ? ` · ${row.owner.worktree.path}` : ''}`;
+    b.title = row.reasons.length ? t('owners.candidate', { reasons: row.reasonText.join(', ') }) : `pid ${row.pid}${row.unit ? ` · ${row.unit} (systemd-run)` : ''}${row.owner.worktree ? ` · ${row.owner.worktree.path}` : ''}`;
     badges.append(b);
   }
 }
@@ -97,8 +98,8 @@ function banner() {
   if (!cands.length) return;
   box.replaceChildren();
   const head = el('div', 'owners-head');
-  head.append(el('strong', null, `정리할 수 있는 서버 ${cands.length}개`));
-  const btn = el('button', 'btn', busy ? '정리 중…' : '모두 정리');
+  head.append(el('strong', null, t('owners.head', { n: cands.length })));
+  const btn = el('button', 'btn', busy ? t('owners.busy') : t('owners.cleanAll'));
   btn.dataset.write = '1';
   btn.type = 'button';
   btn.disabled = busy;
@@ -112,18 +113,18 @@ function banner() {
     li.append(el('code', null, `:${c.port}`), ' ', el('span', null, c.name), ' — ', el('span', 'muted', `${c.reasonText.join(', ')} · ${ownerLabel(c.owner)}`));
     ul.append(li);
   }
-  box.append(head, ...[endedLine(cands)].filter(Boolean), ul, el('p', 'muted', '정리는 프로세스에 SIGTERM을, systemd-run으로 띄운 임시 유닛은 stop을 보내요. 설치된 systemd 서비스·docker·고정한 포트는 후보에 넣지 않아요.'));
+  box.append(head, ...[endedLine(cands)].filter(Boolean), ul, el('p', 'muted', t('owners.help')));
 }
 
 async function cleanup(cands) {
   const lines = cands.map((c) => `:${c.port} ${c.name} — ${c.reasonText.join(', ')}`).join('\n');
-  if (!window.confirm(`이 서버들을 중지할까요?\n\n${lines}`)) return;
+  if (!window.confirm(t('owners.confirm', { lines }))) return;
   busy = true;
   banner();
   try {
     const { body } = await post('/api/cleanup', { ports: cands.map((c) => c.port) });
     const failed = (body.results ?? []).filter((r) => !r.ok);
-    window.alert(failed.length ? `일부 실패:\n${failed.map((r) => `:${r.port} ${r.message}`).join('\n')}` : `${cands.length}개 정리했어요.`);
+    window.alert(failed.length ? t('owners.someFailed', { lines: failed.map((r) => `:${r.port} ${r.message}`).join('\n') }) : t('owners.cleaned', { n: cands.length }));
   } finally {
     busy = false;
     await load();

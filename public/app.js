@@ -15,6 +15,7 @@ import { offerUndo, prefsUndo } from './features/undo.js';
 import { errorText, getJSON, post, tryJSON } from './lib/api.js';
 import { $, el } from './lib/dom.js';
 import { whyEmpty } from './lib/empty.js';
+import { locale, t } from './lib/i18n.js';
 import { openMenuAt } from './lib/menu.js';
 import { showProfile } from './lib/profile.js';
 import { showAccess } from './lib/access.js';
@@ -36,7 +37,7 @@ inUse.checked = !!prefs.inUse;
 let data = null;
 /** Other machines whose ports we know (features/devices.js remoteHosts) */
 let hosts = [];
-let selfName = '이 서버';
+let selfName = t('common.thisServer');
 /** host the user picked, by key: a pool name or a device/guest name ('' = this server); kept until that host shows up */
 let wantHost = prefs.host ?? '';
 /** GET /api/usage: who is using which port right now (byPort) */
@@ -98,9 +99,9 @@ function renderDevices(doc) {
 }
 
 function updateHosts(doc) {
-  selfName = doc.devices.find((d) => d.self)?.name ?? '이 서버';
+  selfName = doc.devices.find((d) => d.self)?.name ?? t('common.thisServer');
   hosts = remoteHosts(doc);
-  const opts = [['', `이 서버 ${selfName}`], ...hosts.map((d) => [d.key, `${d.name} · 포트 ${d.ports.ports.length}`])];
+  const opts = [['', t('services.host.self', { name: selfName })], ...hosts.map((d) => [d.key, t('services.host.remote', { name: d.name, n: d.ports.ports.length })])];
   hostSel.replaceChildren(...opts.map(([value, label]) => {
     const o = el('option', null, label);
     o.value = value;
@@ -114,7 +115,7 @@ function updateHosts(doc) {
 
 /** The title shows the picked host (the <select> over it is transparent, lib/shell.js) */
 function hostLabel() {
-  $('host').textContent = hostSel.selectedOptions[0]?.textContent ?? `이 서버 ${selfName}`;
+  $('host').textContent = hostSel.selectedOptions[0]?.textContent ?? t('services.host.self', { name: selfName });
 }
 
 function selectedHost() {
@@ -137,10 +138,10 @@ async function refresh(fresh = false) {
   try {
     data = await getJSON(`/api/ports${fresh ? '?fresh' : ''}`);
     share('ports', data);
-    if (!selectedHost()) setStatus(`${new Date(data.at).toLocaleTimeString()} 기준 · ${data.ports.length}개 포트`);
+    if (!selectedHost()) setStatus(t('services.status', { time: new Date(data.at).toLocaleTimeString(locale()), n: data.ports.length }));
     render();
   } catch (err) {
-    setStatus(`불러오기 실패: ${err.message}`, true);
+    setStatus(t('services.loadFailed', { error: err.message }), true);
     done('page');
   }
 }
@@ -154,7 +155,7 @@ function setStatus(text, error = false) {
 function render() {
   if (data) {
     $('host').title = data.tailscale.dnsName ?? data.host.hostname;
-    if (!$('host').textContent) $('host').textContent = `이 서버 ${data.host.hostname}`;
+    if (!$('host').textContent) $('host').textContent = t('services.host.self', { name: data.host.hostname });
   }
   const remote = selectedHost();
   $('remote').hidden = !remote;
@@ -163,7 +164,7 @@ function render() {
   if (remote) {
     $('empty').hidden = true;
     $('remote').replaceChildren(...remoteView(remote, q.value.trim().toLowerCase()));
-    setStatus(`${remote.name}: ${remote.ports.ports.length}개 포트 · ${checkedAgo(remote.ports.at)}`);
+    setStatus(t('services.remoteStatus', { name: remote.name, n: remote.ports.ports.length, checked: checkedAgo(remote.ports.at) }));
     paintInspector();
     done('page');
     return;
@@ -200,7 +201,7 @@ let revealed = false;
 function paintInspector() {
   if (!insp?.shown) return;
   if (selectedHost()) {
-    renderInspector(insp, null, { ...rowCtx, emptyText: '다른 기기의 포트는 목록에서 바로 열어요.' });
+    renderInspector(insp, null, { ...rowCtx, emptyText: t('services.remoteInspector') });
     return;
   }
   renderInspector(insp, data?.ports.find((p) => p.port === selected) ?? null, rowCtx);
@@ -245,22 +246,22 @@ document.addEventListener('shell:layout', () => paintInspector());
 /** Why no row is shown, and what brings them back */
 function emptyNote(needle) {
   const all = () => { inUse.checked = false; showSystem.checked = true; save(); render(); };
-  if (!data.ports.length) return { title: '리스닝하는 TCP 포트가 없어요.' };
+  if (!data.ports.length) return { title: t('services.empty.none') };
   if (needle) {
     const hiddenHits = data.ports.filter((p) => haystack(p, usage).includes(needle)).length;
-    if (hiddenHits) return { title: `"${q.value.trim()}"에 맞는 포트 ${hiddenHits}개가 필터에 가려져 있어요.`, actions: [{ label: '전체 보기', onClick: all }] };
+    if (hiddenHits) return { title: t('services.empty.hiddenHits', { q: q.value.trim(), n: hiddenHits }), actions: [{ label: t('services.empty.showAll'), onClick: all }] };
     return {
-      title: `"${q.value.trim()}"에 맞는 포트가 없어요.`,
-      text: '⌘K(Ctrl+K)로 기기·워크트리까지 찾을 수 있어요.',
-      actions: [{ label: '검색 지우기', onClick: () => { q.value = ''; save(); render(); } }, { label: '팔레트에서 찾기', onClick: () => palette.open(q.value.trim()) }],
+      title: t('services.empty.noMatch', { q: q.value.trim() }),
+      text: t('services.empty.paletteHint'),
+      actions: [{ label: t('services.empty.clear'), onClick: () => { q.value = ''; save(); render(); } }, { label: t('services.empty.palette'), onClick: () => palette.open(q.value.trim()) }],
     };
   }
-  if (inUse.checked) return { title: '지금 쓰는 포트가 없어요.', text: '다른 기기나 이 서버의 프로세스가 연결하면 여기 나와요.', actions: [{ label: '전체 보기', onClick: all }] };
-  return { title: `필터 때문에 숨겨진 포트 ${data.ports.length}개`, text: '시스템·임시·숨긴 포트예요.', actions: [{ label: '전체 보기', onClick: all }] };
+  if (inUse.checked) return { title: t('services.empty.inUse'), text: t('services.empty.inUseText'), actions: [{ label: t('services.empty.showAll'), onClick: all }] };
+  return { title: t('services.empty.filtered', { n: data.ports.length }), text: t('services.empty.filteredText'), actions: [{ label: t('services.empty.showAll'), onClick: all }] };
 }
 
 function rename(p) {
-  const next = window.prompt(`${p.port} 이름 (비우면 자동 이름 "${p.detectedName}")`, p.label ?? '');
+  const next = window.prompt(t('services.renamePrompt', { port: p.port, auto: p.detectedName }), p.label ?? '');
   if (next === null) return;
   savePrefs(p.port, { label: next });
 }
@@ -309,7 +310,7 @@ hostSel.addEventListener('change', () => {
   wantHost = hostSel.value;
   hostLabel();
   save();
-  if (!wantHost && data) setStatus(`${new Date(data.at).toLocaleTimeString()} 기준 · ${data.ports.length}개 포트`);
+  if (!wantHost && data) setStatus(t('services.status', { time: new Date(data.at).toLocaleTimeString(locale()), n: data.ports.length }));
   render();
 });
 inUse.addEventListener('change', () => { save(); render(); });

@@ -2,6 +2,11 @@ import XCTest
 @testable import PortboardCore
 
 final class ChromeTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        Strings.useKorean()
+    }
+
     func testTrafficLightsFitTheClearedStrip() {
         // the zoom button ends left of where the page's controls start, with room to spare
         XCTAssertEqual(WindowChrome.lightsRight(), 70)

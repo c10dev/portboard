@@ -243,11 +243,11 @@ public struct WhoAmI: Equatable, Sendable {
 
     /// Lines for the 연결 확인 result in the settings window
     public var lines: [String] {
-        var out = ["로그인: \(login ?? "없음")\(source.map { " (\($0))" } ?? "")"]
-        if let deviceName { out.append("기기: \(deviceName)\(deviceAddr.map { " · \($0)" } ?? "")") }
-        else if let deviceAddr { out.append("기기: \(deviceAddr)") }
-        else { out.append("기기: 확인 못 함") }
-        out.append(canWrite ? "쓰기: 가능 (서비스 멈춤·공개 같은 동작을 할 수 있어요)" : "쓰기: 불가 — 읽기 전용\(reason.map { " (\($0))" } ?? "")")
+        let who = "\(login ?? L10n.t("mac.whoami.none"))\(source.map { " (\($0))" } ?? "")"
+        var out = [L10n.t("mac.whoami.login", ["login": who])]
+        let device = deviceName.map { "\($0)\(deviceAddr.map { " · \($0)" } ?? "")" } ?? deviceAddr ?? L10n.t("mac.whoami.deviceUnknown")
+        out.append(L10n.t("mac.whoami.device", ["device": device]))
+        out.append(canWrite ? L10n.t("mac.whoami.canWrite") : L10n.t("mac.whoami.readOnly") + (reason.map { " (\($0))" } ?? ""))
         return out
     }
 }

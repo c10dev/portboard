@@ -5,6 +5,7 @@
 // (sessionStorage pb.ro), so lib/shell-boot.js greys the next page before it paints; a changed answer corrects it. post() (api.js) answers with the same reason instead of sending. Shared by every page.
 
 import { noteAccess, tryJSON } from './api.js';
+import { t } from './i18n.js';
 // Inside the Mac app the header is the window's title bar (macapp.js sets <html data-app="mac"> on every page)
 import './macapp.js';
 
@@ -26,13 +27,13 @@ export async function showAccess() {
   document.documentElement.dataset.readonly = '1';
   const old = document.querySelector('.readonly-note');
   if (old) {
-    old.textContent = `🔒 읽기 전용 — ${w.reason ?? '이 접속으로는 바꿀 수 없어요.'}`;
+    old.textContent = t('access.note', { reason: w.reason ?? t('common.readonlyReason') });
     return w;
   }
   const note = document.createElement('p');
   note.className = 'readonly-note';
   note.setAttribute('role', 'note');
-  note.textContent = `🔒 읽기 전용 — ${w.reason ?? '이 접속으로는 바꿀 수 없어요.'}`;
+  note.textContent = t('access.note', { reason: w.reason ?? t('common.readonlyReason') });
   const foot = document.getElementById('shellFoot');
   const header = document.querySelector('header.top');
   if (foot) foot.append(note);

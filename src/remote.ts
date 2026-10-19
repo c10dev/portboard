@@ -145,4 +145,4 @@ bindHosts.forEach((host, i) => {
   servers[i].listen(PORT, host, () => console.error(`[portboard-remote] listening on http://${host}:${PORT}/mcp`));
 });
 if (state.publicUrl) console.error(`[portboard-remote] public URL (issuer): ${state.publicUrl}`);
-console.error(`[portboard-remote] approval codes: ${settingsUrl ?? 'the dashboard 설정 tab (its address is unknown: no tailscale serve entry for it)'}`);
+console.error(`[portboard-remote] approval codes: ${settingsUrl ?? 'the dashboard Settings tab (its address is unknown: no tailscale serve entry for it)'}`);

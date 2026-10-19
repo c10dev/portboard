@@ -6,6 +6,7 @@
 
 import { tryJSON } from '../lib/api.js';
 import { $, el, h } from '../lib/dom.js';
+import { t } from '../lib/i18n.js';
 import { sparkline } from '../lib/sparkline.js';
 import { ago } from '../lib/time.js';
 
@@ -62,8 +63,8 @@ const showAll = { sessions: false, services: false };
 
 const gb = (mb) => `${(mb / 1024).toFixed(1)} GB`;
 const size = (mb) => (mb >= 1024 ? gb(mb) : `${mb} MB`);
-const hours = (sec) => (sec == null ? '' : sec >= 86400 ? `${Math.floor(sec / 86400)}일 ${Math.floor((sec % 86400) / 3600)}시간` : sec >= 3600 ? `${Math.floor(sec / 3600)}시간` : `${Math.max(1, Math.round(sec / 60))}분`);
-const idleText = (m) => (m == null ? '—' : m < 1 ? '방금' : m < 60 ? `${m}분` : m < 1440 ? `${Math.floor(m / 60)}시간` : `${Math.floor(m / 1440)}일`);
+const hours = (sec) => (sec == null ? '' : sec >= 86400 ? t('memory.dayHour', { d: Math.floor(sec / 86400), h: Math.floor((sec % 86400) / 3600) }) : sec >= 3600 ? t('time.hour', { n: Math.floor(sec / 3600) }) : t('time.min', { n: Math.max(1, Math.round(sec / 60)) }));
+const idleText = (m) => (m == null ? '—' : m < 1 ? t('time.justNow') : m < 60 ? t('time.min', { n: m }) : m < 1440 ? t('time.hour', { n: Math.floor(m / 60) }) : t('time.day', { n: Math.floor(m / 1440) }));
 const badge = (text, tone = '') => el('span', `badge${tone ? ` ${tone}` : ''}`, text);
 
 function bar(parts, total, cls = '') {
@@ -81,11 +82,11 @@ function head(v) {
   const m = v.mem;
   const p = v.pressure;
   const wrap = el('div', 'mem-head');
-  wrap.append(el('strong', null, `사용 가능 ${gb(m.availableMb)} / ${gb(m.totalMb)} (${m.availablePct}%)`));
-  if (p.active) wrap.append(badge(`메모리 부족 · ${p.reasonText.join(', ')}`, 'warn'));
-  else if (p.reasons.length && p.breachSince) wrap.append(badge(`부족 ${Math.max(1, Math.round((Date.now() - p.breachSince) / 60000))}분째 · ${p.thresholds.sustainMin}분 이어지면 알림`, 'warn'));
-  else wrap.append(badge('정상', 'ok'));
-  wrap.append(el('span', 'muted', `스왑 ${m.swapPct}%${m.swapTotalMb ? ` (${gb(m.swapUsedMb)} / ${gb(m.swapTotalMb)})` : ''}${v.psi ? ` · PSI some ${v.psi.some.avg10} / ${v.psi.some.avg60} / ${v.psi.some.avg300} (10초·1분·5분)` : ''}`));
+  wrap.append(el('strong', null, t('memory.available', { avail: gb(m.availableMb), total: gb(m.totalMb), pct: m.availablePct })));
+  if (p.active) wrap.append(badge(t('memory.low', { reasons: p.reasonText.join(', ') }), 'warn'));
+  else if (p.reasons.length && p.breachSince) wrap.append(badge(t('memory.lowFor', { min: Math.max(1, Math.round((Date.now() - p.breachSince) / 60000)), sustain: p.thresholds.sustainMin }), 'warn'));
+  else wrap.append(badge(t('memory.ok'), 'ok'));
+  wrap.append(el('span', 'muted', `${t('memory.swap', { pct: m.swapPct })}${m.swapTotalMb ? ` (${gb(m.swapUsedMb)} / ${gb(m.swapTotalMb)})` : ''}${v.psi ? ` · ${t('memory.psi', { a: v.psi.some.avg10, b: v.psi.some.avg60, c: v.psi.some.avg300 })}` : ''}`));
   return wrap;
 }
 
@@ -93,18 +94,18 @@ function bars(v) {
   const m = v.mem;
   const low = v.pressure.active;
   const out = [
-    bar([['used', m.usedMb, `사용 ${gb(m.usedMb)}`], ['cache', m.cacheMb, `캐시 ${gb(m.cacheMb)} (필요하면 비워짐)`], ['free', m.freeMb, `비어 있음 ${gb(m.freeMb)}`]], m.totalMb, low ? 'alarm' : ''),
+    bar([['used', m.usedMb, t('memory.used', { gb: gb(m.usedMb) })], ['cache', m.cacheMb, t('memory.cacheTitle', { gb: gb(m.cacheMb) })], ['free', m.freeMb, t('memory.free', { gb: gb(m.freeMb) })]], m.totalMb, low ? 'alarm' : ''),
   ];
-  if (m.swapTotalMb) out.push(bar([['used', m.swapUsedMb, `스왑 ${gb(m.swapUsedMb)}`]], m.swapTotalMb, 'swap'));
+  if (m.swapTotalMb) out.push(bar([['used', m.swapUsedMb, t('memory.swapUsed', { gb: gb(m.swapUsedMb) })]], m.swapTotalMb, 'swap'));
   const legend = el('div', 'mem-legend');
   const item = (cls, text) => {
     const s = el('span', cls);
     s.append(el('i'), text);
     return s;
   };
-  legend.append(item('used', `사용 ${gb(m.usedMb)}`), item('cache', `캐시 ${gb(m.cacheMb)}`), item('free', `비어 있음 ${gb(m.freeMb)}`));
-  if (m.swapTotalMb) legend.append(item('swap', `스왑 ${m.swapPct}%`));
-  if (m.shmemMb > 1024) legend.append(el('span', null, `공유 메모리(tmpfs·shm) ${gb(m.shmemMb)}`));
+  legend.append(item('used', t('memory.used', { gb: gb(m.usedMb) })), item('cache', t('memory.cache', { gb: gb(m.cacheMb) })), item('free', t('memory.free', { gb: gb(m.freeMb) })));
+  if (m.swapTotalMb) legend.append(item('swap', t('memory.swap', { pct: m.swapPct })));
+  if (m.shmemMb > 1024) legend.append(el('span', null, t('memory.shmem', { gb: gb(m.shmemMb) })));
   out.push(legend);
   return out;
 }
@@ -119,13 +120,13 @@ function sparks(v) {
     return d;
   };
   const avail = hist.map((x) => x.availablePct);
-  box.append(row('사용 가능', avail.map((x) => x / 100), 'avail', 1, `${avail.at(-1)}%`));
+  box.append(row(t('memory.spark.avail'), avail.map((x) => x / 100), 'avail', 1, `${avail.at(-1)}%`));
   const psi = hist.map((x) => x.psi60);
   if (psi.some((x) => x != null)) {
     const max = Math.max(10, ...psi.filter((x) => x != null));
-    box.append(row('PSI 1분', psi.map((x) => (x == null ? null : x / max)), 'psi', 1, `${psi.at(-1) ?? '—'}`));
+    box.append(row(t('memory.spark.psi'), psi.map((x) => (x == null ? null : x / max)), 'psi', 1, `${psi.at(-1) ?? '—'}`));
   }
-  box.append(el('span', null, `최근 ${Math.round((hist.at(-1).t - hist[0].t) / 60000)}분`));
+  box.append(el('span', null, t('memory.spark.span', { n: Math.round((hist.at(-1).t - hist[0].t) / 60000) })));
   return box;
 }
 
@@ -135,7 +136,7 @@ function groups(v) {
     if (!g.mb) continue;
     const c = el('span', 'chip');
     c.append(el('b', null, g.label), ` ${size(g.mb)}`);
-    c.title = `프로세스 ${g.procs}개`;
+    c.title = t('memory.procs', { n: g.procs });
     box.append(c);
   }
   return box;
@@ -146,22 +147,22 @@ function suggestionList(v) {
   const ul = el('ul', 'mem-sugg');
   for (const s of v.suggestions) {
     const li = el('li', null, s.text);
-    if (s.href) li.append(h('a', { href: s.href, text: s.linkText ?? '보기 →' }));
+    if (s.href) li.append(h('a', { href: s.href, text: s.linkText ?? t('memory.sugg.view') }));
     ul.append(li);
   }
   return ul;
 }
 
 function table(cols, rows) {
-  const t = el('table');
+  const tbl = el('table');
   const tr = el('tr');
   for (const [label, cls] of cols) tr.append(el('th', cls ?? null, label));
-  t.append(h('thead', null, tr));
+  tbl.append(h('thead', null, tr));
   const body = el('tbody');
   body.append(...rows);
-  t.append(body);
+  tbl.append(body);
   const wrap = el('div', 'mem-wrap');
-  wrap.append(t);
+  wrap.append(tbl);
   return wrap;
 }
 
@@ -175,13 +176,13 @@ function sessionRows(v) {
   const list = showAll.sessions ? v.sessions : v.sessions.slice(0, 12);
   return list.map((s) => {
     const name = el('span', null, s.title ?? s.project ?? (s.id ? s.id.slice(0, 8) : `pid ${s.pid}`));
-    const sub = el('span', 'sub', [s.title && s.project ? s.project : null, s.mcp.length ? `MCP ${s.mcp.join(', ')}` : null, s.helper ? '보조 프로세스' : null].filter(Boolean).join(' · '));
+    const sub = el('span', 'sub', [s.title && s.project ? s.project : null, s.mcp.length ? `MCP ${s.mcp.join(', ')}` : null, s.helper ? t('memory.session.helper') : null].filter(Boolean).join(' · '));
     const ver = [el('span', null, s.version ?? '—')];
-    if (s.stale) ver.push(badge('구버전', 'warn'));
+    if (s.stale) ver.push(badge(t('memory.session.stale'), 'warn'));
     const idle = [el('span', null, idleText(s.idleMin))];
-    if (s.idle) idle.push(badge('쉬는 중'));
+    if (s.idle) idle.push(badge(t('memory.session.idle')));
     const tr = el('tr');
-    tr.title = `pid ${s.pid} · 떠 있은 시간 ${hours(s.uptimeSec)}${s.cpuPct != null ? ` · CPU ${s.cpuPct}%` : ''} · CLI ${s.breakdown.cli} MB, MCP ${s.breakdown.mcp} MB, 서버 ${s.breakdown.servers} MB, 그 밖 ${s.breakdown.tools} MB`;
+    tr.title = t('memory.session.title', { pid: s.pid, up: hours(s.uptimeSec), cpu: s.cpuPct != null ? ` · CPU ${s.cpuPct}%` : '', cli: s.breakdown.cli, mcp: s.breakdown.mcp, servers: s.breakdown.servers, tools: s.breakdown.tools });
     tr.append(td([name, sub]), td(ver, 'hide-sm'), td(idle), td(hours(s.uptimeSec), 'num hide-sm'), td([el('span', null, size(s.mb)), el('span', 'sub', s.breakdown.mcp ? `MCP ${size(s.breakdown.mcp)}` : null)], 'num'));
     return tr;
   });
@@ -189,7 +190,7 @@ function sessionRows(v) {
 
 function more(key, total, shown) {
   if (total <= shown && !showAll[key]) return null;
-  const b = el('button', 'mem-more', showAll[key] ? '줄이기' : `모두 보기 (${total})`);
+  const b = el('button', 'mem-more', showAll[key] ? t('memory.less') : t('memory.all', { n: total }));
   b.type = 'button';
   b.addEventListener('click', () => {
     showAll[key] = !showAll[key];
@@ -202,10 +203,10 @@ function mcpRows(v) {
   const cli = v.sessions.filter((s) => !s.helper).length;
   return v.mcp.map((m) => {
     const name = [el('span', null, m.label)];
-    if (m.instances >= 3 && m.sessions >= Math.max(3, cli / 2)) name.push(badge('세션마다 실행'));
-    if (m.orphans) name.push(badge(`세션 밖 ${m.orphans}`, 'warn'));
+    if (m.instances >= 3 && m.sessions >= Math.max(3, cli / 2)) name.push(badge(t('memory.mcp.perSession')));
+    if (m.orphans) name.push(badge(t('memory.mcp.orphans', { n: m.orphans }), 'warn'));
     const tr = el('tr');
-    tr.title = `프로세스 ${m.procs}개 (래퍼 포함) · 세션 ${m.sessions}개`;
+    tr.title = `${t('memory.mcp.procs', { n: m.procs })} · ${t('memory.mcp.sessions', { n: m.sessions })}`;
     tr.append(td(name), td(String(m.instances), 'num'), td(size(Math.round(m.mb / Math.max(1, m.instances))), 'num hide-sm'), td(size(m.mb), 'num'));
     return tr;
   });
@@ -214,9 +215,9 @@ function mcpRows(v) {
 function serviceRows(v) {
   const list = showAll.services ? v.services : v.services.slice(0, 10);
   return list.map((s) => {
-    const name = [el('span', null, s.name), el('span', 'sub', [s.ports.map((p) => `:${p}`).join(' '), s.session ? `세션 ${s.session}` : null].filter(Boolean).join(' · '))];
-    const kind = [el('span', null, s.dev ? 'dev 서버' : '서비스')];
-    if (s.dev && s.unused) kind.push(badge('안 씀'));
+    const name = [el('span', null, s.name), el('span', 'sub', [s.ports.map((p) => `:${p}`).join(' '), s.session ? t('memory.svc.session', { id: s.session }) : null].filter(Boolean).join(' · '))];
+    const kind = [el('span', null, s.dev ? t('memory.svc.dev') : t('memory.svc.service'))];
+    if (s.dev && s.unused) kind.push(badge(t('memory.svc.unused')));
     const tr = el('tr');
     tr.append(td(name), td(kind, 'hide-sm'), td(hours(s.uptimeSec), 'num hide-sm'), td(size(s.mb), 'num'));
     return tr;
@@ -229,25 +230,26 @@ function paint() {
   const v = view;
   const parts = [head(v), ...bars(v), sparks(v), groups(v), suggestionList(v)];
 
-  parts.push(h('h4', null, `Claude 세션 ${v.sessions.length}개`, el('span', 'muted', `MB는 세션의 프로세스 트리 전체 (MCP 서버·띄운 서버 포함)${v.newestVersion ? ` · 최신 CLI ${v.newestVersion}` : ''}`)));
-  parts.push(table([['세션'], ['버전', 'hide-sm'], ['쉰 시간'], ['떠 있은 시간', 'num hide-sm'], ['메모리', 'num']], sessionRows(v)), more('sessions', v.sessions.length, 12));
+  parts.push(h('h4', null, t('memory.sessions.head', { n: v.sessions.length }), el('span', 'muted', `${t('memory.sessions.note')}${v.newestVersion ? ` · ${t('memory.sessions.newest', { v: v.newestVersion })}` : ''}`)));
+  parts.push(table([[t('memory.col.session')], [t('memory.col.version'), 'hide-sm'], [t('memory.col.idle')], [t('memory.col.uptime'), 'num hide-sm'], [t('memory.col.mem'), 'num']], sessionRows(v)), more('sessions', v.sessions.length, 12));
 
   if (v.mcp.length) {
-    parts.push(h('h4', null, 'MCP 서버', el('span', 'muted', '모든 세션 합계 · user 범위 서버는 세션마다 하나씩 떠요')));
-    parts.push(table([['서버'], ['개수', 'num'], ['개당', 'num hide-sm'], ['합계', 'num']], mcpRows(v)));
+    parts.push(h('h4', null, t('memory.mcp.head'), el('span', 'muted', t('memory.mcp.note'))));
+    parts.push(table([[t('memory.col.server')], [t('memory.col.count'), 'num'], [t('memory.col.each'), 'num hide-sm'], [t('memory.col.total'), 'num']], mcpRows(v)));
   }
   if (v.services.length) {
-    parts.push(h('h4', null, '서비스·dev 서버', el('span', 'muted', '포트를 연 프로세스와 그 자식')));
-    parts.push(table([['이름'], ['종류', 'hide-sm'], ['떠 있은 시간', 'num hide-sm'], ['메모리', 'num']], serviceRows(v)), more('services', v.services.length, 10));
+    parts.push(h('h4', null, t('memory.svc.head'), el('span', 'muted', t('memory.svc.note'))));
+    parts.push(table([[t('memory.col.name')], [t('memory.col.kind'), 'hide-sm'], [t('memory.col.uptime'), 'num hide-sm'], [t('memory.col.mem'), 'num']], serviceRows(v)), more('services', v.services.length, 10));
   }
   const small = [...v.docker.slice(0, 6).map((d) => `${d.name} ${size(d.mb)}`)];
-  if (small.length) parts.push(h('h4', null, `docker ${v.docker.length}개`, el('span', 'muted', small.join(' · '))));
-  if (v.other.length) parts.push(h('h4', null, '기타', el('span', 'muted', v.other.slice(0, 8).map((o) => `${o.name}${o.count > 1 ? ` ×${o.count}` : ''} ${size(o.mb)}`).join(' · '))));
+  if (small.length) parts.push(h('h4', null, t('memory.docker', { n: v.docker.length }), el('span', 'muted', small.join(' · '))));
+  if (v.other.length) parts.push(h('h4', null, t('memory.other'), el('span', 'muted', v.other.slice(0, 8).map((o) => `${o.name}${o.count > 1 ? ` ×${o.count}` : ''} ${size(o.mb)}`).join(' · '))));
 
   const th = v.pressure.thresholds;
-  parts.push(el('p', 'mem-note',
-    `${v.sampleEverySec}초마다 확인 · ${ago(v.at, { suffix: ' 전', floor: true }) || '방금'}. 사용 가능 ${th.availablePct}% 미만, PSI 1분 ${th.psiSome60} 초과, 스왑 ${th.swapPct}% 초과가 ${th.sustainMin}분 이어지면 알림 채널로 알리고, 계속되면 ${th.reminderHours}시간마다 다시 알려요. ` +
-    `크기는 RSS라 공유 페이지가 겹쳐 세져요. Portboard는 프로세스를 멈추지 않아요: 세션은 Claude 앱에서 보관하고, dev 서버는 서비스 탭에서 정리하세요.`));
+  parts.push(el('p', 'mem-note', t('memory.note', {
+    every: v.sampleEverySec, ago: ago(v.at, { suffix: true, floor: true }) || t('time.justNow'),
+    avail: th.availablePct, psi: th.psiSome60, swap: th.swapPct, sustain: th.sustainMin, reminder: th.reminderHours,
+  })));
 
   box.replaceChildren(...parts.filter(Boolean));
   box.hidden = false;
@@ -273,13 +275,13 @@ function init() {
   const style = el('style');
   style.textContent = STYLE;
   document.head.append(style);
-  const heading = el('h3', 'sec-h', '메모리');
+  const heading = el('h3', 'sec-h', t('memory.title'));
   heading.id = 'memoryH';
   heading.hidden = true;
   const box = el('section', 'mem');
   box.id = 'memory';
   box.hidden = true;
-  box.setAttribute('aria-label', '메모리');
+  box.setAttribute('aria-label', t('memory.title'));
   self.after(heading, box);
   refresh();
   setInterval(() => {

@@ -18,12 +18,12 @@ function atNow(fn: () => void) {
 
 test('ago: rounded minutes/hours/days, suffix after everything but 방금, floor for self-watch', () => atNow(() => {
   assert.equal(ago(before(20 * SEC)), '방금');
-  assert.equal(ago(before(20 * SEC), { suffix: ' 전' }), '방금');
+  assert.equal(ago(before(20 * SEC), { suffix: true }), '방금');
   assert.equal(ago(before(-5 * MIN)), '방금', 'a time in the future is 방금');
   assert.equal(ago(before(5 * MIN)), '5분');
-  assert.equal(ago(before(5 * MIN), { suffix: ' 전' }), '5분 전');
+  assert.equal(ago(before(5 * MIN), { suffix: true }), '5분 전');
   assert.equal(ago(before(90 * MIN)), '2시간');
-  assert.equal(ago(before(90 * MIN), { suffix: ' 전', floor: true }), '1시간 전');
+  assert.equal(ago(before(90 * MIN), { suffix: true, floor: true }), '1시간 전');
   assert.equal(ago(before(47 * HOUR)), '47시간');
   assert.equal(ago(before(49 * HOUR)), '2일');
   assert.equal(ago(before(84 * HOUR), { floor: true }), '3일');

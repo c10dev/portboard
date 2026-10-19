@@ -20,6 +20,7 @@ import { ownerDevicesFromStatus } from '../core/onboarding.ts';
 import { ok, reply } from './router.ts';
 import type { ServerContext } from './context.ts';
 import type { FeatureModule } from './types.ts';
+import { t } from '../core/i18n.ts';
 
 type Req = Parameters<typeof resolveCaller>[0];
 
@@ -83,13 +84,14 @@ export async function writeDevicesView(req: Req, ctx: Pick<ServerContext, 'paths
 /** Why saving `list` would lock the caller out, or null. Loopback (and the stdio MCP) are the owner whatever the list says. */
 export function lockoutReason(caller: Caller, list: string[], env: string[]): string | null {
   if (caller.source !== 'serve') return null;
-  if (!caller.device?.name && !caller.device?.id) return `지금 쓰는 기기를 확인하지 못했어요 (${deviceLabel(caller.device, caller.addr)}). 목록을 저장하면 이 접속에서 더 바꿀 수 없어서 저장하지 않았어요.`;
+  if (!caller.device?.name && !caller.device?.id) return t('writeDevicesApi.unknownCaller', { device: deviceLabel(caller.device, caller.addr) });
   if (deviceAllowed(caller.device, [...list, ...env])) return null;
-  return `지금 쓰는 기기(${deviceLabel(caller.device, caller.addr)})가 목록에 없어요. 빼면 이 기기에서 더 바꿀 수 없어서 저장하지 않았어요.`;
+  return t('writeDevicesApi.notListed', { device: deviceLabel(caller.device, caller.addr) });
 }
 
 export const writeDevicesFeature: FeatureModule = {
   name: 'write-devices',
+  order: 2800,
   routes: [
     { method: 'GET', path: '/api/settings/write-devices', handler: async ({ req }, ctx) => ok(await writeDevicesView(req, ctx)) },
     {
@@ -109,7 +111,7 @@ export const writeDevicesFeature: FeatureModule = {
           if (err instanceof Error && err.message.startsWith('access.json')) return reply(409, { error: err.message });
           throw err;
         }
-        return ok({ ...(await writeDevicesView(req, ctx)), message: `쓰기 허용 기기 ${list.length}대를 저장했어요` });
+        return ok({ ...(await writeDevicesView(req, ctx)), message: t('writeDevicesApi.saved', { n: list.length }) });
       },
     },
   ],

@@ -25,7 +25,7 @@ src/core/usage.ts     who uses what now: device cards, 사용 중 per port, idle
 src/core/history.ts   last-used history: sampling, merge, 30-day retention, usage-history.json
 src/core/groups.ts    ports of the same compose project / container / unit / process → one group
 src/features/         feature modules: each owns its REST routes, MCP tools (local and remote), jobs, collectors, page scripts
-src/features/registry.ts  FEATURES (the one list) + buildRegistry(): derived views and the security checks
+src/features/registry.ts  MODULES (alphabetical) → FEATURES (by order) + buildRegistry(): derived views and the security checks
 src/features/types.ts what a feature module declares
 src/features/router.ts REST routing over the declared routes; the one X-Portboard + owner guard and the audit line for every write route
 src/features/context.ts the dashboard's shared state: 2 s snapshot/topology/usage caches, history, uptime, checker, 새 기기, self-watch
@@ -83,7 +83,7 @@ Actions take only a port; the server resolves the owner (systemd unit → docker
 
 ## How to add a feature
 
-A feature is one file in `src/features/` plus one line in `FEATURES` (`src/features/registry.ts`). Adding or changing a feature should not touch `server.ts`, `mcp/tools.ts`, `mcp/rpc.ts`, `remote/tools.ts` or `mcp.ts`.
+A feature is one file in `src/features/` plus one import and one `MODULES` line in `src/features/registry.ts`. Adding or changing a feature should not touch `server.ts`, `mcp/tools.ts`, `mcp/rpc.ts`, `remote/tools.ts` or `mcp.ts`.
 
 1. **The core.** Put the logic in `src/core/<name>.ts` as plain functions, testable without a server (as today).
 2. **The module.** Create `src/features/<name>.ts` exporting a `FeatureModule` (`src/features/types.ts`). Declare only what the feature has:
@@ -92,12 +92,12 @@ A feature is one file in `src/features/` plus one line in `FEATURES` (`src/featu
    - `jobs`: `{ name, everyMs, runAtStart?, run(ctx) }` or `{ name, start(ctx) }` for something with its own timer, with `enabled(paths)` when it must not run everywhere (anything that sends alerts: `paths.alertsOn`, which is false in a preview).
    - `shutdown(ctx)` for what must be flushed on exit, `collectors` for the `health.ts` collector names it reports (add the label to `COLLECTORS` there), `ui` for page scripts (`{ pages: ['index.html'], script: 'features/x.js' }`: the server adds the `<script type="module">` before `</body>`, so the page doesn't carry it). See [Adding UI for a feature](#adding-ui-for-a-feature).
    - `resources` / `prompts` for MCP resources (a `claims(uri)` / `read()` pair and `list()`) and prompts. `list()` must not reject: `resources/list` waits for every module's list, so one failing source should leave its entries out instead.
-3. **Register it.** Import it in `registry.ts` and append it to `FEATURES`. The order of `FEATURES` is the order of `tools/list`, so append at the end unless a client-visible order should change (`test/registry.test.ts` pins the current order).
+3. **Register it.** Give the module an `order` number and import it in `registry.ts`, putting the import and the `MODULES` line in alphabetical order (by file name, and by name ignoring case); `test/registry.test.ts` checks both. Don't append at the end: branches that all append to one list conflict on every merge, while alphabetical lines land in different places. `FEATURES` is `MODULES` sorted by `order`, and that order is the order of `tools/list`, routes, jobs and page scripts (`test/registry.test.ts` pins the current order). Existing modules are spaced by 100, so pick a free number between the two features the new one should sit between; below 2600 keeps it before `remote-connector`, `access`, `write-devices` and `settings`, which stay last. If two branches pick the same number, the merge has no textual conflict, but the unique-order test fails until one of them changes.
 4. **Remote (internet-facing) only on purpose.** A tool is offered to the remote connector only with `remote: { description, call(args, remoteCore, policy) }` next to its local definition (or as a `remoteTools` entry). Only read-only tools may (the registry refuses others), the remote `call` only gets the read-only `RemoteCore` and must redact (`src/remote/redact.ts`), and `test/registry.test.ts` pins the remote set: changing it is a security review (`docs/remote-mcp/SECURITY-REVIEW.md`). If the remote server needs a new read, add it to `RemoteCore` (`src/remote/core.ts`) and `src/remote.ts`.
 5. **Shared state.** If the feature needs state the dashboard keeps across requests (a cache, a store, a tracker), it goes in `ServerContext` (`src/features/context.ts`). That file is the one shared piece still edited by more than one feature; one scheduler for all collection (#24) is meant to take it over.
 6. **Tests and docs.** Test the core and the module's handlers with fakes (`test/registry.test.ts` shows a router with a fake context). Run `npm test` and `npm run typecheck`. Document user-facing changes in the topic's doc and add a `changelog.d/<issue>.md` fragment.
 
-Still shared on purpose: the `FEATURES` list (one line per feature), `ServerContext`, `COLLECTORS` labels in `src/core/health.ts`, `RemoteCore` / `readOnlyCore` (a security boundary that should stay one reviewed place), the stdio and remote `initialize` instructions in `src/mcp/rpc.ts` and `src/remote/tools.ts`, and each page's entry script (`public/app.js`, `devices.js`, `service.js`, `dev.js`), which wires the feature modules together.
+Still shared on purpose: the `MODULES` list (one alphabetical line per feature), `ServerContext`, `COLLECTORS` labels in `src/core/health.ts`, `RemoteCore` / `readOnlyCore` (a security boundary that should stay one reviewed place), the stdio and remote `initialize` instructions in `src/mcp/rpc.ts` and `src/remote/tools.ts`, and each page's entry script (`public/app.js`, `devices.js`, `service.js`, `dev.js`), which wires the feature modules together.
 
 ## Background jobs
 

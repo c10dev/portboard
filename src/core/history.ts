@@ -15,6 +15,7 @@ import { PATHS } from './paths.ts';
 import type { DeviceCard, Usage, UseRow } from './usage.ts';
 import { reportHealth } from './health.ts';
 import { writePrivate } from './atomic.ts';
+import { t } from './i18n.ts';
 
 export const HISTORY_PATH = PATHS.history;
 
@@ -81,11 +82,11 @@ export function samplesOf(u: Pick<Usage, 'cards' | 'local'>): Sample[] {
   };
   for (const c of u.cards) {
     for (const r of c.uses) {
-      if (r.routed) add(`${c.id}~routed`, `${c.name} 경유`, 'routed', null, r);
+      if (r.routed) add(`${c.id}~routed`, t('usageMsg.routed', { name: c.name }), 'routed', null, r);
       else add(c.id, c.name, c.kind, c.nameKey, r);
     }
   }
-  for (const r of u.local.uses) add('local', '이 서버', 'local', null, r);
+  for (const r of u.local.uses) add('local', t('common.thisServer'), 'local', null, r);
   return [...out.values()];
 }
 

@@ -118,6 +118,7 @@ export function parseAdviceQuery(url: URL): { ok: true; value: Parameters<typeof
 
 export const claudeFeature: FeatureModule = {
   name: 'claude',
+  order: 2100,
   routes: [
     {
       method: 'GET',

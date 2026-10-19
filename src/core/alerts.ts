@@ -22,6 +22,7 @@ import { loadPrefs } from './prefs.ts';
 import type { UptimeSummary } from './uptime.ts';
 import { reportHealth } from './health.ts';
 import { appendPrivate, writePrivate } from './atomic.ts';
+import { t } from './i18n.ts';
 
 export const CHECK_MS = 30_000;
 export const FAILS_TO_ALERT = 2;
@@ -454,10 +455,10 @@ export function createChecker(deps: CheckerDeps) {
 
     async test(): Promise<{ ok: boolean; message: string; sent: Sent[] }> {
       const c = await channel();
-      if (!c) return { ok: false, message: '알림 채널 없음', sent: [] };
+      if (!c) return { ok: false, message: t('alertsMsg.noChannel'), sent: [] };
       const sent = await deliver(c, testText());
       const ok = sent.length > 0 && sent.every((s) => s.ok);
-      return { ok, message: ok ? '테스트 알림을 보냈어요' : `보내기 실패: ${sent.filter((s) => !s.ok).map((s) => `${s.channel} ${s.error}`).join(', ')}`, sent };
+      return { ok, message: ok ? t('alertsMsg.testSent') : t('alertsMsg.sendFailed', { errors: sent.filter((s) => !s.ok).map((s) => `${s.channel} ${s.error}`).join(', ') }), sent };
     },
 
     async status(): Promise<AlertsStatus> {

@@ -24,6 +24,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { GIT_NO_HOOKS, run as execRun, type RunResult } from './exec.ts';
 import { SITE } from './site.ts';
+import { t } from './i18n.ts';
 
 /** How scans spawn subprocesses; tests pass a counting or fake one. */
 export type Runner = (cmd: string, args: string[], timeoutMs?: number) => Promise<RunResult>;
@@ -119,18 +120,18 @@ export function githubRepo(url: string): string | null {
 
 export function keepReasons(w: Omit<WorktreeInfo, 'keep' | 'removable'>): string[] {
   const keep: string[] = [];
-  if (w.main) keep.push('메인 체크아웃');
+  if (w.main) keep.push(t('worktrees.keep.main'));
   if (w.prunable) return keep.length ? keep : []; // gone already: handled by prune, not remove
-  if (w.locked) keep.push('잠김(locked)');
-  if (w.changes === null) keep.push('변경 여부 확인 실패');
-  else if (w.changes > 0) keep.push(`변경 ${w.changes}개`);
-  if (w.inUse.length) keep.push(`사용 중인 프로세스 ${w.inUse.length}개`);
+  if (w.locked) keep.push(t('worktrees.keep.locked'));
+  if (w.changes === null) keep.push(t('worktrees.keep.changesUnknown'));
+  else if (w.changes > 0) keep.push(t('worktrees.keep.changes', { n: w.changes }));
+  if (w.inUse.length) keep.push(t('worktrees.keep.inUse', { n: w.inUse.length }));
   const merged = w.mergedByAncestry === true || (w.pr?.state === 'MERGED' && w.pr.headMatches);
   if (!merged) {
-    if (w.pr?.state === 'MERGED' && !w.pr.headMatches) keep.push('PR에 없는 커밋 있음');
-    else if (w.pr?.state === 'OPEN') keep.push(`PR #${w.pr.number} 열림`);
-    else if (w.pr?.state === 'CLOSED') keep.push(`PR #${w.pr.number} 닫힘(머지 안 됨)`);
-    else keep.push(w.detached ? '분리된 HEAD' : '머지 안 됨');
+    if (w.pr?.state === 'MERGED' && !w.pr.headMatches) keep.push(t('worktrees.keep.extraCommits'));
+    else if (w.pr?.state === 'OPEN') keep.push(t('worktrees.keep.prOpen', { number: w.pr.number }));
+    else if (w.pr?.state === 'CLOSED') keep.push(t('worktrees.keep.prClosed', { number: w.pr.number }));
+    else keep.push(w.detached ? t('worktrees.keep.detached') : t('worktrees.keep.notMerged'));
   }
   return keep;
 }
@@ -651,16 +652,16 @@ export async function removeWorktrees(repo: string, paths: string[], opts: { run
   for (const p of [...new Set(paths)]) {
     const w = r?.worktrees.find((x) => x.path === p);
     if (!w) {
-      out.push({ path: p, ok: false, message: '이 저장소의 워크트리가 아니에요' });
+      out.push({ path: p, ok: false, message: t('worktrees.remove.notHere') });
       continue;
     }
     if (!w.removable) {
-      out.push({ path: p, ok: false, message: `지울 수 없어요: ${w.keep.join(', ') || '조건 불충족'}` });
+      out.push({ path: p, ok: false, message: t('worktrees.remove.blocked', { reasons: w.keep.join(', ') || t('worktrees.remove.unmet') }) });
       continue;
     }
     // remove runs `git status` in the worktree first: same options as the scan's (I4)
     const res = await run('git', ['-C', repo, ...GIT_NO_HOOKS, 'worktree', 'remove', p], 60_000);
-    out.push({ path: p, ok: res.ok, message: res.ok ? '지웠어요 (브랜치는 남아 있어요)' : res.stderr.trim().slice(0, 300) });
+    out.push({ path: p, ok: res.ok, message: res.ok ? t('worktrees.remove.done') : res.stderr.trim().slice(0, 300) });
   }
   return out;
 }
@@ -668,5 +669,5 @@ export async function removeWorktrees(repo: string, paths: string[], opts: { run
 /** `git worktree prune` for a repo (only drops records of worktrees whose directory is already gone). */
 export async function pruneWorktrees(repo: string): Promise<{ ok: boolean; message: string }> {
   const res = await execRun('git', ['-C', repo, 'worktree', 'prune', '--verbose'], 30_000);
-  return { ok: res.ok, message: (res.ok ? res.stdout || res.stderr || '정리할 기록 없음' : res.stderr).trim().slice(0, 500) };
+  return { ok: res.ok, message: (res.ok ? res.stdout || res.stderr || t('worktrees.prune.nothing') : res.stderr).trim().slice(0, 500) };
 }

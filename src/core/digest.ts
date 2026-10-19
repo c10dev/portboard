@@ -22,6 +22,7 @@ import type { KnownStore } from './known.ts';
 import type { History } from './history.ts';
 import type { SelfWatchStatus } from './selfwatch.ts';
 import { adoptionLine, type Totals } from './adoption.ts';
+import { t } from './i18n.ts';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -195,11 +196,11 @@ export interface Digest {
 /** "14분", "3시간 20분", "2일 3시간" */
 export function korDur(ms: number): string {
   const m = Math.max(1, Math.round(ms / MIN));
-  if (m < 60) return `${m}분`;
+  if (m < 60) return t('time.min', { n: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return m % 60 ? `${h}시간 ${m % 60}분` : `${h}시간`;
+  if (h < 24) return m % 60 ? t('time.hourMin', { h, m: m % 60 }) : t('time.hour', { n: h });
   const d = Math.floor(h / 24);
-  return h % 24 ? `${d}일 ${h % 24}시간` : `${d}일`;
+  return h % 24 ? t('digestMsg.dur.dayHour', { d, h: h % 24 }) : t('time.day', { n: d });
 }
 
 function kbText(kb: number): string {
@@ -207,17 +208,17 @@ function kbText(kb: number): string {
   return gb >= 1 ? `${gb.toFixed(gb >= 10 ? 0 : 1)} GB` : `${Math.max(1, Math.round(kb / 1024))} MB`;
 }
 
-const DOW = ['일', '월', '화', '수', '목', '금', '토'];
+const DOW = ['digestMsg.dow.sun', 'digestMsg.dow.mon', 'digestMsg.dow.tue', 'digestMsg.dow.wed', 'digestMsg.dow.thu', 'digestMsg.dow.fri', 'digestMsg.dow.sat'];
 
 /** "10/18(일)" in KST */
-export function kstDay(t: number): string {
-  const d = new Date(t + KST);
-  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${DOW[d.getUTCDay()]})`;
+export function kstDay(ms: number): string {
+  const d = new Date(ms + KST);
+  return t('digestMsg.day', { m: d.getUTCMonth() + 1, d: d.getUTCDate(), dow: t(DOW[d.getUTCDay()]) });
 }
 
 /** "a, b, c 외 2" */
 function list(names: string[], max = 3): string {
-  return names.length > max ? `${names.slice(0, max).join(', ')} 외 ${names.length - max}` : names.join(', ');
+  return names.length > max ? t('digestMsg.more', { names: names.slice(0, max).join(', '), n: names.length - max }) : names.join(', ');
 }
 
 /** " vite" for a short name; nothing for a command line ("[systemd-run] /usr/bin/python3 -m http.server …") */
@@ -241,15 +242,15 @@ function serviceLines(watching: WatchedItem[], uptime: Uptime, from: number, to:
   }
   if (ports.length) {
     const pct = up + down ? Math.floor((up / (up + down)) * 1000) / 10 : null;
-    out.push({ problem: false, text: `🔔 감시 서비스 ${ports.length}개 · 가동률 ${pct === null ? '기록 없음' : `${pct}%`}` });
+    out.push({ problem: false, text: t('digestMsg.watched', { n: ports.length, pct: pct === null ? t('digestMsg.noRecord') : `${pct}%` }) });
   }
   hit.sort((a, b) => b.downMs - a.downMs);
-  for (const h of hit.slice(0, 3)) out.push({ problem: true, text: `⚠️ ${who(h.w)}: ${h.count}번, 총 ${korDur(h.downMs)} 중단` });
-  if (hit.length > 3) out.push({ problem: true, text: `⚠️ 그 밖에 ${hit.length - 3}개 서비스도 중단` });
+  for (const h of hit.slice(0, 3)) out.push({ problem: true, text: t('digestMsg.outage', { who: who(h.w), n: h.count, dur: korDur(h.downMs) }) });
+  if (hit.length > 3) out.push({ problem: true, text: t('digestMsg.outageMore', { n: hit.length - 3 }) });
   const nowDown = watching.filter((w) => w.down);
   if (nowDown.length) {
-    const names = nowDown.map((w) => `${who(w)}${w.since ? ` (${korDur(now - Date.parse(w.since))}째)` : ''}`);
-    out.push({ problem: true, text: `🔴 지금 꺼짐: ${list(names, 2)}` });
+    const names = nowDown.map((w) => `${who(w)}${w.since ? ` (${t('time.lasting', { t: korDur(now - Date.parse(w.since)) })})` : ''}`);
+    out.push({ problem: true, text: t('digestMsg.downNow', { names: list(names, 2) }) });
   }
   return out;
 }
@@ -262,16 +263,17 @@ function newDeviceLine(known: KnownStore, from: number, to: number): DigestLine 
     .sort((a, b) => a.at - b.at);
   if (!fresh.length) return null;
   const pending = fresh.filter((x) => x.d.pending).length;
-  return { problem: true, text: `🆕 새 기기 ${fresh.length}대: ${list(fresh.map((x) => x.d.name))}${pending ? ` (확인 안 함 ${pending})` : ''}` };
+  const names = list(fresh.map((x) => x.d.name));
+  return { problem: true, text: pending ? t('digestMsg.newDevicesPending', { n: fresh.length, names, pending }) : t('digestMsg.newDevices', { n: fresh.length, names }) };
 }
 
 function selfwatchLines(sw: SelfWatchStatus, now: number): DigestLine[] {
   const out: DigestLine[] = [];
   const failing = sw.collectors.filter((c) => c.enabled && (c.view === 'failing' || c.view === 'down'));
-  if (failing.length) out.push({ problem: true, text: `🩺 수집 문제: ${list(failing.map((c) => c.label))}` });
+  if (failing.length) out.push({ problem: true, text: t('digestMsg.collection', { names: list(failing.map((c) => c.label)) }) });
   const expiring = sw.expiry.items.filter((i) => i.status === 'soon' || i.status === 'expired');
   if (expiring.length) {
-    const names = expiring.map((i) => (i.status === 'expired' || !i.expiresAt ? `${i.name} 만료됨` : `${i.name} ${Math.max(0, Math.ceil((Date.parse(i.expiresAt) - now) / DAY))}일 남음`));
+    const names = expiring.map((i) => (i.status === 'expired' || !i.expiresAt ? t('digestMsg.expired', { name: i.name }) : t('digestMsg.expiresIn', { name: i.name, n: Math.max(0, Math.ceil((Date.parse(i.expiresAt) - now) / DAY)) })));
     out.push({ problem: true, text: `🔑 ${list(names, 2)}` });
   }
   return out;
@@ -304,20 +306,20 @@ export function buildDigest(input: DigestInput, mode: DigestMode, period: { from
   if (input.watching && input.uptime) lines.push(...serviceLines(input.watching, input.uptime, from, to, now));
   const nd = input.known && newDeviceLine(input.known, from, to);
   if (nd) lines.push(nd);
-  if (input.cleanup?.length) lines.push({ problem: true, text: `🧹 정리 후보 서버 ${input.cleanup.length}개: ${list(input.cleanup.map((c) => `${c.port}${shortName(c.name)}`))}` });
-  if (input.worktrees?.removable) lines.push({ problem: true, text: `🌿 지워도 되는 worktree ${input.worktrees.removable}개 · ${kbText(input.worktrees.removableKb)}` });
+  if (input.cleanup?.length) lines.push({ problem: true, text: t('digestMsg.cleanup', { n: input.cleanup.length, list: list(input.cleanup.map((c) => `${c.port}${shortName(c.name)}`)) }) });
+  if (input.worktrees?.removable) lines.push({ problem: true, text: t('digestMsg.worktrees', { n: input.worktrees.removable, size: kbText(input.worktrees.removableKb) }) });
   if (input.selfwatch) lines.push(...selfwatchLines(input.selfwatch, now));
   if (input.memory) lines.push(input.memory);
-  if (input.remote?.length) lines.push({ problem: true, text: `🔌 원격 커넥터 확인 필요 ${input.remote.length}개: ${list(input.remote.map((r) => `${r.name || '이름 없음'} ${r.health}`))}` });
+  if (input.remote?.length) lines.push({ problem: true, text: t('digestMsg.remote', { n: input.remote.length, list: list(input.remote.map((r) => `${r.name || t('digestMsg.unnamed')} ${r.health}`)) }) });
   const top = input.history ? busiest(input.history, from, to) : [];
-  if (top.length) lines.push({ problem: false, text: `📈 많이 쓴 서비스: ${top.map((t) => `${t.service} (${t.devices}대)`).join(' · ')}` });
+  if (top.length) lines.push({ problem: false, text: t('digestMsg.top', { list: top.map((s) => t('digestMsg.topItem', { service: s.service, n: s.devices })).join(' · ') }) });
   if (input.adoption?.current.sessions) lines.push({ problem: false, text: adoptionLine(input.adoption.current, input.adoption.previous) });
 
   const weekly = mode === 'weekly';
-  const title = weekly ? `Portboard 주간 요약 · ${kstDay(from)}–${kstDay(to - 1)}` : `Portboard 일간 요약 · ${kstDay(to - 1)}`;
+  const title = weekly ? t('digestMsg.title.weekly', { from: kstDay(from), to: kstDay(to - 1) }) : t('digestMsg.title.daily', { day: kstDay(to - 1) });
   const empty = !lines.some((l) => l.problem);
   const watchedPorts = input.watching?.filter((w) => w.kind === 'port').length ?? 0;
-  const body = empty ? (watchedPorts ? `이상 없음 · 감시 서비스 ${watchedPorts}개 모두 정상` : '이상 없음') : lines.map((l) => l.text).join('\n');
+  const body = empty ? (watchedPorts ? t('digestMsg.allClearWatched', { n: watchedPorts }) : t('digestMsg.allClear')) : lines.map((l) => l.text).join('\n');
   return { title, body, empty, lines, period: { mode: weekly ? 'weekly' : 'daily', from: new Date(from).toISOString(), to: new Date(to).toISOString() } };
 }
 

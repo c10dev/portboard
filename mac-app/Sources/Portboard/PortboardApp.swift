@@ -11,6 +11,8 @@ struct PortboardApp: App {
     @StateObject private var web = WebController()
 
     init() {
+        // First, before any text is built: the Localizable.strings of the system language (Resources/*.lproj)
+        L10n.load()
         Pref.register()
     }
 
@@ -58,17 +60,17 @@ struct DashboardCommands: Commands {
     let web: WebController
 
     var body: some Commands {
-        CommandMenu("대시보드") {
+        CommandMenu(L10n.t("mac.menu.dashboard")) {
             ForEach(Array(DashboardTab.allCases.enumerated()), id: \.element) { i, tab in
                 Button(tab.title) { web.open(tab) }
                     .keyboardShortcut(KeyEquivalent(Character(String(i + 1))), modifiers: .command)
             }
             Divider()
-            Button("뒤로") { web.goBack() }
+            Button(L10n.t("shell.back")) { web.goBack() }
                 .keyboardShortcut("[", modifiers: .command)
-            Button("새로고침") { web.reload() }
+            Button(L10n.t("common.refresh")) { web.reload() }
                 .keyboardShortcut("r", modifiers: .command)
-            Button("브라우저에서 열기") { web.openInBrowser() }
+            Button(L10n.t("mac.menu.openInBrowser")) { web.openInBrowser() }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
         }
     }

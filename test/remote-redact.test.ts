@@ -315,7 +315,7 @@ test('flags loosen redaction only for what they name', () => {
 
 test('scrubText: addresses by category, without mangling times, dates and versions', () => {
   assert.equal(scrubText('192.168.1.5 10.0.0.1 172.20.1.1 100.64.10.1 127.0.0.1 8.8.8.8'), '[lan-ip] [lan-ip] [lan-ip] [tailnet-ip] [loopback] [ip]');
-  assert.equal(scrubText('fd7a:115c:a1e0::182b:1a3c and 2001:db8::1'), '[tailnet-ip] and [ip]');
+  assert.equal(scrubText('fd7a:115c:a1e0::10:1 and 2001:db8::1'), '[tailnet-ip] and [ip]');
   assert.equal(scrubText('nic BC:24:11:0A:0B:02'), 'nic [mac]');
   assert.equal(scrubText('192.168.1.0/24'), '[lan-ip]');
   for (const keep of ['2026-10-17T12:33:32.024Z', 'up 12:33:32', 'tailscale 1.104.1', 'docker: web_next', 'pve1~routed', 'SSH (sshd)', 'std::vector']) {

@@ -81,25 +81,26 @@ public enum Notify {
 
     static func downEvent(_ w: WatchItem) -> NotifyEvent {
         if w.isPort, let port = w.port {
-            return NotifyEvent(kind: .down, id: "watch-\(w.key)", title: "🔔 \(Fmt.shortName(w.name)) 응답 없음", body: ":\(port)이(가) 응답하지 않아요", path: "service.html#\(port)")
+            return NotifyEvent(kind: .down, id: "watch-\(w.key)", title: L10n.t("mac.notify.downTitle", ["name": Fmt.shortName(w.name)]), body: L10n.t("mac.notify.downBody", ["port": port]), path: "service.html#\(port)")
         }
-        return NotifyEvent(kind: .down, id: "watch-\(w.key)", title: "🔔 \(Fmt.shortName(w.name)) 오프라인", body: "감시 중인 기기가 tailnet에서 사라졌어요", path: "devices.html#\(Summary.pathEscape(w.id ?? w.name))")
+        return NotifyEvent(kind: .down, id: "watch-\(w.key)", title: L10n.t("mac.notify.offlineTitle", ["name": Fmt.shortName(w.name)]), body: L10n.t("mac.notify.offlineBody"), path: "devices.html#\(Summary.pathEscape(w.id ?? w.name))")
     }
 
     static func recoveredEvent(_ w: WatchItem) -> NotifyEvent {
         if w.isPort, let port = w.port {
-            return NotifyEvent(kind: .recovered, id: "watch-\(w.key)", title: "✅ \(Fmt.shortName(w.name)) 복구", body: ":\(port)이(가) 다시 응답해요", path: "service.html#\(port)")
+            return NotifyEvent(kind: .recovered, id: "watch-\(w.key)", title: L10n.t("mac.notify.recoveredTitle", ["name": Fmt.shortName(w.name)]), body: L10n.t("mac.notify.recoveredBody", ["port": port]), path: "service.html#\(port)")
         }
-        return NotifyEvent(kind: .recovered, id: "watch-\(w.key)", title: "✅ \(Fmt.shortName(w.name)) 온라인", body: "감시 중인 기기가 다시 연결됐어요", path: "devices.html#\(Summary.pathEscape(w.id ?? w.name))")
+        return NotifyEvent(kind: .recovered, id: "watch-\(w.key)", title: L10n.t("mac.notify.onlineTitle", ["name": Fmt.shortName(w.name)]), body: L10n.t("mac.notify.onlineBody"), path: "devices.html#\(Summary.pathEscape(w.id ?? w.name))")
     }
 
     static func newDeviceEvent(_ d: NewDevice) -> NotifyEvent {
         let body: String
-        if let port = d.servicePort { body = "\(d.serviceName.map { "\(Fmt.shortName($0)) " } ?? ""):\(port)에 처음 연결했어요" }
-        else if d.scope == "neighbor" { body = "LAN에서 처음 보였어요" }
-        else { body = "처음 보는 기기예요" }
+        if let port = d.servicePort {
+            body = L10n.t("mac.notify.newDeviceService", ["target": "\(d.serviceName.map { "\(Fmt.shortName($0)) " } ?? ""):\(port)"])
+        } else if d.scope == "neighbor" { body = L10n.t("mac.notify.newDeviceLAN") }
+        else { body = L10n.t("mac.notify.newDeviceUnseen") }
         let anchor = d.cardId.map { "#\(Summary.pathEscape($0))" } ?? ""
-        return NotifyEvent(kind: .newDevice, id: "new-\(d.key)", title: "새 기기: \(Fmt.shortName(d.name))", body: body, path: "devices.html\(anchor)")
+        return NotifyEvent(kind: .newDevice, id: "new-\(d.key)", title: L10n.t("mac.notify.newDeviceTitle", ["name": Fmt.shortName(d.name)]), body: body, path: "devices.html\(anchor)")
     }
 
     /// The port whose page is in front: the window is key in the active app and shows the dashboard's

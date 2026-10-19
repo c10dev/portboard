@@ -5,6 +5,7 @@
 // never replays old events. Tabs share the last id they toasted (localStorage), so two open tabs toast once.
 
 import { tryJSON } from '../lib/api.js';
+import { t } from '../lib/i18n.js';
 import { toast } from '../lib/toast.js';
 import { portAction } from './control.js';
 
@@ -14,13 +15,13 @@ const SHOW_MS = 15_000;
 
 /** The toast's text for one event */
 export function noticeText(e) {
-  return `새 서버 :${e.port} ${e.name}${e.project ? ` (${e.project})` : ''}`;
+  return t('newports.notice', { port: e.port, name: e.name, project: e.project ? ` (${e.project})` : '' });
 }
 
 /** The toast's actions for one event: 열기 (the tailnet URL, else the 서비스 row), tailnet 공개 when it can be published */
 export function noticeActions(e) {
-  const out = [{ label: '열기', run: () => (e.open ? window.open(e.open, '_blank', 'noopener') : location.assign(`./#${e.port}`)) }];
-  if (e.action === 'notify' && !e.open && e.canExpose) out.push({ label: 'tailnet 공개', run: () => portAction(e.port, 'expose', () => false) });
+  const out = [{ label: t('newports.open'), run: () => (e.open ? window.open(e.open, '_blank', 'noopener') : location.assign(`./#${e.port}`)) }];
+  if (e.action === 'notify' && !e.open && e.canExpose) out.push({ label: t('control.expose'), run: () => portAction(e.port, 'expose', () => false) });
   return out;
 }
 
@@ -32,8 +33,8 @@ export function noticeActions(e) {
 function showNotice(e) {
   const actions = noticeActions(e);
   toast(noticeText(e), false, { ms: SHOW_MS, actions });
-  const t = document.getElementById('toast');
-  if (!t || t.hidden || t.querySelector('button')) return;
+  const box = document.getElementById('toast');
+  if (!box || box.hidden || box.querySelector('button')) return;
   for (const a of actions) {
     const b = document.createElement('button');
     b.type = 'button';
@@ -41,10 +42,10 @@ function showNotice(e) {
     b.textContent = a.label;
     b.style.marginLeft = '8px';
     b.addEventListener('click', () => {
-      t.hidden = true;
+      box.hidden = true;
       a.run();
     });
-    t.append(b);
+    box.append(b);
   }
 }
 

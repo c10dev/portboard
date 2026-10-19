@@ -2,6 +2,11 @@ import XCTest
 @testable import PortboardCore
 
 final class RetryTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        Strings.useKorean()
+    }
+
     let t0 = Date(timeIntervalSince1970: 1_800_000_000)
 
     func at(_ s: TimeInterval) -> Date { t0.addingTimeInterval(s) }

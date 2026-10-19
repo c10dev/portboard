@@ -19,16 +19,17 @@
 // (side: the open sidebar column, else 0). layoutFor() says which; <html data-side-mode / data-insp-mode> carry it to
 // shell.css, which only follows the fixed media queries while the panes are at most their default widths.
 
+import { t } from './i18n.js';
 import { ariaKeys, keyLabel, on, showShortcuts, typingIn } from './keys.js';
 
 export { typingIn };
 
 
 export const VIEWS = [
-  { id: 'services', label: '서비스', href: './' },
-  { id: 'devices', label: '기기', href: 'devices.html' },
-  { id: 'dev', label: '개발', href: 'dev.html' },
-  { id: 'settings', label: '설정', href: 'settings.html' },
+  { id: 'services', label: t('shell.view.services'), href: './' },
+  { id: 'devices', label: t('shell.view.devices'), href: 'devices.html' },
+  { id: 'dev', label: t('shell.view.dev'), href: 'dev.html' },
+  { id: 'settings', label: t('shell.view.settings'), href: 'settings.html' },
 ];
 
 /** Breakpoints (CSS px) the stylesheet uses too (shell.css) */
@@ -186,7 +187,7 @@ export function mountShell(doc = document, win = window) {
     sideHandle?.setAttribute('aria-valuenow', String(state.sideW));
     if (sideHandle) {
       if (state.side) sideHandle.removeAttribute('aria-valuetext');
-      else sideHandle.setAttribute('aria-valuetext', '닫힘');
+      else sideHandle.setAttribute('aria-valuetext', t('nav.side.closed'));
     }
     inspHandle?.setAttribute('aria-valuenow', String(state.inspW));
   };
@@ -346,7 +347,7 @@ export function mountShell(doc = document, win = window) {
       saveState(storage, state);
     });
     // the drag hint says the platform's key for the toggle
-    if (pane === 'side') handle.title = `끌어서 너비 조절 · 클릭하면 사이드바 열기·닫기 (${keyLabel('Mod+\\')})`;
+    if (pane === 'side') handle.title = t('nav.side.handle', { key: keyLabel('Mod+\\') });
   }
   wireHandle(sideHandle, 'side');
   if (hasInspector) wireHandle(inspHandle, 'insp');
@@ -367,8 +368,8 @@ export function mountShell(doc = document, win = window) {
   // the toggle's tooltip and aria-keyshortcuts in the platform's words
   if (sideBtn) {
     const k = keyLabel('Mod+\\');
-    sideBtn.title = `사이드바 (${k})`;
-    sideBtn.setAttribute('aria-label', `사이드바 (${k})`);
+    sideBtn.title = t('nav.side.toggle', { key: k });
+    sideBtn.setAttribute('aria-label', t('nav.side.toggle', { key: k }));
     sideBtn.setAttribute('aria-keyshortcuts', ariaKeys({ keys: ['Mod+\\'] }));
   }
 

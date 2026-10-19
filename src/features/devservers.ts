@@ -16,6 +16,7 @@ import { discoverRepos, parsePorcelain } from '../core/worktrees.ts';
 import { text, type Core } from '../mcp/kit.ts';
 import { ok, reply } from './router.ts';
 import type { FeatureModule, Tool } from './types.ts';
+import { t } from '../core/i18n.ts';
 
 export interface KnownDir {
   path: string;
@@ -66,22 +67,22 @@ export async function devServersDoc(): Promise<DevServersDoc> {
 
 export async function startDevServer(path: string, scriptArg?: string, portArg?: number, env?: Record<string, string | undefined>): Promise<{ ok: boolean; message: string; port?: number; unit?: string; status?: number }> {
   const dir = (await knownDirs()).get(path);
-  if (!dir) return { ok: false, status: 400, message: 'Portboard가 아는 워크트리가 아니에요' };
+  if (!dir) return { ok: false, status: 400, message: t('devservers.unknownDir') };
   const s = await devScripts(path);
   const script = scriptArg ?? s.preferred;
-  if (!script || !hasScript(s, script)) return { ok: false, status: 400, message: `package.json에 실행할 스크립트가 없어요 (${Object.keys(s.scripts).join(', ') || '없음'})` };
+  if (!script || !hasScript(s, script)) return { ok: false, status: 400, message: t('devservers.noScript', { scripts: Object.keys(s.scripts).join(', ') || t('devservers.none') }) };
   const unit = unitFor(path);
-  if ((await listDevServers()).some((r) => r.unit === unit && r.active)) return { ok: false, status: 409, message: '이미 실행 중이에요' };
+  if ((await listDevServers()).some((r) => r.unit === unit && r.active)) return { ok: false, status: 409, message: t('devservers.running') };
 
   let port = portArg;
   const reservations = await loadReservations();
   if (port !== undefined) {
     const held = reservations.find((r) => r.port === port);
-    if (held && held.owner !== dir.owner) return { ok: false, status: 409, message: `${port}는 ${held.owner}가 예약한 포트예요` };
-    if (!(await freePorts(20, port, dir.owner)).includes(port)) return { ok: false, status: 409, message: `${port}는 지금 쓰는 중이에요` };
+    if (held && held.owner !== dir.owner) return { ok: false, status: 409, message: t('devservers.reserved', { port, owner: held.owner }) };
+    if (!(await freePorts(20, port, dir.owner)).includes(port)) return { ok: false, status: 409, message: t('devservers.inUse', { port }) };
   } else {
     port = (await freePorts(1, undefined, dir.owner))[0];
-    if (!port) return { ok: false, status: 409, message: '빈 포트를 찾지 못했어요' };
+    if (!port) return { ok: false, status: 409, message: t('devservers.noFreePort') };
   }
   const r = await reserve(dir.owner, port, `dev server (${script})`, async () => port);
   if (!r.ok) return { ok: false, status: 409, message: r.error };
@@ -93,7 +94,7 @@ export async function startDevServer(path: string, scriptArg?: string, portArg?:
 
 export async function stopDevServer(path: string): Promise<{ ok: boolean; message: string; status?: number }> {
   const unit = unitFor(path);
-  if (!(await listDevServers()).some((r) => r.unit === unit)) return { ok: false, status: 404, message: '이 워크트리에서 Portboard가 띄운 서버가 없어요' };
+  if (!(await listDevServers()).some((r) => r.unit === unit)) return { ok: false, status: 404, message: t('devservers.notRunning') };
   return stopUnit(unit);
 }
 
@@ -159,6 +160,7 @@ const listTool: Tool = {
 
 export const devServersFeature: FeatureModule = {
   name: 'dev-servers',
+  order: 1600,
   routes: [
     { method: 'GET', path: '/api/dev-servers', handler: async () => ok(await devServersDoc()) },
     {

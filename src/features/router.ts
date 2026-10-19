@@ -14,6 +14,7 @@ import type { ServerContext } from './context.ts';
 import { randomBytes } from 'node:crypto';
 import { resolveCaller, type Caller } from '../core/access.ts';
 import { clean, deviceOf, record, targetOf, whoOf, type AuditEntry, type AuditLog, type Target } from '../core/audit.ts';
+import { t } from '../core/i18n.ts';
 
 const TOKENS: Record<string, string> = {
   ':port': '(?<port>\\d{1,5})',
@@ -68,7 +69,7 @@ export const ok = (body: unknown): Reply => ({ status: 200, body });
 export function internalError(err: unknown, where: string): Reply {
   const requestId = randomBytes(4).toString('hex');
   console.error(`[portboard] 500 ${requestId} ${clean(where, 200)}: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
-  return reply(500, { error: `서버 오류가 났어요 (요청 ID ${requestId}).`, requestId });
+  return reply(500, { error: t('errors.internal', { id: requestId }), requestId });
 }
 
 /** Who may write, and where writes are recorded. */

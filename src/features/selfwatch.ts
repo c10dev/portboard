@@ -32,6 +32,7 @@ export function memoryMb(m: NodeJS.MemoryUsage = process.memoryUsage()) {
 
 export const selfWatchFeature: FeatureModule = {
   name: 'selfwatch',
+  order: 1100,
   routes: [
     {
       method: 'GET',

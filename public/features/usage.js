@@ -11,6 +11,7 @@ import { guestList, hostLine, pveRef, trendFor, trendRow } from './proxmox.js';
 import { routedTitle } from '../lib/nettree.js';
 import { el } from '../lib/dom.js';
 import { bytes } from '../lib/format.js';
+import { locale, t } from '../lib/i18n.js';
 import { agoMonths as ago, usageMinutes as minutes } from '../lib/time.js';
 
 const OS = { macOS: ['mac', 'Mac'], windows: ['win', 'Windows'], iOS: ['iOS', 'iPhone'], android: ['and', 'Android'], linux: ['lnx', 'Linux'] };
@@ -31,9 +32,9 @@ export function poolLine(p) {
   const bits = [`compute-pool ${p.name} · ${state}`];
   if (p.cpuPct != null) bits.push(`CPU ${p.cpuPct}%`);
   else if (p.load1 != null && p.cores) bits.push(`load ${p.load1.toFixed(1)}/${p.cores}`);
-  if (p.memTotalMb && p.memAvailMb != null) bits.push(`메모리 ${Math.round((1 - p.memAvailMb / p.memTotalMb) * 100)}%`);
-  if (p.diskFreePct != null) bits.push(`디스크 여유 ${p.diskFreePct}%`);
-  if (p.busy) bits.push(`작업 ${p.busy}/${p.slots}`);
+  if (p.memTotalMb && p.memAvailMb != null) bits.push(t('usage.pool.mem', { pct: Math.round((1 - p.memAvailMb / p.memTotalMb) * 100) }));
+  if (p.diskFreePct != null) bits.push(t('usage.pool.diskFree', { pct: p.diskFreePct }));
+  if (p.busy) bits.push(t('usage.pool.jobs', { busy: p.busy, slots: p.slots }));
   return bits.join(' · ');
 }
 
@@ -48,26 +49,26 @@ function subLine(c) {
   if (c.kind === 'funnel') {
     // Tailscale Funnel: the public internet through tailscaled, so no device or address is known.
     const fronts = [...new Set(c.uses.map((u) => `:${u.servePort ?? '?'} → :${u.port}`))];
-    return ['인터넷 공개 (Tailscale Funnel)', ...fronts].join(' · ');
+    return [t('usage.sub.funnel'), ...fronts].join(' · ');
   }
   if (c.kind === 'lan' || c.kind === 'other') {
     bits.push(c.addresses[0] ? `LAN ${c.addresses[0]}` : c.lanIps[0] ? `LAN ${c.lanIps[0]}` : c.id);
-    if (c.nameSource === 'vendor') bits.push('MAC 제조사로 추정');
-    else if (c.nameSource === 'proxmox') bits.push('Proxmox 게스트 이름');
-    else if (c.nameSource === 'user') bits.push(c.vendor ? short(c.vendor) : '직접 붙인 이름');
-    else if (c.randomMac) bits.push('개인 Wi-Fi 주소(제조사 알 수 없음)');
-    else bits.push('이름 없음');
+    if (c.nameSource === 'vendor') bits.push(t('usage.sub.vendor'));
+    else if (c.nameSource === 'proxmox') bits.push(t('usage.sub.proxmox'));
+    else if (c.nameSource === 'user') bits.push(c.vendor ? short(c.vendor) : t('usage.sub.userName'));
+    else if (c.randomMac) bits.push(t('usage.sub.randomMac'));
+    else bits.push(t('usage.sub.noName'));
     return bits.join(' · ');
   }
   const os = osName(c);
   if (os) bits.push(os);
   if (c.networks.includes('tailnet') || !c.networks.length) {
-    if (c.kind === 'self') bits.push('이 서버');
-    else if (!c.online) bits.push(c.lastSeen ? `오프라인 · ${ago(c.lastSeen)}` : '오프라인');
-    else if (c.path?.type === 'direct') bits.push('Tailscale 직결');
-    else if (c.path?.type === 'relay') bits.push(`Tailscale 릴레이(${c.path.region})`);
+    if (c.kind === 'self') bits.push(t('common.thisServer'));
+    else if (!c.online) bits.push(c.lastSeen ? t('usage.offlineAgo', { ago: ago(c.lastSeen) }) : t('usage.offline'));
+    else if (c.path?.type === 'direct') bits.push(t('usage.sub.direct'));
+    else if (c.path?.type === 'relay') bits.push(t('usage.sub.relay', { region: c.path.region }));
     else if (c.networks.includes('tailnet')) bits.push('Tailscale');
-    else bits.push('온라인');
+    else bits.push(t('usage.sub.online'));
   }
   if (c.networks.includes('lan')) bits.push(`LAN ${c.addresses.find((a) => !a.startsWith('100.')) ?? c.lanIps[0]}`);
   return bits.join(' · ');
@@ -81,7 +82,13 @@ function recentLine(ctx, id, max = 3) {
   const r = hist(ctx.data).byDevice[id]?.recent ?? [];
   if (!r.length) return null;
   const parts = r.slice(0, max).map((x) => `${x.service} ${minutes(x.minutes)}`);
-  return `최근 7일: ${parts.join(' · ')}${r.length > max ? ` 외 ${r.length - max}개` : ''}`;
+  return r.length > max ? t('usage.recentMore', { list: parts.join(' · '), n: r.length - max }) : t('usage.recent', { list: parts.join(' · ') });
+}
+
+/** "3일 전" → "3일" ("3d ago" → "3d"): the time.ago wrapper taken off again */
+function withoutAgo(text) {
+  const [pre, post] = t('time.ago').split('{t}');
+  return text.startsWith(pre) && text.endsWith(post) && text.length > pre.length + post.length ? text.slice(pre.length, text.length - post.length) : text;
 }
 
 /** Idle services, one item per group (same compose project, unit or process), with who used it last. */
@@ -102,10 +109,10 @@ export function idleServices(ctx) {
     name.append(el('span', null, it.name), el('span', 'use-port', it.ports.map((p) => `:${p}`).join(' ')));
     const last = it.ports.map((p) => hist(ctx.data).byPort[p]).filter(Boolean).sort((a, b) => b.at.localeCompare(a.at))[0];
     const meta = last
-      ? `${ago(last.at)} 사용 · ${last.name}`
-      : since ? `${ago(since).replace(/ 전$/, '')} 동안 사용 기록 없음` : '사용 기록 없음';
+      ? t('usage.idle.lastUse', { ago: ago(last.at), name: last.name })
+      : since && Date.now() - Date.parse(since) >= 60_000 ? t('usage.idle.noUseFor', { t: withoutAgo(ago(since)) }) : t('usage.idle.noUse');
     const m = el('span', `use-meta${last ? '' : ' none'}`, meta);
-    if (last) m.title = new Date(last.at).toLocaleString();
+    if (last) m.title = new Date(last.at).toLocaleString(locale());
     li.append(name, m);
     return li;
   });
@@ -113,7 +120,7 @@ export function idleServices(ctx) {
 
 export function pastChip(id, d, ctx) {
   const b = el('span', 'chip off past');
-  b.append(el('span', 'dot'), el('span', 'chip-name', d.name), el('span', 'chip-extra', `${ago(d.lastSeen)} 사용`));
+  b.append(el('span', 'dot'), el('span', 'chip-name', d.name), el('span', 'chip-extra', t('usage.usedAgo', { ago: ago(d.lastSeen) })));
   b.title = [recentLine(ctx, id, 5), id].filter(Boolean).join('\n');
   return b;
 }
@@ -127,7 +134,7 @@ export function card(c, ctx, isSelf = false) {
   head.append(el('span', `glyph k-${c.kind}`, glyph(c)));
   const who = el('div', 'who');
   const nameLine = el('div', 'name-line');
-  nameLine.append(el('span', 'dot'), el('strong', 'dev-name', isSelf ? `${c.name} (이 서버)` : c.name));
+  nameLine.append(el('span', 'dot'), el('strong', 'dev-name', isSelf ? t('usage.card.selfName', { name: c.name }) : c.name));
   if (canWatchDevice(c)) nameLine.append(deviceBell(c));
   who.append(nameLine, el('div', 'dev-sub', subLine(c)));
   const badges = badgesFor(c);
@@ -141,7 +148,7 @@ export function card(c, ctx, isSelf = false) {
   head.append(who);
 
   if (c.nameKey) {
-    const b = el('button', 'name-btn', c.nameSource === 'user' ? '이름 바꾸기' : '이름 붙이기');
+    const b = el('button', 'name-btn', c.nameSource === 'user' ? t('usage.card.rename') : t('usage.card.name'));
     b.dataset.write = '1';
     b.type = 'button';
     b.addEventListener('click', (ev) => { ev.stopPropagation(); ctx.nameDevice(c); });
@@ -150,14 +157,14 @@ export function card(c, ctx, isSelf = false) {
   n.append(head);
   const ref = pveRef(c);
   const tr = ref && trendFor('hour', ref);
-  if (tr) n.append(trendRow(tr, { title: `${ref.vmid != null ? `${c.guestOf.type === 'lxc' ? 'CT' : 'VM'} ${ref.vmid}` : ref.node} 지난 1시간` }));
+  if (tr) n.append(trendRow(tr, { title: t('usage.card.trend', { what: ref.vmid != null ? `${c.guestOf.type === 'lxc' ? 'CT' : 'VM'} ${ref.vmid}` : ref.node }) }));
 
   if (isSelf) {
     if (c.pool) n.append(el('div', 'dev-pool solo', poolLine(c.pool)));
     const loc = ctx.data.local;
     const d = el('details', 'local');
     const sum = el('summary');
-    sum.append(el('strong', null, `이 서버 안의 연결 ${loc.connections}개`));
+    sum.append(el('strong', null, t('usage.card.localConns', { n: loc.connections })));
     const names = [...new Set(loc.uses.map(localText))];
     if (names.length) sum.append(document.createTextNode(` — ${names.slice(0, 3).join(', ')}${names.length > 3 ? ' …' : ''}`));
     d.append(sum, useList(loc.uses, true));
@@ -171,7 +178,7 @@ export function card(c, ctx, isSelf = false) {
     if (via.length) {
       const box = el('div', 'routed');
       const h = el('div', 'routed-h');
-      h.append(el('strong', null, `${c.name} 경유`), document.createTextNode(' · tailnet 기기, 원래 기기는 알 수 없음'));
+      h.append(el('strong', null, t('usage.card.via', { name: c.name })), document.createTextNode(` · ${t('usage.card.viaNote')}`));
       h.title = routedTitle(c.name, c.routes);
       box.append(h, useList(via));
       n.append(box);
@@ -189,26 +196,30 @@ export function card(c, ctx, isSelf = false) {
   return n;
 }
 
+/** How a guest was matched to its card (the badge's title) */
+const MATCH = { mac: 'usage.match.mac', name: 'usage.match.name', ip: 'usage.match.ip' };
+
 function badgesFor(c) {
   const out = [];
   if (c.newDevice) {
-    const b = el('span', 'badge new', '새 기기');
-    b.title = `${c.newDevice.scope === 'neighbor' ? 'LAN에 처음 보임' : '이 서버에 처음 접속'} · ${new Date(c.newDevice.since).toLocaleString()}`;
+    const b = el('span', 'badge new', t('usage.badge.new'));
+    b.title = `${c.newDevice.scope === 'neighbor' ? t('usage.badge.newNeighbor') : t('usage.badge.newSelf')} · ${new Date(c.newDevice.since).toLocaleString(locale())}`;
     out.push(b);
   }
   if (c.guestOf) {
-    const t = c.guestOf.type === 'lxc' ? 'CT' : 'VM';
-    const b = el('span', 'badge info', `${c.guestOf.node} · ${t} ${c.guestOf.vmid}`);
-    b.title = `Proxmox ${c.guestOf.node}의 ${t === 'CT' ? '컨테이너' : '가상 머신'} (${{ mac: 'MAC 주소', name: '이름', ip: '고정 IP' }[c.guestOf.match] ?? ''}로 확인)`;
+    const type = c.guestOf.type === 'lxc' ? 'CT' : 'VM';
+    const b = el('span', 'badge info', `${c.guestOf.node} · ${type} ${c.guestOf.vmid}`);
+    const how = MATCH[c.guestOf.match] ? t(MATCH[c.guestOf.match]) : '';
+    b.title = type === 'CT' ? t('usage.badge.guestCt', { node: c.guestOf.node, how }) : t('usage.badge.guestVm', { node: c.guestOf.node, how });
     out.push(b);
     if (c.guestOf.status !== 'running') out.push(el('span', 'badge warn', `Proxmox: ${c.guestOf.status}`));
   } else if (c.virt && c.virt.type !== 'none') {
     out.push(el('span', 'badge info', c.virt.proxmoxMac ? 'Proxmox VM' : `VM (${c.virt.type})`));
   }
-  if (c.pveHost) out.push(el('span', 'badge', 'Proxmox 호스트'));
+  if (c.pveHost) out.push(el('span', 'badge', t('usage.badge.pveHost')));
   if (c.routes.length) {
-    const b = el('span', 'badge', `서브넷 라우터 ${c.routes.join(', ')}`);
-    b.title = '이 기기가 tailnet에 LAN을 열어 줘요. 이 기기의 LAN 주소로 들어온 연결은 다른 tailnet 기기가 이 기기를 거쳐 온 것일 수 있어요.';
+    const b = el('span', 'badge', t('usage.badge.router', { routes: c.routes.join(', ') }));
+    b.title = t('usage.badge.routerTitle');
     out.push(b);
   }
   return out;
@@ -227,7 +238,7 @@ function useList(uses, local = false) {
     name.append(el('span', null, local ? localText(u) : u.service));
     name.append(el('span', 'use-port', `:${u.port}`));
     if (u.via === 'serve') name.append(el('span', 'tag serve', 'serve'));
-    li.append(name, el('span', 'use-meta', `${u.port === 22 ? '세션' : '연결'} ${u.connections}개 · ${bytes(u.bytesSent + u.bytesReceived)}`));
+    li.append(name, el('span', 'use-meta', `${u.port === 22 ? t('usage.use.sessions', { n: u.connections }) : t('usage.use.conns', { n: u.connections })} · ${bytes(u.bytesSent + u.bytesReceived)}`));
     ul.append(li);
   }
   return ul;
@@ -237,14 +248,14 @@ export function idleChip(c, ctx) {
   const b = el('button', `chip t-${tone(c)}${c.online ? '' : ' off'}`);
   b.type = 'button';
   b.append(el('span', 'dot'), el('span', 'chip-name', c.name));
-  if (c.newDevice) b.append(el('span', 'badge new', '새'));
+  if (c.newDevice) b.append(el('span', 'badge new', t('usage.badge.newShort')));
   const vmUp = c.guestOf?.status === 'running';
   const extra = !c.online
-    ? vmUp ? `${c.guestOf.type === 'lxc' ? 'CT' : 'VM'} 실행 중 · Tailscale 꺼짐` : c.lastSeen ? `오프라인 · ${ago(c.lastSeen)}` : '오프라인'
-    : c.pool ? [POOL_STATE[c.pool.state]?.[0] ?? c.pool.state, c.ports ? `포트 ${c.ports.ports.length}` : null].filter(Boolean).join(' · ')
-    : c.ports ? [osName(c), `포트 ${c.ports.ports.length}`].filter(Boolean).join(' · ') : osName(c);
+    ? vmUp ? t('usage.chip.vmUp', { type: c.guestOf.type === 'lxc' ? 'CT' : 'VM' }) : c.lastSeen ? t('usage.offlineAgo', { ago: ago(c.lastSeen) }) : t('usage.offline')
+    : c.pool ? [POOL_STATE[c.pool.state]?.[0] ?? c.pool.state, c.ports ? t('usage.chip.ports', { n: c.ports.ports.length }) : null].filter(Boolean).join(' · ')
+    : c.ports ? [osName(c), t('usage.chip.ports', { n: c.ports.ports.length })].filter(Boolean).join(' · ') : osName(c);
   const used = hist(ctx.data).byDevice[c.id]?.lastSeen;
-  const text = [extra, used ? `${ago(used)} 사용` : null].filter(Boolean).join(' · ');
+  const text = [extra, used ? t('usage.usedAgo', { ago: ago(used) }) : null].filter(Boolean).join(' · ');
   if (text) b.append(el('span', 'chip-extra', text));
   const recent = recentLine(ctx, c.id, 5);
   if (recent) b.title = recent;

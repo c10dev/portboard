@@ -21,6 +21,7 @@ declare module '../mcp/kit.ts' {
 
 export const onboardingFeature: FeatureModule = {
   name: 'onboarding',
+  order: 1700,
   routes: [
     {
       method: 'GET',

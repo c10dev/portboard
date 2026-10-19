@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>개발 · Portboard</title>
+  <title data-t="page.title.dev"></title>
   <meta name="theme-color" content="#2f6feb">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Portboard">
@@ -29,10 +29,10 @@
       <div class="filter-pop" id="filterPop">
         <!--#shell:filter-->
         <div class="menu-panel filter-panel" id="filterPanel">
-          <label class="check"><input id="onlyRemovable" type="checkbox"> 지울 수 있는 것만</label>
+          <label class="check"><input id="onlyRemovable" type="checkbox"> <span data-t="page.dev.onlyRemovable"></span></label>
         </div>
       </div>
-      <button id="rescan" type="button" title="지금 다시 검사" aria-label="다시 검사">↻</button>
+      <button id="rescan" type="button" data-t-title="page.dev.rescan.title" data-t-aria-label="page.dev.rescan">↻</button>
       <!--#shell:insp-toggle-->
     </div>
   </header>
@@ -42,21 +42,21 @@
     <main class="wt-main" data-wait="page">
       <h2 id="headline" class="headline"></h2>
       <p id="status" class="status" aria-live="polite"></p>
-      <p class="wt-help">지울 수 있는 워크트리: 메인 체크아웃이 아니고, 잠기지 않았고, 변경·추적 안 된 파일이 없고, 안에서 도는 프로세스가 없고, 브랜치가 머지됐거나(조상) 머지된 PR이 그 HEAD를 포함하는 것. 지우기는 <code>git worktree remove</code>(강제 아님)이고 브랜치는 남겨요.</p>
-      <section class="resv" aria-label="포트 예약">
-        <h3>포트 예약</h3>
-        <p class="wt-help">프로젝트·워크트리마다 고정 포트를 잡아 두면 <code>free_port</code>(MCP)와 <code>/api/free-ports</code>가 다른 사람에게 그 포트를 주지 않고, <code>for=&lt;이름&gt;</code>로 물으면 그 포트를 먼저 줘요. 아무것도 중지하지 않아요.</p>
+      <p class="wt-help" data-th="page.dev.help"></p>
+      <section class="resv" data-t-aria-label="page.dev.resv">
+        <h3 data-t="page.dev.resv"></h3>
+        <p class="wt-help" data-th="page.dev.resv.help"></p>
         <form id="resvForm" class="resv-form">
-          <input id="resvOwner" required maxlength="120" placeholder="이름 (예: shop-web 또는 repo@branch)">
-          <input id="resvPort" type="number" min="1024" max="65535" placeholder="포트 (비우면 빈 포트)">
-          <input id="resvNote" maxlength="200" placeholder="메모 (선택)">
-          <button type="submit" class="btn primary" data-write="1">예약</button>
+          <input id="resvOwner" required maxlength="120" data-t-placeholder="page.dev.resv.owner">
+          <input id="resvPort" type="number" min="1024" max="65535" data-t-placeholder="page.dev.resv.port">
+          <input id="resvNote" maxlength="200" data-t-placeholder="page.dev.resv.note">
+          <button type="submit" class="btn primary" data-write="1" data-t="page.dev.resv.submit"></button>
         </form>
         <ul id="resvList" class="resv-list"></ul>
       </section>
 
-      <h3 class="wt-h">워크트리</h3>
-      <section id="repos" aria-label="저장소별 워크트리"></section>
+      <h3 class="wt-h" data-t="page.dev.worktrees"></h3>
+      <section id="repos" data-t-aria-label="page.dev.repos"></section>
     </main>
     </div>
     <!--#shell:aside-->

@@ -5,6 +5,7 @@
 
 import { post, postOrThrow, tryJSON } from '../lib/api.js';
 import { $, el } from '../lib/dom.js';
+import { t, tn } from '../lib/i18n.js';
 import { toast } from '../lib/toast.js';
 
 let doc = null;
@@ -24,7 +25,7 @@ export function prefill(c) {
 /** "추천: dev-mac (Tailscale 기기가 이 주소에서…)" for the 이름 붙이기 prompt, or '' */
 export function prefillHint(c) {
   const s = c.nameKey && c.nameSource !== 'user' ? nameFor(c.nameKey) : null;
-  return s ? `\n추천: ${s.name} — ${s.text}` : '';
+  return s ? `\n${t('suggestions.hint', { name: s.name, text: s.text })}` : '';
 }
 
 function refreshPage() {
@@ -38,7 +39,7 @@ async function dismiss(s) {
     await postOrThrow(`/api/suggestions/${encodeURIComponent(s.id)}/dismiss`);
     doc.suggestions = doc.suggestions.filter((x) => x.id !== s.id);
   } catch (err) {
-    say(`무시 실패: ${err.message}`, true);
+    say(t('suggestions.dismissFailed', { error: err.message }), true);
   } finally {
     busy.delete(s.id);
     decorate();
@@ -52,14 +53,14 @@ async function accept(s) {
     if (s.kind === 'alert') {
       const r = await post(`/api/ports/${s.port}/prefs`, { alert: true });
       if (!r.ok) throw new Error(r.body.error ?? `HTTP ${r.status}`);
-      say(`:${s.port} 다운 알림을 켰어요`);
+      say(t('suggestions.alertOn', { port: s.port }));
     } else {
       const body = await postOrThrow('/api/clients/name', { key: s.key, name: s.name });
-      say(`"${body.name}"(으)로 저장했어요`);
+      say(t('suggestions.named', { name: body.name }));
     }
     doc.suggestions = doc.suggestions.filter((x) => x.id !== s.id);
   } catch (err) {
-    say(`저장 실패: ${err.message}`, true);
+    say(t('suggestions.saveFailed', { error: err.message }), true);
   } finally {
     busy.delete(s.id);
     decorate();
@@ -69,7 +70,7 @@ async function accept(s) {
 
 function acts(s, yes) {
   const ok = el('button', 'sg-yes', yes);
-  const no = el('button', 'sg-no', '무시');
+  const no = el('button', 'sg-no', t('suggestions.dismiss'));
   ok.dataset.write = '1';
   no.dataset.write = '1';
   for (const b of [ok, no]) {
@@ -78,15 +79,15 @@ function acts(s, yes) {
   }
   ok.addEventListener('click', (ev) => { ev.stopPropagation(); accept(s); });
   no.addEventListener('click', (ev) => { ev.stopPropagation(); dismiss(s); });
-  no.title = '다시 제안하지 않아요';
+  no.title = t('suggestions.dismiss.title');
   return [ok, no];
 }
 
 function alertChip(s) {
   const chip = el('span', 'badge sg-chip');
   chip.dataset.suggestion = s.id;
-  chip.title = `${s.text}${s.also.length ? `\n같은 서비스의 포트 ${s.also.join(', ')}도 이 알림으로 함께 지켜봐요.` : ''}\n두 번 연속(30초 간격) 응답이 없으면 알림, 돌아오면 다시 알림.`;
-  chip.append(el('span', 'sg-text', '🔔 알림 켜기?'), ...acts(s, '켜기'));
+  chip.title = `${s.text}${s.also.length ? `\n${t('suggestions.alert.also', { ports: s.also.join(', '), n: s.also.length })}` : ''}\n${t('suggestions.alert.how')}`;
+  chip.append(el('span', 'sg-text', t('suggestions.alert')), ...acts(s, t('suggestions.alert.yes')));
   return chip;
 }
 
@@ -95,8 +96,8 @@ function nameLine(s) {
   box.dataset.suggestion = s.id;
   box.title = s.text;
   const label = el('span', 'sg-text');
-  label.append('추천 이름 ', el('strong', null, s.name));
-  box.append(label, ...acts(s, '적용'));
+  label.append(...tn('suggestions.name', { name: el('strong', null, s.name) }));
+  box.append(label, ...acts(s, t('suggestions.name.apply')));
   return box;
 }
 

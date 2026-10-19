@@ -10,6 +10,7 @@ import { deviceHref } from '../lib/badge.js';
 import { onShared, shell, sharedAt } from '../lib/shell.js';
 import { flatten, nodeBadges, nodeSub, nodeTarget, nodeText } from '../lib/nettree.js';
 import { POOL_STATE } from './devices.js';
+import { locale, t } from '../lib/i18n.js';
 
 const EVERY = 60_000;
 const SLOW = 5 * 60_000;
@@ -29,7 +30,7 @@ export function navCounts({ ports, devices, worktrees, onboarding }) {
 export function navPinned(ports) {
   return ports.ports.filter((p) => p.pinned).map((p) => ({
     key: p.port, text: p.name, sub: String(p.port), href: `./#${p.port}`,
-    tone: p.listening ? null : 'warn', title: `${p.port} ${p.name}${p.listening ? '' : ' · 리스닝 없음'}`,
+    tone: p.listening ? null : 'warn', title: `${p.port} ${p.name}${p.listening ? '' : ` · ${t('nav.notListening')}`}`,
   }));
 }
 
@@ -42,8 +43,8 @@ export function navPinned(ports) {
 export function navDevices(devices) {
   if (devices.tree?.roots?.length) return navTree(devices);
   return devices.devices.map((d) => {
-    const [state, tone] = d.pool ? POOL_STATE[d.pool.state] ?? [d.pool.state, 'off'] : d.online ? ['온라인', 'ok'] : ['오프라인', 'off'];
-    return { key: d.id, text: d.self ? `${d.name} (이 서버)` : d.name, tone, href: deviceHref(d.id), title: `${d.name} · ${state}` };
+    const [state, tone] = d.pool ? POOL_STATE[d.pool.state] ?? [d.pool.state, 'off'] : d.online ? [t('nav.online'), 'ok'] : [t('nav.offline'), 'off'];
+    return { key: d.id, text: d.self ? t('nav.self', { name: d.name }) : d.name, tone, href: deviceHref(d.id), title: `${d.name} · ${state}` };
   });
 }
 
@@ -53,7 +54,7 @@ function navTree(devices) {
   return rows.map(({ node: n, depth, up, parent, router }) => {
     const d = n.device ? byId.get(n.device) : undefined;
     const [state, tone] = d?.pool ? POOL_STATE[d.pool.state] ?? [d.pool.state, 'off']
-      : n.online === true ? ['온라인', 'ok'] : n.online === false ? ['오프라인', 'off']
+      : n.online === true ? [t('nav.online'), 'ok'] : n.online === false ? [t('nav.offline'), 'off']
       : n.kind === 'device' ? ['LAN', 'lan'] : ['', null];
     const target = nodeTarget(n);
     const text = nodeText(n, parent, names);
@@ -69,9 +70,10 @@ function navTree(devices) {
 
 const data = { ports: null, devices: null, worktrees: null, onboarding: null };
 
-/** The cache lib/shell-boot.js paints from: { counts, pinned, devices, chips } */
+/** The cache lib/shell-boot.js paints from: { counts, pinned, devices, chips, locale } (locale: the language its text
+ * is in; the boot skips a cache from another one, and so does this page, so it never saves old text under its own) */
 export const NAV_KEY = 'pb.nav';
-const cache = (() => { try { return JSON.parse(localStorage.getItem(NAV_KEY) ?? 'null') ?? {}; } catch { return {}; } })();
+const cache = (() => { try { const c = JSON.parse(localStorage.getItem(NAV_KEY) ?? 'null') ?? {}; return c.locale === locale() ? c : {}; } catch { return {}; } })();
 
 /** The footer chips as they show now, for the next page's first paint */
 export function chipState(doc = document) {
@@ -84,7 +86,7 @@ export function chipState(doc = document) {
 }
 
 function save() {
-  try { localStorage.setItem(NAV_KEY, JSON.stringify({ ...cache, chips: chipState() })); } catch {}
+  try { localStorage.setItem(NAV_KEY, JSON.stringify({ ...cache, chips: chipState(), locale: locale() })); } catch {}
 }
 
 function paint() {

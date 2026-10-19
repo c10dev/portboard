@@ -2,10 +2,11 @@
 
 A native macOS app (SwiftUI, no Electron) for Portboard. It replaces the [SwiftBar plugin](../menubar/README.md) as the way to use Portboard on the Mac:
 
-- **Window**: the dashboard (`https://devbox.example.ts.net:8443`) in a web view with no title bar. The dashboard's header is the window's one bar: traffic lights, then the tabs (서비스 · 기기 · 개발 · 설정) and every control on a single row. 뒤로, 새로고침 and 브라우저에서 열기 are in the 대시보드 menu.
-- **Menu bar**: services in use, pinned ports, devices, local-only services with **tailnet 공개**, and leftover dev servers.
+- **Window**: the dashboard (`https://devbox.example.ts.net:8443`) in a web view with no title bar. The dashboard's header is the window's one bar: traffic lights, then the tabs (Services · Devices · Dev · Settings) and every control on a single row. Back, Refresh and Open in browser are in the Dashboard menu.
+- **Menu bar**: services in use, pinned ports, devices, local-only services with **Expose on tailnet**, and leftover dev servers.
 - **Notifications**: a watched (🔔) port or device goes down or comes back, and a new device appears. None for the port whose page you are looking at; the Dock badge counts watched ports that are down.
-- **Settings**: server URL and 연결 확인, notification toggles, poll interval, 로그인할 때 열기.
+- **Settings**: server URL and Check connection, notification toggles, refresh interval, Open Portboard at login.
+- **Language**: English, or Korean on a Mac whose system language is Korean ([Language](#language)).
 
 Source: [`mac-app/`](../../mac-app/). It is a Swift package with no Xcode project. [`build.sh`](../../mac-app/build.sh) builds `Portboard.app`.
 
@@ -55,8 +56,8 @@ Run it from the repository root. The fixtures are read from `../menubar/fixtures
 
 **Copied from elsewhere** (AirDrop, a download, a zip): the app is unsigned (ad hoc), so macOS refuses to open it at first.
 
-- macOS 14: right-click `Portboard.app` → **열기** → **열기**.
-- macOS 15 and newer: open it once, then 시스템 설정 → 개인정보 보호 및 보안 → **그래도 열기**.
+- macOS 14: right-click `Portboard.app` → **Open** (열기) → **Open**.
+- macOS 15 and newer: open it once, then System Settings → Privacy & Security → **Open Anyway** (그래도 열기).
 
 Or remove the flag:
 
@@ -70,20 +71,20 @@ On the first poll the app decides the notification default and may ask for notif
 
 ### Window
 
-- **Web view.** It shows the dashboard at the configured server URL, under a hidden title bar (see [One bar](#one-bar)). The 대시보드 menu has the tabs on ⌘1 to ⌘4, 뒤로 ⌘, 새로고침 ⌘R and 브라우저에서 열기 ⇧⌘O. 설정 is the dashboard's own `settings.html` tab (server settings and the checklist). The app's own settings are ⌘, (below).
+- **Web view.** It shows the dashboard at the configured server URL, under a hidden title bar (see [One bar](#one-bar)). The Dashboard menu (대시보드) has the tabs on ⌘1 to ⌘4, Back ⌘[, Refresh ⌘R and Open in browser ⇧⌘O. Settings is the dashboard's own `settings.html` tab (server settings and the checklist). The app's own settings are ⌘, (below).
 - **Links.** A link that leaves the dashboard opens in the default browser. "Leaves" means another host or port: an opened service, the docs on GitHub, `target=_blank`. Dashboard pages stay in the window.
-- **Dialogs.** The dashboard asks with `confirm()`/`prompt()` before stopping, exposing and naming. The app shows these as native dialogs; a bare WKWebView would silently answer "취소".
+- **Dialogs.** The dashboard asks with `confirm()`/`prompt()` before stopping, exposing and naming. The app shows these as native dialogs; a bare WKWebView would silently answer "Cancel".
 - **Writes.** They work as in Safari. Through `tailscale serve` the server sees the Mac's Tailscale login and device, and the Mac is on the `writeDevices` allowlist ([security.md](../security.md)).
 - **Window frame.** Size and position are remembered (`NSWindow` frame autosave).
-- **Closing.** Closing the window keeps the app running in the menu bar. The Dock icon or **대시보드 열기** brings the window back.
-- **Errors.** When the page cannot load, the window says so in Korean instead of showing a blank page. Examples: `서버 주소를 찾지 못했어요 (Tailscale이 꺼져 있나요?)`, `8초 안에 응답이 없어요`, or `Portboard 서버가 응답하지 않아요 (HTTP 502)` when tailscale serve answers but Portboard is down. A hint to check Tailscale and the server URL follows, with **다시 시도** and **서버 주소 바꾸기…**.
+- **Closing.** Closing the window keeps the app running in the menu bar. The Dock icon or **Open dashboard** brings the window back.
+- **Errors.** When the page cannot load, the window says so in plain words instead of showing a blank page. Examples: `Couldn't find the server address (is Tailscale off?)`, `No response within 8 seconds`, or `The Portboard server isn't responding (HTTP 502)` when tailscale serve answers but Portboard is down. A hint to check Tailscale and the server URL follows, with **Try again** (다시 시도) and **Change server address…**.
 - **Automatic retry.** After sleep or a Tailscale reconnect the first load often fails, so the window tries again on its own, like the Claude desktop app (`PortboardCore/Retry.swift`, `LoadRetry`):
   - at once, then after 15 s, then every 30 s, each ±20 % so it doesn't land in step with anything, for 3 minutes from the first failure. After that only a trigger below tries again.
   - at once when the window becomes key, the Mac wakes from sleep (`NSWorkspace.didWakeNotification`) or the screen is unlocked (`com.apple.screenIsUnlocked`), at most every 10 s. Each of these starts a new 3 minutes.
-  - **다시 시도** tries at once and starts a new 3 minutes too.
-  - The error screen says `자동으로 다시 시도하는 중… 다음 시도 14:03:12 (12초 후)`, and `다시 연결하는 중…` with a spinner while a try loads. The error stays up during a try instead of flashing a blank page. When the 3 minutes are over it says so and leaves 다시 시도.
+  - **Try again** tries at once and starts a new 3 minutes too.
+  - The error screen says `Retrying automatically… next try at 14:03:12 (in 12 s)`, and `Reconnecting…` with a spinner while a try loads. The error stays up during a try instead of flashing a blank page. When the 3 minutes are over it says so and leaves Try again.
   - A load that fails with an HTTP 5xx (Portboard down behind tailscale serve) or a network error is retried. Nothing else is (a cancelled load, a link sent to the browser).
-- **Page crashes.** When WebKit's page process dies (`webViewWebContentProcessDidTerminate`), the page is reloaded, at most 3 times in 5 minutes (`CrashReloads`). After that the window shows `대시보드 페이지가 5분 안에 3번 멈춰서 더 다시 불러오지 않았어요` with 다시 시도, and no automatic tries until you press it.
+- **Page crashes.** When WebKit's page process dies (`webViewWebContentProcessDidTerminate`), the page is reloaded, at most 3 times in 5 minutes (`CrashReloads`). After that the window shows `The dashboard page crashed 3 times in 5 minutes, so it wasn't reloaded again` with Try again, and no automatic tries until you press it.
 
 ### Menu bar
 
@@ -102,15 +103,15 @@ The native successor of `menubar/format.mjs`. The rules are the same and are tes
 
 **Menu**:
 
-1. The warnings. Each one opens the page in the window: `service.html#<port>`, or the device in the 기기 tab.
-2. **사용 중 서비스**: each with who is using it. Its submenu has **열기 ↗** (the served or direct http URL, in the browser) and 서비스 상세 보기.
-3. **고정한 포트**: state (tailnet HTTPS, local only, 리스닝, 리스닝 없음), with **열기 ↗**.
-4. **기기**: status dot, online or offline or pool state, CPU and memory. The submenu lists the services the device uses, then 기기 탭에서 보기.
-5. **local only 서비스**: **tailnet 공개** posts `/api/ports/<port>/expose` with `X-Portboard: 1`. The result is shown at the top of the menu for a minute; a refusal is shown in a dialog, with the Tailscale link when Serve has to be turned on first. Also: the reason it can't be exposed, SSH 터널 명령 복사, 서비스 상세 보기.
-6. **정리할 수 있는 서버**: name, port and why it is a candidate. A click opens the 서비스 tab, which has the 정리 banner. The menu itself never stops anything.
-7. 대시보드 열기, 브라우저에서 열기, 새로고침 (⌘R), last update time, Portboard 앱 설정… (⌘,), 종료.
+1. The warnings. Each one opens the page in the window: `service.html#<port>`, or the device in the Devices tab.
+2. **Services in use** (사용 중 서비스): each with who is using it. Its submenu has **Open ↗** (the served or direct http URL, in the browser) and Show service details.
+3. **Pinned ports** (고정한 포트): state (tailnet HTTPS, local only, listening, not listening), with **Open ↗**.
+4. **Devices** (기기): status dot, online or offline or pool state, CPU and memory. The submenu lists the services the device uses, then View in Devices.
+5. **Local-only services**: **Expose on tailnet** (tailnet 공개) posts `/api/ports/<port>/expose` with `X-Portboard: 1`. The result is shown at the top of the menu for a minute; a refusal is shown in a dialog, with the Tailscale link when Serve has to be turned on first. Also: the reason it can't be exposed, Copy SSH tunnel command, Show service details.
+6. **Servers to clean up** (정리할 수 있는 서버): name, port and why it is a candidate. A click opens the Services tab, which has the clean-up banner. The menu itself never stops anything.
+7. Open dashboard, Open in browser, Refresh (⌘R), last update time, Settings… (⌘,), Quit Portboard.
 
-When the server cannot be read, the menu shows **Portboard 연결 안 됨**, the reason, the Tailscale hint and **다시 시도**.
+When the server cannot be read, the menu shows **Not connected to Portboard**, the reason, the Tailscale hint and **Try again**.
 
 **Polling.** Each poll reads `/api/ports`, `/api/usage`, `/api/devices`, `/api/alerts` and `/api/owners` in parallel, with an 8 s timeout. It polls every 30 s while the app is in front or a menu is open, and every 2 min otherwise; both intervals can be changed in settings. Opening the menu refreshes at once if the data is older than the short interval. `/api/ports` is required. The others only add detail, and a failure of one becomes a ⚠ line. These reads are bounded on the server (shared 2 s cache, [api.md](../api.md) **Load bounds**).
 
@@ -121,12 +122,12 @@ The app sends `User-Agent: portboard-mac/<version>`. The 설정 체크리스트'
 macOS notifications, through UserNotifications:
 
 - **🔔 down / ✅ back.** A watched port stops answering, or a watched device goes offline; then it comes back. Down and back share one id, so the recovery banner replaces the down one. A click opens the service page or the device.
-- **새 기기.** A device appears in `/api/usage` `newDevices.pending` for the first time. A click opens it in the 기기 tab.
+- **New device.** A device appears in `/api/usage` `newDevices.pending` for the first time. A click opens it in the Devices tab.
 
 **Where you are.** The rules are in `Notify` (`PortboardCore/Notify.swift`) and tested:
 
-- **Not for the page in front.** No banner for a port whose `service.html#<port>` is in the window while it is key and the app is active. Its earlier banner (the 다운 one, when it comes back) is taken out of Notification Center. The state is still saved, so the banner doesn't come later when you leave the page.
-- **Levels.** 다운 is `.timeSensitive`, 복구 `.passive` (quietly: no sound, the screen stays dark), 새 기기 `.active`. Time-sensitive needs the `com.apple.developer.usernotifications.time-sensitive` entitlement, which needs a provisioning profile. The ad-hoc build has none, so macOS may show 다운 as an ordinary notification and hold it during a Focus.
+- **Not for the page in front.** No banner for a port whose `service.html#<port>` is in the window while it is key and the app is active. Its earlier banner (the down one, when it comes back) is taken out of Notification Center. The state is still saved, so the banner doesn't come later when you leave the page.
+- **Levels.** Down is `.timeSensitive`, back `.passive` (quietly: no sound, the screen stays dark), new device `.active`. Time-sensitive needs the `com.apple.developer.usernotifications.time-sensitive` entitlement, which needs a provisioning profile. The ad-hoc build has none, so macOS may show a down banner as an ordinary notification and hold it during a Focus.
 - **Threads.** One `threadIdentifier` per watched port or device (`watch-port:3000`, `watch-device:…`), one for all new devices, so Notification Center groups them that way.
 - **Dock badge.** The number of watched (🔔) ports that are down, the one thing that waits on you (the menu bar's `↓` count). Nothing else counts, and the badge is empty at 0. It is set after every poll, whatever the toggles say. When `/api/alerts` fails the last count stays.
 
@@ -143,21 +144,30 @@ Notifications only work from `Portboard.app`. The bare binary from `swift run` h
 
 ### Settings (⌘,)
 
-- **서버**: the dashboard URL. `https://` is added when no scheme is given; 적용 reloads the window and the menu.
-- **연결 확인**: calls `/api/whoami` and shows the login, the device (name and Tailscale address) and whether this Mac can write (with the reason when it can't). Through the `:8443` address the Mac should show as the owner with 쓰기 가능. The plain `http://…:8790` address is read-only.
-- **알림**: the two toggles, the macOS permission state, and a button to the system notification settings.
-- **갱신 주기**: the interval while in front or with the menu open (15 s to 2 min, default 30 s), and in the background (1 to 10 min, default 2 min).
-- **로그인할 때 Portboard 열기**: `SMAppService.mainApp`. If macOS wants approval, a button opens 시스템 설정 → 로그인 항목.
+- **Server** (서버): the dashboard URL. `https://` is added when no scheme is given; Apply reloads the window and the menu.
+- **Check connection** (연결 확인): calls `/api/whoami` and shows the login, the device (name and Tailscale address) and whether this Mac can write (with the reason when it can't). Through the `:8443` address the Mac should show as the owner with `Write: allowed`. The plain `http://…:8790` address is read-only.
+- **Notifications** (알림): the two toggles, the macOS permission state, and a button to the system notification settings.
+- **Refresh interval** (갱신 주기): the interval while in front or with the menu open (15 s to 2 min, default 30 s), and in the background (1 to 10 min, default 2 min).
+- **Open Portboard at login**: `SMAppService.mainApp`. If macOS wants approval, a button opens System Settings → Login Items.
+
+## Language
+
+The app follows the system language: Korean when Korean comes first in System Settings → General → Language & Region (or in the app's own language setting there), English otherwise. This covers the menu bar menu, the Dashboard menu, the settings window, the window's error screen, alerts and notifications. The dashboard in the window has its own language setting.
+
+- The text lives in [`mac-app/Resources/en.lproj/Localizable.strings`](../../mac-app/Resources/en.lproj/Localizable.strings) and [`ko.lproj/Localizable.strings`](../../mac-app/Resources/ko.lproj/Localizable.strings): UTF-8 `"key" = "value";` lines with the same keys and `{name}` placeholders in both. Keys are dotted like the dashboard's `public/i18n/*.json`; a key the dashboard has (`shell.view.services`, `common.refresh`) means the same, the app's own are `mac.*`.
+- `build.sh` copies both `.lproj` folders into `Portboard.app/Contents/Resources` and lists `en` and `ko` in `CFBundleLocalizations` (development region `en`). `L10n.load()` (`PortboardCore/L10n.swift`) reads the file `Bundle.main` picks at launch; `L10n.t("key", ["name": value])` looks a key up. A missing key shows the key itself. `swift run` has no bundle, so it shows keys.
+- **Adding text**: add the key to both files (avoid plural forms; English wording that works for any count, like `Pinned ports · {n}`), and use `L10n.t("mac.…")` in Swift. Never put user-facing text directly in the sources. `test/macapp.test.ts` checks that both files have the same keys and placeholders, that every key used in `mac-app/Sources` exists and every key is used, and that no Korean is left in the sources outside comments. The Swift tests load the Korean table, so their assertions are in Korean.
 
 ## Code
 
 | Path | Role |
 |---|---|
 | [`mac-app/Package.swift`](../../mac-app/Package.swift) | Swift package (tools 5.9, macOS 14). The app target is only declared on macOS, so `swift test` works on Linux |
-| [`Sources/PortboardCore/`](../../mac-app/Sources/PortboardCore/) | Pure logic, Foundation only. `JSON.swift`: lenient JSON. `Models.swift`: typed views of the API documents. `Summary.swift`: menu rows, warnings and title, ported from format.mjs. `Notify.swift`: notification dedupe, texts, levels, threads, the page-in-front rule and the Dock badge. `Retry.swift`: the window's automatic retry schedule and the crash-reload limit. `Server.swift`: URLs, tabs, Korean error texts, poll intervals. `Chrome.swift`: the bar's numbers (48 px, 78 px clear), the page's bar report and its hit-testing, the double-click setting. `Format.swift`: text helpers |
-| [`Tests/PortboardCoreTests/`](../../mac-app/Tests/PortboardCoreTests/) | XCTest. The cases of `test/menubar.test.ts` on the same fixtures, plus dedupe, URLs, errors, models, the retry schedule and the notification rules |
-| [`Sources/Portboard/`](../../mac-app/Sources/Portboard/) | The app. `PortboardApp.swift`: scenes, commands, app delegate. `AppModel.swift`: polling, notifications, tailnet 공개. `APIClient.swift`. `MenuBar.swift`. `WebView.swift`: WKWebView, link policy, JS dialogs. `MainWindow.swift`: the window with no title bar (traffic lights, drag, double-click, frame autosave), error view. `SettingsView.swift`. `Notifier.swift`. `LoginItem.swift`. `AppInfo.swift`: version, User-Agent, settings keys |
-| [`mac-app/build.sh`](../../mac-app/build.sh) | Release build, bundle, icon, Info.plist, ad-hoc signature, `--install` |
+| [`Sources/PortboardCore/`](../../mac-app/Sources/PortboardCore/) | Pure logic, Foundation only. `JSON.swift`: lenient JSON. `Models.swift`: typed views of the API documents. `Summary.swift`: menu rows, warnings and title, ported from format.mjs. `Notify.swift`: notification dedupe, texts, levels, threads, the page-in-front rule and the Dock badge. `Retry.swift`: the window's automatic retry schedule and the crash-reload limit. `Server.swift`: URLs, tabs, error texts, poll intervals. `L10n.swift`: the string tables (below). `Chrome.swift`: the bar's numbers (48 px, 78 px clear), the page's bar report and its hit-testing, the double-click setting. `Format.swift`: text helpers |
+| [`Tests/PortboardCoreTests/`](../../mac-app/Tests/PortboardCoreTests/) | XCTest. The cases of `test/menubar.test.ts` on the same fixtures, plus dedupe, URLs, errors, models, the retry schedule and the notification rules. They load the Korean table; `L10nTests` checks the string tables and the loader |
+| [`Sources/Portboard/`](../../mac-app/Sources/Portboard/) | The app. `PortboardApp.swift`: scenes, commands, app delegate. `AppModel.swift`: polling, notifications, Expose on tailnet. `APIClient.swift`. `MenuBar.swift`. `WebView.swift`: WKWebView, link policy, JS dialogs. `MainWindow.swift`: the window with no title bar (traffic lights, drag, double-click, frame autosave), error view. `SettingsView.swift`. `Notifier.swift`. `LoginItem.swift`. `AppInfo.swift`: version, User-Agent, settings keys |
+| [`mac-app/Resources/`](../../mac-app/Resources/) | `AppIcon.png`, and `en.lproj` / `ko.lproj` with `Localizable.strings`, the app's text ([Language](#language)) |
+| [`mac-app/build.sh`](../../mac-app/build.sh) | Release build, bundle, icon, text tables, Info.plist, ad-hoc signature, `--install` |
 | [`mac-app/scripts/render-icon.py`](../../mac-app/scripts/render-icon.py) | Renders `public/icon.svg` to `Resources/AppIcon.png` (1024 px, Apple's icon grid). There is no SVG tool on the server and `sips` can't read SVG. Re-run it after changing the icon |
 
 **Reading the API.** The app reads every field defensively, like the plugin. Responses decode into a `JSON` value, and models read what they need from it. A missing key, an added key or a changed type reads as "not there", so a newer or older server never breaks the menu. This is tested with the same odd documents as the plugin.

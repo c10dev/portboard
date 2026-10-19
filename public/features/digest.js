@@ -6,6 +6,7 @@
 import { errorText, post, tryJSON } from '../lib/api.js';
 import { menuSelect, row } from '../lib/controls.js';
 import { $, el, h } from '../lib/dom.js';
+import { t } from '../lib/i18n.js';
 import { toast } from '../lib/toast.js';
 
 const STYLE = `
@@ -25,31 +26,31 @@ let view = null;
 function kst(iso) {
   const d = new Date(Date.parse(iso) + 9 * 3600_000);
   const p = (n) => String(n).padStart(2, '0');
-  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${'일월화수목금토'[d.getUTCDay()]}) ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+  return t('digest.at', { md: `${d.getUTCMonth() + 1}/${d.getUTCDate()}`, wd: t('digest.weekdays').split(',')[d.getUTCDay()], hm: `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}` });
 }
 
 const MODES = [
-  { value: 'off', label: '끄기' },
-  { value: 'daily', label: '매일' },
-  { value: 'weekly', label: '매주 월요일' },
+  { value: 'off', label: t('digest.mode.off') },
+  { value: 'daily', label: t('digest.mode.daily') },
+  { value: 'weekly', label: t('digest.mode.weekly') },
 ];
 
 function section() {
   // a menu-select (lib/controls.js) has .value, .disabled and change like the <select> it replaced
-  const mode = menuSelect({ id: 'digestMode', label: '요약 알림 주기', options: MODES, value: 'off', write: true, onChange: save });
-  const time = h('input', { id: 'digestTime', class: 'ctl-time', type: 'time', step: '60', 'aria-label': '보낼 시각 (KST)', onchange: save, dataset: { write: '1' } });
+  const mode = menuSelect({ id: 'digestMode', label: t('digest.mode.label'), options: MODES, value: 'off', write: true, onChange: save });
+  const time = h('input', { id: 'digestTime', class: 'ctl-time', type: 'time', step: '60', 'aria-label': t('digest.time.label'), onchange: save, dataset: { write: '1' } });
   const actions = h('div', { class: 'digest-actions' },
-    h('button', { type: 'button', id: 'digestPreviewBtn', text: '미리보기', onclick: preview }),
-    h('button', { type: 'button', id: 'digestSendBtn', text: '지금 보내기', onclick: sendNow, dataset: { write: '1' } }));
+    h('button', { type: 'button', id: 'digestPreviewBtn', text: t('digest.preview'), onclick: preview }),
+    h('button', { type: 'button', id: 'digestSendBtn', text: t('digest.send'), onclick: sendNow, dataset: { write: '1' } }));
   if ($('notifyBody')) {
     // the 설정 modal: rows (label and state on the left, the controls on the right)
     return h('section', { id: 'digestBox', class: 'st-rows' },
-      row({ label: '요약 알림', desc: h('span', { id: 'digestState' }), control: h('span', { class: 'ctl-group' }, mode, time, h('span', { class: 'muted', text: 'KST' })) }),
-      row({ label: '미리보기·보내기', desc: '지금까지의 요약을 미리 보거나 알림 채널로 바로 보내요 (예약에는 영향 없음)', control: actions }),
+      row({ label: t('digest.title'), desc: h('span', { id: 'digestState' }), control: h('span', { class: 'ctl-group' }, mode, time, h('span', { class: 'muted', text: 'KST' })) }),
+      row({ label: t('digest.previewSend'), desc: t('digest.previewSend.desc'), control: actions }),
       h('div', { id: 'digestPreview', class: 'digest-preview', hidden: true }));
   }
   return h('section', { id: 'digestBox', class: 'digest-box' },
-    h('h4', null, '요약 알림', h('a', { href: 'settings.html#notify', style: 'margin-left:8px;font-weight:400;font-size:12px' }, '설정 › 알림 →')),
+    h('h4', null, t('digest.title'), h('a', { href: 'settings.html#notify', style: 'margin-left:8px;font-weight:400;font-size:12px' }, t('digest.settingsLink'))),
     h('div', { class: 'digest-row' }, mode, time, h('span', { class: 'muted', text: 'KST' })),
     h('p', { id: 'digestState', class: 'digest-state muted' }),
     h('div', { id: 'digestPreview', class: 'digest-preview', hidden: true }),
@@ -59,11 +60,11 @@ function section() {
 function stateText(v) {
   const s = v.settings;
   const parts = [];
-  if (s.mode === 'off') parts.push('꺼져 있어요. 켜면 정한 시각부터 하루(또는 한 주) 요약을 보내요.');
-  else parts.push(`${s.mode === 'weekly' ? '매주 월요일' : '매일'} ${s.time}에 보내요${v.nextAt ? ` · 다음 ${kst(v.nextAt)}` : ''}`);
-  if (v.lastSent) parts.push(`마지막 ${kst(v.lastSent)}`);
-  if (!v.channel.configured) parts.push('알림 채널 없음');
-  else if (!v.scheduled && s.mode !== 'off') parts.push('이 서버(미리보기)는 예약 발송을 하지 않아요');
+  if (s.mode === 'off') parts.push(t('digest.state.off'));
+  else parts.push(`${s.mode === 'weekly' ? t('digest.state.weekly', { time: s.time }) : t('digest.state.daily', { time: s.time })}${v.nextAt ? ` · ${t('digest.state.next', { at: kst(v.nextAt) })}` : ''}`);
+  if (v.lastSent) parts.push(t('digest.state.last', { at: kst(v.lastSent) }));
+  if (!v.channel.configured) parts.push(t('digest.noChannel'));
+  else if (!v.scheduled && s.mode !== 'off') parts.push(t('digest.state.previewServer'));
   return parts.join(' · ');
 }
 
@@ -74,7 +75,7 @@ function paint() {
   $('digestTime').disabled = view.settings.mode === 'off';
   $('digestState').textContent = stateText(view);
   $('digestSendBtn').disabled = !view.channel.configured;
-  $('digestSendBtn').title = view.channel.configured ? '지금까지의 요약을 알림 채널로 보내요 (예약에는 영향 없음)' : '알림 채널 없음';
+  $('digestSendBtn').title = view.channel.configured ? t('digest.send.title') : t('digest.noChannel');
 }
 
 async function load() {
@@ -92,9 +93,9 @@ async function save() {
     if (!r.ok) throw new Error(errorText(r));
     view = r.body;
     paint();
-    toast(view.settings.mode === 'off' ? '요약 알림을 껐어요' : `요약 알림: ${view.settings.mode === 'weekly' ? '매주 월요일' : '매일'} ${view.settings.time}`);
+    toast(view.settings.mode === 'off' ? t('digest.toast.off') : view.settings.mode === 'weekly' ? t('digest.toast.weekly', { time: view.settings.time }) : t('digest.toast.daily', { time: view.settings.time }));
   } catch (err) {
-    toast(`저장 실패: ${err.message}`, true);
+    toast(t('digest.saveFailed', { error: err.message }), true);
     load();
   }
 }
@@ -107,7 +108,7 @@ function show(d) {
 
 async function preview() {
   const d = await tryJSON('/api/digest/preview');
-  if (!d) return toast('미리보기를 만들지 못했어요', true);
+  if (!d) return toast(t('digest.previewFailed'), true);
   show(d);
 }
 
@@ -117,9 +118,9 @@ async function sendNow() {
   try {
     const r = await post('/api/digest/send');
     if (r.body.digest) show(r.body.digest);
-    toast(r.ok ? '요약을 보냈어요' : r.body.message ?? errorText(r), !r.ok);
+    toast(r.ok ? t('digest.sent') : r.body.message ?? errorText(r), !r.ok);
   } catch (err) {
-    toast(`보내기 실패: ${err.message}`, true);
+    toast(t('digest.sendFailed', { error: err.message }), true);
   } finally {
     btn.disabled = false;
     load();
@@ -132,7 +133,7 @@ function mount() {
   // with the 설정 modal's 알림 built, the setting lives there (one #digestBox per page): the dialog links to it
   if ($('notifyBody')) {
     if ($('digestLink')) return;
-    const link = h('p', { id: 'digestLink', class: 'digest-box' }, h('a', { href: 'settings.html#notify' }, '요약 알림은 설정 › 알림에서 →'));
+    const link = h('p', { id: 'digestLink', class: 'digest-box' }, h('a', { href: 'settings.html#notify' }, t('digest.dialogLink')));
     const help = dialog.querySelector('.alerts-help');
     if (help) help.before(link);
     else dialog.querySelector('footer')?.before(link);
@@ -161,21 +162,21 @@ async function channelLine() {
   const preview = health?.profile === 'preview';
   const box = $('notifyChannel');
   if (!box) return;
-  if (!a) return box.replaceChildren(el('p', 'set-note', '알림 상태를 읽지 못했어요.'));
+  if (!a) return box.replaceChildren(el('p', 'set-note', t('digest.channel.loadFailed')));
   const on = a.channel.configured;
   const watching = a.watching?.length ?? 0;
   box.replaceChildren(
     h('ul', { class: 'set-list' },
       h('li', null,
         el('span', `dot ${on ? 'ok' : 'todo'}`),
-        h('strong', null, '알림 채널'),
-        h('span', { class: `set-state ${on ? 'ok' : 'todo'}` }, on ? a.channel.kinds.map((k) => KIND[k] ?? k).join(' · ') : preview ? '미리보기: 꺼짐' : '없음'),
+        h('strong', null, t('digest.channel')),
+        h('span', { class: `set-state ${on ? 'ok' : 'todo'}` }, on ? a.channel.kinds.map((k) => KIND[k] ?? k).join(' · ') : preview ? t('digest.channel.previewOff') : t('digest.channel.none')),
         h('p', { class: 'set-detail' },
-          on ? `감시 중 ${watching}개 · ${a.checkEverySec}초마다 확인. 채널은 compute-pool의 alerts.json에서 읽고, 여기서는 바꾸지 않아요.`
+          on ? t('digest.channel.on', { n: watching, sec: a.checkEverySec })
             : preview
-              ? '미리보기는 알림을 보내지 않아요 (PORTBOARD_PREVIEW_ALERTS=1일 때만). 운영 대시보드의 채널 상태는 비밀값의 ntfy 항목에 있어요.'
-              : '알림 채널이 없어서 다운 알림과 요약 알림을 못 보내요. 시작하기의 알림 채널 항목을 보세요.'),
-        h('div', { class: 'set-extra' }, h('a', { href: './' }, '감시할 포트는 서비스 탭의 🔔에서 →')))),
+              ? t('digest.channel.preview')
+              : t('digest.channel.missing')),
+        h('div', { class: 'set-extra' }, h('a', { href: './' }, t('digest.channel.watchLink'))))),
   );
 }
 

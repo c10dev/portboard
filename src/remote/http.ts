@@ -28,6 +28,7 @@ import {
   type ClientInfo,
 } from './oauth.ts';
 import type { RemoteState, Store } from './store.ts';
+import { t } from '../core/i18n.ts';
 
 export interface RemoteDeps {
   core: RemoteCore;
@@ -318,7 +319,7 @@ export function createRemoteHandler(deps: RemoteDeps) {
     const base = baseUrl(req, s);
     const ip = clientAddress(req);
     const blocked = limiter.blocked(ip);
-    if (blocked) return html(res, 429, errorHtml(`시도가 너무 많습니다. ${Math.ceil(blocked / 60)}분 뒤에 다시 하세요.`));
+    if (blocked) return html(res, 429, errorHtml(t('remoteHttp.tooMany', { n: Math.ceil(blocked / 60) })));
     const p = req.method === 'POST' ? await readParams(req) : Object.fromEntries(new URL(req.url ?? '/', 'http://x').searchParams);
     const checked = await authorizeRequest(p, s, base);
     if ('page' in checked) {
@@ -353,12 +354,12 @@ export function createRemoteHandler(deps: RemoteDeps) {
     }
 
     const wait = approvalLimiter.blocked(ip);
-    if (wait) return page(429, `시도가 너무 많습니다. ${Math.ceil(wait / 60)}분 뒤에 다시 하세요.`);
+    if (wait) return page(429, t('remoteHttp.tooMany', { n: Math.ceil(wait / 60) }));
     const verdict = await deps.store.consumeApprovalCode(p.approval_code ?? '');
     if (verdict !== 'ok') {
       approvalLimiter.fail(ip);
       authFail(req, '/authorize', verdict === 'none' ? 'no-pending-code' : 'wrong-code', { client: client.name });
-      return page(401, verdict === 'none' ? '유효한 승인 코드가 없습니다. 대시보드 설정 탭에서 새 코드를 만드세요.' : '승인 코드가 맞지 않습니다.');
+      return page(401, verdict === 'none' ? t('remoteHttp.noCode') : t('remoteHttp.wrongCode'));
     }
 
     const code = randomBytes(32).toString('base64url');

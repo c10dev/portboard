@@ -11,6 +11,7 @@ import type { PortGroup, PortKind } from './index.ts';
 import type { PoolHost } from './pool.ts';
 import type { Guest, PveHost } from './proxmox.ts';
 import { topology, type Edge, type ServiceNode, type Topology } from './topology.ts';
+import { t as tr } from './i18n.ts';
 
 export interface UseRow {
   port: number;
@@ -250,11 +251,11 @@ export function buildUsage(inp: UsageInput): Usage {
   };
   for (const c of cards.values()) {
     for (const u of c.uses) {
-      if (u.routed) push(u.port, { id: `${c.id}~routed`, name: `${c.name} 경유`, kind: 'routed', via: c.id, viaName: c.name, routes: c.routes, connections: u.connections });
+      if (u.routed) push(u.port, { id: `${c.id}~routed`, name: tr('usageMsg.routed', { name: c.name }), kind: 'routed', via: c.id, viaName: c.name, routes: c.routes, connections: u.connections });
       else push(u.port, { id: c.id, name: c.name, kind: c.kind, connections: u.connections });
     }
   }
-  for (const u of local.uses) push(u.port, { id: 'local', name: '이 서버', kind: 'local', connections: u.connections });
+  for (const u of local.uses) push(u.port, { id: 'local', name: tr('common.thisServer'), kind: 'local', connections: u.connections });
   for (const list of Object.values(byPort)) list.sort((a, b) => Number(a.kind === 'local') - Number(b.kind === 'local') || b.connections - a.connections);
 
   const used = new Set(t.edges.map((e) => e.port));

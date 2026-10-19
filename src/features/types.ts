@@ -149,6 +149,10 @@ export type Job = IntervalJob | StartJob;
 
 export interface FeatureModule {
   name: string;
+  /** Position in FEATURES (src/features/registry.ts), lowest first: the order of tools/list, routes, jobs and page
+   *  scripts. Unique across features; existing ones are spaced by 100, so a new feature takes a free number between
+   *  the two it should sit between (below 2600 keeps it before remote-connector, access, write-devices, settings). */
+  order: number;
   routes?: Route[];
   /** Local MCP tools, in tools/list order */
   tools?: Tool[];

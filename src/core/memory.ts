@@ -28,6 +28,7 @@ import { open, readdir, readFile, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { dur, type Message } from './alerts.ts';
 import { shortPath } from './proc.ts';
+import { t } from './i18n.ts';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -145,7 +146,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export type Kind = { kind: 'cli'; version: string | null } | { kind: 'mcp'; name: string } | { kind: 'proc' };
 
 /** Display names for the MCP servers Portboard knows; others show their package name */
-export const MCP_LABELS: Record<string, string> = { rea: 'rea', playwright: '@playwright/mcp', portboard: 'Portboard (플러그인)' };
+export const MCP_LABELS: Record<string, string> = {
+  rea: 'rea',
+  playwright: '@playwright/mcp',
+  get portboard() {
+    return t('memoryMsg.mcp.portboard');
+  },
+};
 
 const base = (p: string) => p.slice(p.lastIndexOf('/') + 1);
 
@@ -284,7 +291,21 @@ export interface SampleInput {
 
 export type GroupKey = 'claude' | 'mcp' | 'services' | 'docker' | 'other';
 
-export const GROUP_LABELS: Record<GroupKey, string> = { claude: 'Claude 세션', mcp: 'MCP 서버', services: '서비스·dev 서버', docker: 'docker', other: '기타' };
+export const GROUP_LABELS: Record<GroupKey, string> = {
+  get claude() {
+    return t('memoryMsg.group.claude');
+  },
+  get mcp() {
+    return t('memoryMsg.group.mcp');
+  },
+  get services() {
+    return t('memoryMsg.group.services');
+  },
+  docker: 'docker',
+  get other() {
+    return t('memoryMsg.group.other');
+  },
+};
 
 export interface SessionRow {
   pid: number;
@@ -715,7 +736,17 @@ export function stepPressure(prev: PressureState | undefined, s: PressureInput, 
   return { next: st, event: null };
 }
 
-export const REASON_TEXT: Record<PressureReason, string> = { available: '사용 가능 메모리 부족', psi: '메모리 대기(PSI) 높음', swap: '스왑 거의 다 씀' };
+export const REASON_TEXT: Record<PressureReason, string> = {
+  get available() {
+    return t('memoryMsg.reason.available');
+  },
+  get psi() {
+    return t('memoryMsg.reason.psi');
+  },
+  get swap() {
+    return t('memoryMsg.reason.swap');
+  },
+};
 
 const gb = (mb: number) => `${(mb / 1024).toFixed(1)} GB`;
 
@@ -790,19 +821,19 @@ export function suggestions(s: MemorySample, th: Thresholds, use: McpUse | null)
   const idle = s.sessions.filter((x) => x.idle);
   if (idle.length) {
     const mb = idle.reduce((a, x) => a + x.mb, 0);
-    out.push({ kind: 'idle-sessions', mb, text: `쉬는 세션 ${idle.length}개가 ${gb(mb)}를 쓰고 있어요 (${th.idleMin}분 넘게 대화 없음). 끝난 세션은 Claude 앱에서 보관(Archive)하면 그 CLI와 MCP 서버가 같이 내려가요.` });
+    out.push({ kind: 'idle-sessions', mb, text: t('memoryMsg.suggest.idle', { n: idle.length, size: gb(mb), min: th.idleMin }) });
   }
   const stale = s.sessions.filter((x) => x.stale);
   if (stale.length && s.newestVersion) {
     const mb = stale.reduce((a, x) => a + x.mb, 0);
     const old = [...new Set(stale.map((x) => x.version))].join(', ');
-    out.push({ kind: 'stale-cli', mb, text: `구버전 CLI(${old}) 세션 ${stale.length}개가 ${gb(mb)}를 써요. 새 세션은 ${s.newestVersion}로 떠요: 끝난 세션부터 보관하세요.` });
+    out.push({ kind: 'stale-cli', mb, text: t('memoryMsg.suggest.staleCli', { versions: old, n: stale.length, size: gb(mb), newest: s.newestVersion }) });
   }
   const cliCount = s.sessions.filter((x) => !x.helper).length;
   for (const m of s.mcp) {
     if (m.instances < 3 || m.sessions < Math.max(3, cliCount / 2)) continue;
     if (!use) {
-      out.push({ kind: 'mcp-unused', mb: m.mb, text: `${m.label}: 세션마다 떠서 ${m.instances}개 ${gb(m.mb)}. 얼마나 쓰는지는 Claude 세션 기록을 다시 읽은 뒤 보여 줘요 (확인 전).` });
+      out.push({ kind: 'mcp-unused', mb: m.mb, text: t('memoryMsg.suggest.mcpUnchecked', { label: m.label, n: m.instances, size: gb(m.mb) }) });
       continue;
     }
     const u = useOf(use, m.name);
@@ -811,7 +842,7 @@ export function suggestions(s: MemorySample, th: Thresholds, use: McpUse | null)
     out.push({
       kind: 'mcp-unused',
       mb: m.mb,
-      text: `${m.label}: 세션마다 떠서 ${m.instances}개 ${gb(m.mb)}인데, 지난 ${use.days}일 Claude 세션 ${use.sessions}개 중 ${u.sessions}개만 썼어요 (호출 ${u.calls}번). 쓰는 프로젝트에서만 켜도록(프로젝트 범위) 바꾸면 그만큼 줄어요.`,
+      text: t('memoryMsg.suggest.mcpUnused', { label: m.label, n: m.instances, size: gb(m.mb), days: use.days, sessions: use.sessions, used: u.sessions, calls: u.calls }),
     });
   }
   const devIdle = s.services.filter((x) => x.dev && x.unused && x.uptimeSec !== null && x.uptimeSec >= th.devIdleHours * 3600);
@@ -820,9 +851,9 @@ export function suggestions(s: MemorySample, th: Thresholds, use: McpUse | null)
     out.push({
       kind: 'dev-idle',
       mb,
-      text: `${th.devIdleHours}시간 넘게 떠 있고 지금 아무도 안 쓰는 dev 서버 ${devIdle.length}개가 ${mbText(mb)}를 써요: ${devIdle.slice(0, 4).map((x) => `${x.name} :${x.ports[0]}`).join(', ')}.`,
+      text: t('memoryMsg.suggest.devIdle', { hours: th.devIdleHours, n: devIdle.length, size: mbText(mb), list: devIdle.slice(0, 4).map((x) => `${x.name} :${x.ports[0]}`).join(', ') }),
       href: './#ownersBanner',
-      linkText: '서비스 탭의 정리 →',
+      linkText: t('memoryMsg.suggest.cleanupLink'),
     });
   }
   return out.sort((a, b) => b.mb - a.mb);
@@ -833,9 +864,9 @@ export const mbText = (mb: number) => (mb >= 1024 ? gb(mb) : `${mb} MB`);
 /** The digest's line: only when memory is short or something sizeable can be freed */
 export function digestLine(s: MemorySample, st: PressureState | null, sugg: Suggestion[]): { problem: boolean; text: string } | null {
   const m = s.mem;
-  const head = `🧠 메모리 사용 가능 ${gb(m.availableMb)}/${gb(m.totalMb)} (${m.availablePct}%) · 스왑 ${m.swapPct}%`;
+  const head = t('memoryMsg.digest.head', { available: gb(m.availableMb), total: gb(m.totalMb), pct: m.availablePct, swap: m.swapPct });
   const idle = sugg.find((x) => x.kind === 'idle-sessions');
-  const extra = [st?.active ? '부족 알림 중' : null, idle ? `쉬는 세션 ${s.sessions.filter((x) => x.idle).length}개 ${gb(idle.mb)}` : null, s.mcp[0] ? `${s.mcp[0].label} ×${s.mcp[0].instances} ${gb(s.mcp[0].mb)}` : null].filter(Boolean);
+  const extra = [st?.active ? t('memoryMsg.digest.alerting') : null, idle ? t('memoryMsg.digest.idle', { n: s.sessions.filter((x) => x.idle).length, size: gb(idle.mb) }) : null, s.mcp[0] ? `${s.mcp[0].label} ×${s.mcp[0].instances} ${gb(s.mcp[0].mb)}` : null].filter(Boolean);
   return { problem: !!st?.active, text: [head, ...extra].join(' · ') };
 }
 

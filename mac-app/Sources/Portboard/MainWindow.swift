@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The dashboard window. It has no title bar: the dashboard's own header is the one bar (traffic lights at its left,
 /// public/lib/macapp.js and style.css [data-app="mac"]), and the tabs, 뒤로, 새로고침 and 브라우저에서 열기 are in
-/// the 대시보드 menu with ⌘1–⌘4, ⌘[, ⌘R and ⇧⌘O. When the page cannot load, a plain Korean error with 다시 시도.
+/// the 대시보드 menu with ⌘1–⌘4, ⌘[, ⌘R and ⇧⌘O. When the page cannot load, a plain error with 다시 시도 (Try again).
 struct MainWindow: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var web: WebController
@@ -43,7 +43,7 @@ struct ConnectionErrorView: View {
             Image(systemName: "wifi.exclamationmark")
                 .font(.system(size: 44))
                 .foregroundStyle(.secondary)
-            Text("Portboard에 연결할 수 없어요")
+            Text(L10n.t("mac.error.title"))
                 .font(.title2.weight(.semibold))
             Text(message)
                 .multilineTextAlignment(.center)
@@ -55,16 +55,16 @@ struct ConnectionErrorView: View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 HStack(spacing: 6) {
                     if trying { ProgressView().controlSize(.small) }
-                    Text(trying ? "다시 연결하는 중…" : LoadRetry.status(next: nextRetry, now: context.date))
+                    Text(trying ? L10n.t("mac.retry.connecting") : LoadRetry.status(next: nextRetry, now: context.date))
                         .monospacedDigit()
                 }
                 .font(.callout)
                 .foregroundStyle(.secondary)
             }
             HStack {
-                Button("다시 시도", action: retry)
+                Button(L10n.t("mac.retry.button"), action: retry)
                     .keyboardShortcut(.defaultAction)
-                SettingsLink { Text("서버 주소 바꾸기…") }
+                SettingsLink { Text(L10n.t("mac.error.changeServer")) }
             }
             .padding(.top, 4)
         }

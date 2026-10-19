@@ -119,6 +119,7 @@ const releaseTool: Tool = {
 
 export const reservationsFeature: FeatureModule = {
   name: 'reservations',
+  order: 1500,
   routes: [
     {
       method: 'GET',

@@ -24,6 +24,7 @@ import { isIP } from 'node:net';
 import { readFile, stat } from 'node:fs/promises';
 import { run, runShared, type RunResult } from './exec.ts';
 import { writePrivate } from './atomic.ts';
+import { t } from './i18n.ts';
 
 export type Source = 'loopback' | 'serve' | 'direct' | 'mcp';
 
@@ -112,11 +113,11 @@ export function decodeHeader(v: string): string {
 export function classify(req: ReqLike, owner: string | null): Caller {
   const addr = req.socket?.remoteAddress ?? '';
   if (!LOOPBACK.has(addr)) {
-    return { source: 'direct', login: null, owner: false, canWrite: false, addr: addr || 'unknown', reason: 'tailnet IP로 직접 열었어요. 바꾸려면 소유자 계정으로 https:// 주소(tailscale serve)에서 여세요.' };
+    return { source: 'direct', login: null, owner: false, canWrite: false, addr: addr || 'unknown', reason: t('access.reason.direct') };
   }
   if (localOnly(req)) return { source: 'loopback', login: null, owner: true, canWrite: true };
   if (req.headers['tailscale-funnel-request'] !== undefined) {
-    return { source: 'serve', login: null, owner: false, canWrite: false, reason: '공개(Funnel) 경로로 들어왔어요.' };
+    return { source: 'serve', login: null, owner: false, canWrite: false, reason: t('access.reason.funnel') };
   }
   const raw = one(req.headers['tailscale-user-login']);
   const login = raw ? decodeHeader(raw).slice(0, 200) : null;
@@ -124,11 +125,11 @@ export function classify(req: ReqLike, owner: string | null): Caller {
   const at = fwd ? { addr: fwd } : {};
   if (!login) {
     // tailscale serve always sets X-Forwarded-For: without it this came through some other proxy
-    const reason = fwd ? '태그된 기기라 사용자 계정을 알 수 없어요.' : '프록시를 거친 요청인데 Tailscale 사용자 정보가 없어요.';
+    const reason = fwd ? t('access.reason.tagged') : t('access.reason.noLogin');
     return { source: 'serve', login: null, owner: false, canWrite: false, ...at, reason };
   }
-  if (!owner) return { source: 'serve', login, owner: false, canWrite: false, ...at, reason: '서버 소유자 계정을 확인하지 못했어요.' };
-  if (norm(login) !== norm(owner)) return { source: 'serve', login, owner: false, canWrite: false, ...at, reason: `${login}은(는) 소유자 계정이 아니에요.` };
+  if (!owner) return { source: 'serve', login, owner: false, canWrite: false, ...at, reason: t('access.reason.noOwner') };
+  if (norm(login) !== norm(owner)) return { source: 'serve', login, owner: false, canWrite: false, ...at, reason: t('access.reason.notOwner', { login }) };
   return { source: 'serve', login, owner: true, canWrite: true, ...at };
 }
 
@@ -249,22 +250,22 @@ export async function loadWriteDevices(path: string, env: Record<string, string 
   let text: string;
   try {
     const st = await stat(path);
-    if ((st.mode & 0o077) !== 0) return fail('권한이 600이 아니에요 (chmod 600)');
+    if ((st.mode & 0o077) !== 0) return fail(t('access.file.mode'));
     text = await readFile(path, 'utf8');
   } catch (err: any) {
-    if (err?.code !== 'ENOENT') return fail('읽을 수 없어요');
+    if (err?.code !== 'ENOENT') return fail(t('access.file.unreadable'));
     return fromEnv.length ? { list: [...new Set(fromEnv)] } : null;
   }
   let v: unknown;
   try {
     v = JSON.parse(text);
   } catch {
-    return fail('JSON이 아니에요');
+    return fail(t('access.file.notJson'));
   }
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return fail('JSON 객체가 아니에요');
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return fail(t('access.file.notObject'));
   const raw = (v as Record<string, unknown>).writeDevices;
   if (raw === undefined) return fromEnv.length ? { list: [...new Set(fromEnv)] } : null;
-  if (!Array.isArray(raw) || !raw.every((x) => typeof x === 'string')) return fail('writeDevices가 문자열 목록이 아니에요');
+  if (!Array.isArray(raw) || !raw.every((x) => typeof x === 'string')) return fail(t('access.file.notList'));
   const list = raw.map((x) => x.trim()).filter(Boolean).slice(0, 100);
   return { list: [...new Set([...list, ...fromEnv])] };
 }
@@ -290,12 +291,12 @@ export const MAX_WRITE_DEVICES = 100;
 
 /** Checks a list to save: names or IDs only, trimmed and de-duplicated, at least one. A string is the reason it is refused. */
 export function checkWriteDevices(v: unknown): string[] | string {
-  if (!Array.isArray(v) || !v.every((x) => typeof x === 'string')) return 'writeDevices는 기기 이름 목록이어야 해요';
+  if (!Array.isArray(v) || !v.every((x) => typeof x === 'string')) return t('access.check.notList');
   const list = [...new Set(v.map((x) => x.trim().replace(/\.$/, '')).filter(Boolean))];
-  if (!list.length) return '적어도 한 대는 남겨야 해요 (빈 목록이면 https 주소에서는 아무도 바꿀 수 없어요)';
-  if (list.length > MAX_WRITE_DEVICES) return `기기는 ${MAX_WRITE_DEVICES}대까지예요`;
+  if (!list.length) return t('access.check.empty');
+  if (list.length > MAX_WRITE_DEVICES) return t('access.check.tooMany', { n: MAX_WRITE_DEVICES });
   const bad = list.find((x) => !DEVICE_ENTRY.test(x));
-  if (bad) return `기기 이름이 아니에요: ${bad.slice(0, 60)}`;
+  if (bad) return t('access.check.badName', { name: bad.slice(0, 60) });
   return list;
 }
 
@@ -309,31 +310,31 @@ export async function saveWriteDevices(path: string, list: string[]): Promise<vo
   try {
     text = await readFile(path, 'utf8');
   } catch (err: any) {
-    if (err?.code !== 'ENOENT') throw new Error('access.json을 읽을 수 없어요');
+    if (err?.code !== 'ENOENT') throw new Error(t('access.save.unreadable'));
   }
   if (text !== null && text.trim()) {
     let v: unknown;
     try {
       v = JSON.parse(text);
     } catch {
-      throw new Error('access.json이 JSON이 아니에요. 손으로 고친 뒤 다시 저장하세요');
+      throw new Error(t('access.save.notJson'));
     }
-    if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('access.json이 JSON 객체가 아니에요. 손으로 고친 뒤 다시 저장하세요');
+    if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error(t('access.save.notObject'));
     doc = v as Record<string, unknown>;
   }
   await writePrivate(path, `${JSON.stringify({ ...doc, writeDevices: list })}\n`);
 }
 
 /** "dev-mac(100.64.1.2)", or the address alone */
-export const deviceLabel = (d: Device | undefined, addr?: string): string => (d?.name ? `${d.name}(${d.addr})` : (d?.addr ?? addr ?? '주소 없음'));
+export const deviceLabel = (d: Device | undefined, addr?: string): string => (d?.name ? `${d.name}(${d.addr})` : (d?.addr ?? addr ?? t('access.noAddr')));
 
 /** Through serve with an allowlist set, only the listed devices keep write access. Everything else stays as classified. */
 export function restrictToDevices(c: Caller, allow: WriteDevices | null): Caller {
   if (!allow || !c.canWrite || c.source !== 'serve') return c;
   const deny = (reason: string): Caller => ({ ...c, canWrite: false, reason });
-  if (allow.error) return deny(`쓰기 허용 기기 설정(access.json)을 쓸 수 없어요: ${allow.error}. 고치기 전에는 https 주소에서 바꿀 수 없어요.`);
-  if (!c.device?.name && !c.device?.id) return deny(`어느 기기인지 확인하지 못했어요 (${deviceLabel(c.device, c.addr)}). 쓰기 허용 기기에서만 바꿀 수 있어요.`);
-  if (!deviceAllowed(c.device, allow.list)) return deny(`${deviceLabel(c.device, c.addr)}은(는) 쓰기 허용 기기가 아니에요 (access.json의 writeDevices).`);
+  if (allow.error) return deny(t('access.deny.fileError', { error: allow.error }));
+  if (!c.device?.name && !c.device?.id) return deny(t('access.deny.unknownDevice', { device: deviceLabel(c.device, c.addr) }));
+  if (!deviceAllowed(c.device, allow.list)) return deny(t('access.deny.notListed', { device: deviceLabel(c.device, c.addr) }));
   return c;
 }
 

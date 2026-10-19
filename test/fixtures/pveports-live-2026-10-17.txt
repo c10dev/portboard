@@ -4,7 +4,7 @@ LISTEN 0      100                      127.0.0.1:25    0.0.0.0:* users:(("master
 LISTEN 0      4096                100.64.10.8:50688 0.0.0.0:* users:(("tailscaled",pid=1,fd=24))
 LISTEN 0      4096                       0.0.0.0:111   0.0.0.0:* users:(("rpcbind",pid=1,fd=4),("systemd",pid=1,fd=43))
 LISTEN 0      128                        0.0.0.0:22    0.0.0.0:* users:(("sshd",pid=1,fd=6))
-LISTEN 0      4096   [fd7a:115c:a1e0::f03a:837d]:65373    [::]:* users:(("tailscaled",pid=1,fd=25))
+LISTEN 0      4096   [fd7a:115c:a1e0::10:8]:65373    [::]:* users:(("tailscaled",pid=1,fd=25))
 LISTEN 0      100                          [::1]:25       [::]:* users:(("master",pid=1,fd=14))
 LISTEN 0      4096                             *:8006        *:* users:(("pveproxy worker",pid=1,fd=6),("pveproxy worker",pid=1,fd=6),("pveproxy worker",pid=1,fd=6),("pveproxy",pid=1,fd=6))
 LISTEN 0      4096                             *:3128        *:* users:(("spiceproxy work",pid=1,fd=6),("spiceproxy",pid=1,fd=6))
@@ -21,7 +21,7 @@ LISTEN 0      50                            [::]:139      [::]:* users:(("smbd-s
 LISTEN 0      4096                             *:22          *:* users:(("sshd",pid=1,fd=3),("systemd",pid=1,fd=45))
 LISTEN 0      100                          [::1]:25       [::]:* users:(("master",pid=1,fd=14))
 LISTEN 0      4096                             *:22000       *:* users:(("syncthing",pid=1,fd=12))
-LISTEN 0      4096   [fd7a:115c:a1e0::a83a:5518]:34835    [::]:* users:(("tailscaled",pid=1,fd=24))
+LISTEN 0      4096   [fd7a:115c:a1e0::10:4]:34835    [::]:* users:(("tailscaled",pid=1,fd=24))
 ## ct 204
 LISTEN 0      512          0.0.0.0:8096 0.0.0.0:* users:(("jellyfin",pid=1,fd=480))
 LISTEN 0      4096   127.0.0.53%lo:53   0.0.0.0:* users:(("systemd-resolve",pid=1,fd=15))

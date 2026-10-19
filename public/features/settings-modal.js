@@ -15,33 +15,31 @@
 import { showAccess } from '../lib/access.js';
 import { row, segmented } from '../lib/controls.js';
 import { h } from '../lib/dom.js';
+import { loadLocalePref, saveLocalePref, t, tn } from '../lib/i18n.js';
 import { on } from '../lib/keys.js';
 import { applyListWidth, LIST_WIDTH_LABELS, LIST_WIDTHS, loadListWidth, saveListWidth } from '../lib/list-width.js';
 import { createModal } from '../lib/modal.js';
 import { isSettingsHash, linkSection, settingsHash, settingsSection, SETTINGS_IDS, SETTINGS_LABELS } from '../lib/settings-route.js';
 
-const b = (t) => h('b', null, t);
-const code = (t) => h('code', null, t);
-
 /** The sections in menu order: the container its script fills, the script, and the lines above it */
 export const SECTIONS = [
-  { id: 'start', body: 'startBody', script: 'settings-start.js', lead: () => ['무엇이 설정됐고 무엇이 남았는지, 남은 것마다 다음 할 일이에요.'] },
+  { id: 'start', body: 'startBody', script: 'settings-start.js', lead: () => [t('settings.lead.start')] },
   {
     id: 'remote', sub: 'claude.ai · ChatGPT', write: true, body: 'remoteBody', script: 'remote-connector.js',
-    lead: () => ['claude.ai와 ChatGPT가 Portboard를 ', b('읽기 전용'), '으로 볼 수 있는 공개 MCP예요. 연결할 때 승인 화면에 넣을 코드를 여기서 만들어요.'],
+    lead: () => tn('settings.lead.remote'),
   },
   {
     id: 'write-devices', write: true, body: 'wdBody', script: 'write-devices.js',
-    lead: () => ['https 주소(tailscale serve)로 들어왔을 때 서비스를 멈추고 공개하는 등 무언가를 바꿀 수 있는 기기예요. 서버 자신(loopback, 127.0.0.1)은 목록과 상관없이 항상 바꿀 수 있어요.'],
+    lead: () => [t('settings.lead.writeDevices')],
   },
   {
     id: 'port-rules', write: true, body: 'rulesBody', script: 'port-rules.js',
-    lead: () => ['포트 범위(', code('18891-18899'), '), ', code('호스트:포트'), '(', code('localhost:5173'), '), 명령 정규식(', code('vite|next dev'), ')마다 이름·고정·숨김과 ', b('새 포트가 뜰 때 알릴지'), '를 한 번에 정해요. 서비스 탭에서 포트 하나의 이름을 바꾸면 그 포트의 항목으로 저장돼 규칙보다 우선해요.'],
+    lead: () => tn('settings.lead.portRules'),
   },
-  { id: 'notify', write: true, body: 'notifyBody', script: 'digest.js', lead: () => ['다운 알림과 요약 알림은 compute-pool의 알림 채널(ntfy·webhook)로 나가요.'] },
-  { id: 'claude', write: true, body: 'claudeBody', script: 'claude-autostop.js', lead: () => ['Claude Code 세션이 끝날 때 그 세션이 띄운 개발 서버를 자동으로 멈출지 정해요.'] },
-  { id: 'secrets', body: 'secretsBody', script: 'secrets.js', lead: () => ['Portboard가 쓰는 토큰과 키의 상태와 만료일, 교체 절차예요. 값 자체는 여기 나오지 않아요.'] },
-  { id: 'display', body: 'displayBody', lead: () => ['이 기기의 브라우저에만 저장돼요. 다른 기기와 서버 설정은 그대로예요.'] },
+  { id: 'notify', write: true, body: 'notifyBody', script: 'digest.js', lead: () => [t('settings.lead.notify')] },
+  { id: 'claude', write: true, body: 'claudeBody', script: 'claude-autostop.js', lead: () => [t('settings.lead.claude')] },
+  { id: 'secrets', body: 'secretsBody', script: 'secrets.js', lead: () => [t('settings.lead.secrets')] },
+  { id: 'display', body: 'displayBody', lead: () => [t('settings.lead.display')] },
   { id: 'about', body: 'aboutBody', script: 'about.js' },
 ];
 
@@ -86,11 +84,22 @@ function paintDisplay() {
   if (!body) return;
   const width = segmented({
     id: 'listWidth', value: loadListWidth(),
-    options: Object.entries(LIST_WIDTH_LABELS).map(([value, label]) => ({ value, label, title: `최대 ${LIST_WIDTHS[value][0]}px` })),
+    options: Object.entries(LIST_WIDTH_LABELS).map(([value, label]) => ({ value, label, title: t('settings.display.width.max', { px: LIST_WIDTHS[value][0] }) })),
     onChange: (v) => { saveListWidth(v); applyListWidth(v); },
   });
+  const lang = segmented({
+    id: 'uiLocale', value: loadLocalePref(),
+    options: [
+      { value: 'auto', label: t('settings.display.lang.auto') },
+      { value: 'ko', label: t('settings.display.lang.ko') },
+      { value: 'en', label: t('settings.display.lang.en') },
+    ],
+    // the page is built again in it (lib/shell-boot.js picks it before the first paint)
+    onChange: (v) => { saveLocalePref(v); location.reload(); },
+  });
   body.replaceChildren(h('div', { class: 'st-rows' },
-    row({ label: '목록 너비', desc: '서비스·개발 목록 칸이 넓어질 수 있는 최대 너비 (이 기기만)', control: width })));
+    row({ label: t('settings.display.width'), desc: t('settings.display.width.desc'), control: width }),
+    row({ label: t('settings.display.lang'), desc: t('settings.display.lang.desc'), control: lang })));
 }
 
 /** Sections with write controls get one line saying why they are greyed out, for a viewer who may not write */
@@ -99,19 +108,19 @@ async function readOnlyNotes() {
   for (const p of modal.el.querySelectorAll('.set-ro.st-ro')) p.remove();
   if (!w || w.canWrite) return;
   for (const sec of modal.el.querySelectorAll('.st-sec[data-has-write]')) {
-    const p = h('p', { class: 'set-ro st-ro' }, `🔒 읽기 전용이라 보기만 할 수 있어요 — ${w.reason ?? '이 접속으로는 바꿀 수 없어요.'}`);
+    const p = h('p', { class: 'set-ro st-ro' }, t('settings.readonly', { reason: w.reason ?? t('common.readonlyReason') }));
     (sec.querySelector('.set-lead') ?? sec.querySelector('.st-sec-title')).after(p);
   }
 }
 
 function build() {
   modal = createModal({ id: 'settingsModal', className: 'st-modal', labelledBy: 'stTitle', onRequestClose: leave });
-  const close = h('button', { type: 'button', class: 'icon-btn st-close', 'aria-label': '설정 닫기', title: '닫기 (Esc)', onclick: leave });
+  const close = h('button', { type: 'button', class: 'icon-btn st-close', 'aria-label': t('settings.close'), title: t('settings.close.title'), onclick: leave });
   close.insertAdjacentHTML('beforeend', CLOSE_ICON);
-  const tabs = h('nav', { class: 'st-nav', 'aria-label': '설정 메뉴' },
+  const tabs = h('nav', { class: 'st-nav', 'aria-label': t('settings.menu') },
     SECTIONS.map((s) => h('a', { class: 'st-tab', href: settingsHash(s.id), dataset: { section: s.id } }, s.label)));
   modal.el.append(h('div', { class: 'st' },
-    h('div', { class: 'st-side' }, h('h2', { class: 'st-title', id: 'stTitle' }, '설정'), tabs),
+    h('div', { class: 'st-side' }, h('h2', { class: 'st-title', id: 'stTitle' }, t('settings.title')), tabs),
     // focus lands here on open (no ring): ↑↓ scroll at once, Tab goes to the menu
     h('div', { class: 'st-content', id: 'stContent', tabindex: '-1', autofocus: '' }, SECTIONS.map(sectionEl)),
     close));
@@ -143,7 +152,7 @@ async function loadSections() {
   loaded = true;
   readOnlyNotes();
   await Promise.all(SECTIONS.filter((s) => s.script).map((s) => import(`./${s.script}`).catch(() => {
-    document.getElementById(s.body)?.replaceChildren(h('p', { class: 'set-note' }, `${s.label}을(를) 불러오지 못했어요.`));
+    document.getElementById(s.body)?.replaceChildren(h('p', { class: 'set-note' }, t('settings.loadFailed', { name: s.label })));
   })));
   document.dispatchEvent(new Event('settings:mount'));
 }

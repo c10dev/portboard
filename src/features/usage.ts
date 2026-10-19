@@ -194,6 +194,7 @@ const tools: Tool[] = [
 
 export const usageFeature: FeatureModule = {
   name: 'usage',
+  order: 400,
   routes: [
     { method: 'GET', path: '/api/topology', handler: async ({ url }, ctx) => ok(await ctx.topology(url.searchParams.has('fresh'))) },
     { method: 'GET', path: '/api/usage', handler: async ({ url }, ctx) => ok(await ctx.usage(url.searchParams.has('fresh'))) },

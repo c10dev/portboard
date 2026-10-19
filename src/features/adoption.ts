@@ -187,6 +187,7 @@ const statsTool: Tool = {
 
 export const adoptionFeature: FeatureModule = {
   name: 'adoption',
+  order: 2000,
   routes: [
     {
       method: 'GET',

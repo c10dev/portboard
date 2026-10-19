@@ -13,6 +13,7 @@ import { portAlertBadge, portBell, portUptime } from './alerts.js';
 import { controlText, reachButtons, restartQuestion, stopQuestion } from './control.js';
 import { badge, usingChip } from '../lib/badge.js';
 import { el } from '../lib/dom.js';
+import { locale, t } from '../lib/i18n.js';
 import { moreMenu } from '../lib/menu.js';
 import { ago } from '../lib/time.js';
 
@@ -50,12 +51,12 @@ export function renderGroup(it, ctx) {
   const p0 = ports[0];
   const owner = p0.composeProject ? `docker compose · ${p0.composeProject}`
     : p0.container ? `docker: ${p0.container}`
-    : p0.systemOwner ? `${p0.systemOwner} (시스템)`
+    : p0.systemOwner ? t('ports.group.system', { owner: p0.systemOwner })
     : [p0.processes[0]?.project, p0.processes[0]?.unit ?? `pid ${p0.processes[0]?.pid}`].filter(Boolean).join(' · ');
   const hiddenHere = it.group.ports.length - ports.length;
   head.append(
     el('strong', 'group-name', it.group.name),
-    el('span', 'group-meta', [owner, `포트 ${ports.map((p) => p.port).join(' · ')}`, hiddenHere ? `숨은 포트 ${hiddenHere}개` : null].filter(Boolean).join(' · ')),
+    el('span', 'group-meta', [owner, t('ports.group.ports', { ports: ports.map((p) => p.port).join(' · ') }), hiddenHere ? t('ports.group.hidden', { n: hiddenHere }) : null].filter(Boolean).join(' · ')),
   );
   const sub = el('ul', 'sub');
   sub.append(...ports.map((p) => renderRow(p, ctx, true)));
@@ -67,7 +68,7 @@ export function renderGroup(it, ctx) {
 export function lastUsedText(port, usage) {
   const h = usage?.history?.byPort[port];
   if (!h) return null;
-  return `${ago(h.at)}${ago(h.at) === '방금' ? '' : ' 전'} 사용 · ${h.name}`;
+  return t('ports.lastUsed', { when: ago(h.at, { suffix: true }), name: h.name });
 }
 
 export function renderRow(p, ctx, sub = false) {
@@ -81,13 +82,13 @@ export function renderRow(p, ctx, sub = false) {
   // In a group the header carries the shared name; each port shows its own part (kong, 웹 (HTTP), PeerAPI…)
   const nameEl = li.querySelector('.name');
   nameEl.textContent = sub ? (p.label ?? p.role ?? p.name) : p.name;
-  nameEl.title = `${p.label ? `${p.label} (${p.detectedName})` : p.name} · 상세 보기`;
+  nameEl.title = `${p.label ? `${p.label} (${p.detectedName})` : p.name} · ${t('ports.name.details')}`;
   nameEl.href = `service.html#${p.port}`;
 
   const pin = li.querySelector('.pin');
   pin.textContent = p.pinned ? '★' : '☆';
   pin.classList.toggle('on', p.pinned);
-  pin.title = p.pinned ? '고정 해제' : '맨 위에 고정';
+  pin.title = p.pinned ? t('ports.pin.off') : t('ports.pin.on');
   pin.hidden = !p.listening;
   pin.addEventListener('click', () => ctx.savePrefs(p.port, { pinned: !p.pinned }));
   if (p.listening || p.alert) li.querySelector('.name-line').append(portBell(p));
@@ -101,7 +102,7 @@ export function renderRow(p, ctx, sub = false) {
   ].filter(Boolean).join(' · ');
   li.querySelector('.meta').textContent = sub
     ? (p.label && p.role ? p.role : '')
-    : meta || (p.kind === 'system' ? (p.systemOwner ? `${p.systemOwner} · 시스템 서비스` : '다른 사용자/시스템 프로세스') : '');
+    : meta || (p.kind === 'system' ? (p.systemOwner ? t('ports.meta.systemService', { owner: p.systemOwner }) : t('ports.meta.otherUser')) : '');
 
   li.querySelector('.badges').append(...portBadges(p));
   const up = portUptime(p);
@@ -112,8 +113,8 @@ export function renderRow(p, ctx, sub = false) {
     const line = el('div', 'users');
     const total = who.reduce((a, u) => a + u.connections, 0);
     // dense rows: the count as a key badge (the chips are in the inspector)
-    li.querySelector('.badges').append(badge(`사용 중 ${total}`, 'ok key dense-only'));
-    line.append(badge(`사용 중 ${total}`, 'ok'));
+    li.querySelector('.badges').append(badge(t('ports.inUse', { n: total }), 'ok key dense-only'));
+    line.append(badge(t('ports.inUse', { n: total }), 'ok'));
     for (const u of who) line.append(usingChip(u, { title: true }));
     li.querySelector('.main').append(line);
     const meta = li.querySelector('.meta');
@@ -123,7 +124,7 @@ export function renderRow(p, ctx, sub = false) {
     if (last) {
       const line = el('div', 'last-used', last);
       const h = usage.history.byPort[p.port];
-      line.title = `${new Date(h.at).toLocaleString()}${h.devices7d > 1 ? ` · 최근 7일 기기 ${h.devices7d}대` : ''}`;
+      line.title = `${new Date(h.at).toLocaleString(locale())}${h.devices7d > 1 ? ` · ${t('ports.devices7d', { n: h.devices7d })}` : ''}`;
       li.querySelector('.main').append(line);
       const meta = li.querySelector('.meta');
       // gives way while the row is hovered or focused (shell.css)
@@ -147,15 +148,15 @@ export function portBadges(p) {
   const out = [];
   const add = (text, tone = '', key = false) => out.push(badge(text, `${tone}${key ? ' key' : ''}`.trim()));
   if (p.served) add('tailnet HTTPS', 'ok', true);
-  if (!p.listening) add('리스닝 없음', 'warn', true);
+  if (!p.listening) add(t('ports.badge.notListening'), 'warn', true);
   else if (p.scope === 'loopback') add(p.served ? 'local' : 'local only', p.served ? '' : 'warn', !p.served);
-  else if (p.scope === 'all') add('모든 인터페이스', 'info');
+  else if (p.scope === 'all') add(t('ports.badge.allInterfaces'), 'info');
   else if (p.scope === 'tailnet') add('tailnet', 'info');
   else if (p.scope) add(p.addresses.join(', '));
   if (p.probe?.http) add(`HTTP ${p.probe.status}`);
   if (p.processes.length > 1) add(`${p.processes.length} procs`);
-  if (p.kind === 'ephemeral') add('임시 포트');
-  if (p.hidden) add('숨김');
+  if (p.kind === 'ephemeral') add(t('ports.badge.ephemeral'));
+  if (p.hidden) add(t('ports.badge.hidden'));
   const alertBadge = portAlertBadge(p);
   if (alertBadge) {
     alertBadge.classList.add('key');
@@ -167,19 +168,19 @@ export function portBadges(p) {
 /** The facts a row's 상세 (and the inspector's 무엇인지 / 주소) list: [label, value], empty ones left out */
 export function portFacts(p) {
   return [
-    ['주소', p.addresses.join(', ')],
-    ['페이지 제목', p.probe?.title],
-    ['컨테이너', p.container],
+    [t('ports.fact.address'), p.addresses.join(', ')],
+    [t('ports.fact.title'), p.probe?.title],
+    [t('ports.fact.container'), p.container],
     ['compose', p.composeProject],
-    ['묶음', p.group ? `${p.group.name} (${p.group.ports.join(', ')})` : null],
+    [t('ports.fact.group'), p.group ? `${p.group.name} (${p.group.ports.join(', ')})` : null],
     ...p.processes.flatMap((x) => [
       ['PID', x.pid],
-      ['명령', x.cmdline],
-      ['경로', x.cwd],
+      [t('ports.fact.command'), x.cmdline],
+      [t('ports.fact.path'), x.cwd],
       ['systemd', x.unit && `${x.unit}${x.unitDescription ? ` — ${x.unitDescription}` : ''}`],
     ]),
-    ['제어', controlText(p.control)],
-    ['직접 URL', p.urls.direct],
+    [t('ports.fact.control'), controlText(p.control)],
+    [t('ports.fact.directUrl'), p.urls.direct],
     ['Tailnet URL', p.urls.served],
     ['SSH', p.urls.ssh],
   ].filter(([, v]) => v !== null && v !== undefined && v !== '');
@@ -191,15 +192,15 @@ export function portFacts(p) {
  */
 function rowMenu(p, ctx) {
   const items = [
-    { label: '이름 바꾸기', onClick: () => ctx.rename(p), write: true },
-    { label: p.hidden ? '다시 보이기' : '숨기기', onClick: () => ctx.savePrefs(p.port, { hidden: !p.hidden }), write: true },
-    { label: p.alert ? '🔔 다운 알림 끄기' : '🔔 다운 알림 켜기', onClick: () => ctx.savePrefs(p.port, { alert: !p.alert }), write: true },
+    { label: t('ports.menu.rename'), onClick: () => ctx.rename(p), write: true },
+    { label: p.hidden ? t('ports.menu.unhide') : t('ports.menu.hide'), onClick: () => ctx.savePrefs(p.port, { hidden: !p.hidden }), write: true },
+    { label: p.alert ? t('ports.menu.alertOff') : t('ports.menu.alertOn'), onClick: () => ctx.savePrefs(p.port, { alert: !p.alert }), write: true },
   ];
-  if (p.control) items.push({ label: '로그 보기', onClick: () => ctx.openLogs(p) });
-  if (p.canRestart) items.push({ label: '재시작', onClick: () => ctx.confirmAct(p, 'restart', restartQuestion(p)), write: true });
-  if (p.canStop) items.push({ label: '중지', onClick: () => ctx.confirmAct(p, 'stop', stopQuestion(p)), danger: true, write: true });
+  if (p.control) items.push({ label: t('ports.menu.logs'), onClick: () => ctx.openLogs(p) });
+  if (p.canRestart) items.push({ label: t('control.restart'), onClick: () => ctx.confirmAct(p, 'restart', restartQuestion(p)), write: true });
+  if (p.canStop) items.push({ label: t('control.stop'), onClick: () => ctx.confirmAct(p, 'stop', stopQuestion(p)), danger: true, write: true });
   return moreMenu({
-    ariaLabel: `${p.port} 더 보기`,
+    ariaLabel: t('ports.menu.aria', { port: p.port }),
     items,
     open: ctx.openMenu === p.port,
     onToggle: (open) => {

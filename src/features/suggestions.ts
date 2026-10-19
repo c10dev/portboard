@@ -133,6 +133,7 @@ export async function collect(src: SuggestionSources, now = Date.now()): Promise
 
 export const suggestionsFeature: FeatureModule = {
   name: 'suggestions',
+  order: 1900,
   routes: [
     {
       method: 'GET',

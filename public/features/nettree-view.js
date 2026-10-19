@@ -7,6 +7,7 @@ import { POOL_STATE } from './devices.js';
 import { osName } from './usage.js';
 import { routedTitle, flatten, guestKind, loadFolded, nodeBadges, nodeTarget, nodeText, reachText, saveFolded, TAB_FOLD_KEY } from '../lib/nettree.js';
 import { dl, el } from '../lib/dom.js';
+import { t } from '../lib/i18n.js';
 
 const VIEW_KEY = 'pb.devView';
 
@@ -24,7 +25,7 @@ export function findNode(tree, target) {
   return flatten(tree).rows.find((r) => nodeTarget(r.node) === target) ?? null;
 }
 
-const pathText = (p) => (p?.type === 'direct' ? '직결' : p?.type === 'relay' ? `DERP ${p.region}` : null);
+const pathText = (p) => (p?.type === 'direct' ? t('nettree.direct') : p?.type === 'relay' ? `DERP ${p.region}` : null);
 
 /** The dot's tone, as the cards and the sidebar: compute-pool state, else online/offline; LAN-only has an open ring */
 function toneOf(n, card) {
@@ -41,13 +42,13 @@ function metaBits(n, card, router) {
   if (os) bits.push(os);
   if (n.guest) bits.push(`${guestKind(n.guest)} ${n.guest.vmid}${n.guest.status !== 'running' ? ` · ${n.guest.status}` : ''}`);
   // running on Proxmox, gone from the tailnet: the VM is up, only its Tailscale isn't
-  if (n.guest?.status === 'running' && n.online === false) bits.push('Proxmox에서는 실행 중');
+  if (n.guest?.status === 'running' && n.online === false) bits.push(t('nettree.runningOnPve'));
   const ips = [...n.lanIps, ...n.tailscaleIps.filter((ip) => ip.includes('.'))];
   if (ips.length) bits.push(ips.join(' · '));
-  if (n.reach === 'routed') bits.push(`${router} 경유`);
+  if (n.reach === 'routed') bits.push(t('nettree.via', { name: router }));
   const path = pathText(n.path);
   if (path) bits.push(path);
-  if (n.ports != null) bits.push(`포트 ${n.ports}개`);
+  if (n.ports != null) bits.push(t('nettree.ports', { n: n.ports }));
   return bits;
 }
 
@@ -58,12 +59,12 @@ function useChips(card) {
   const own = card.uses.filter((u) => !u.routed);
   const via = card.uses.filter((u) => u.routed);
   if (own.length) {
-    const c = el('span', 'nt-use', `사용 중 ${own.length}`);
+    const c = el('span', 'nt-use', t('nettree.inUse', { n: own.length }));
     c.title = own.map((u) => `${u.service} :${u.port}`).join(', ');
     out.push(c);
   }
   if (via.length) {
-    const c = el('span', 'nt-use routed', `${card.name} 경유 ${via.reduce((a, u) => a + u.connections, 0)}`);
+    const c = el('span', 'nt-use routed', t('nettree.viaCount', { name: card.name, n: via.reduce((a, u) => a + u.connections, 0) }));
     c.title = routedTitle(card.name, card.routes);
     out.push(c);
   }
@@ -79,13 +80,13 @@ export function renderTree(box, ctx) {
   const cards = new Map(data.cards.map((c) => [c.id, c]));
   const { rows, names } = flatten(data.tree);
   if (!rows.length) {
-    box.replaceChildren(el('p', 'muted nt-empty', '아직 구조를 그릴 기기가 없어요. Tailscale이 켜져 있는지 확인해 보세요.'));
+    box.replaceChildren(el('p', 'muted nt-empty', t('nettree.empty')));
     return 0;
   }
   const folded = loadFolded(TAB_FOLD_KEY);
   const list = el('div', 'nt-list');
   list.setAttribute('role', 'tree');
-  list.setAttribute('aria-label', '네트워크 구조');
+  list.setAttribute('aria-label', t('nettree.aria'));
   for (const { node: n, depth, up, parent, router } of rows) {
     const card = n.device ? cards.get(n.device) : undefined;
     const target = nodeTarget(n);
@@ -103,7 +104,7 @@ export function renderTree(box, ctx) {
     const fold = el(n.children.length ? 'button' : 'span', n.children.length ? 'nt-fold' : 'nt-fold-pad');
     if (n.children.length) {
       fold.type = 'button';
-      fold.setAttribute('aria-label', `${nodeText(n, parent, names)} 접기·펼치기`);
+      fold.setAttribute('aria-label', t('boot.fold', { name: nodeText(n, parent, names) }));
       fold.addEventListener('click', (ev) => {
         ev.stopPropagation();
         const f = loadFolded(TAB_FOLD_KEY);
@@ -119,13 +120,13 @@ export function renderTree(box, ctx) {
       const head = el('div', 'nt-head');
       head.append(el('strong', 'nt-name', nodeText(n, parent, names)));
       const count = [...walkCount(n)];
-      head.append(el('span', 'nt-count', `${count.length}대`));
+      head.append(el('span', 'nt-count', t('nettree.count', { n: count.length })));
       for (const b of nodeBadges(n, { full: true, router })) head.append(badge(b));
       row.append(head);
       if (n.kind === 'subnet') {
         row.title = n.subnet.role === 'primary'
-          ? `tailnet 기기가 ${n.subnet.cidr} 주소로 접속하면 ${names.get(n.subnet.router) ?? n.subnet.router}가 받아서 LAN으로 보내요${n.subnet.standby.length ? ` · 대기: ${n.subnet.standby.map((s) => names.get(s) ?? s).join(', ')}` : ''}`
-          : '같은 서브넷을 광고하는 대기 라우터예요. 지금 라우팅하는 라우터 쪽에 LAN 기기가 있어요.';
+          ? `${t('nettree.subnet.title', { cidr: n.subnet.cidr, router: names.get(n.subnet.router) ?? n.subnet.router })}${n.subnet.standby.length ? ` · ${t('nettree.subnet.standby', { list: n.subnet.standby.map((s) => names.get(s) ?? s).join(', ') })}` : ''}`
+          : t('nettree.subnet.standbyTitle');
       }
       row.addEventListener('click', () => fold.click?.());
     } else {
@@ -170,13 +171,13 @@ export function nodeDetail(row) {
   const n = row.node;
   const [reach, why] = reachText(n.reach, row.router);
   return [
-    el('div', 'd-kicker', 'LAN 기기'),
+    el('div', 'd-kicker', t('devices.kind.lan')),
     el('h3', 'd-title', n.name),
     dl([
       ['LAN IP', n.lanIps.join(', ')],
-      ['어떻게 닿나', reach ? `${reach} — ${why}` : null],
-      ['서브넷', row.parent?.subnet ? `${row.parent.subnet.cidr} · ${row.router}가 라우팅` : null],
+      [t('nettree.detail.reach'), reach ? `${reach} — ${why}` : null],
+      [t('nettree.detail.subnet'), row.parent?.subnet ? `${row.parent.subnet.cidr} · ${t('nettree.routedBy', { router: row.router })}` : null],
     ]),
-    el('p', 'muted', '지금 이 서버에 연결돼 있지 않아서 카드가 없어요. 이 서버에 접속하면 카드와 사용 기록이 생겨요.'),
+    el('p', 'muted', t('nettree.detail.noCard')),
   ];
 }

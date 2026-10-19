@@ -2,6 +2,11 @@ import XCTest
 @testable import PortboardCore
 
 final class NotifyTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        Strings.useKorean()
+    }
+
     func watch(_ key: String, port: Int, down: Bool) -> WatchItem {
         WatchItem(json(#"{"key": "\#(key)", "kind": "port", "port": \#(port), "name": "svc\#(port)", "down": \#(down)}"#))!
     }

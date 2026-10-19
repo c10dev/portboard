@@ -98,7 +98,7 @@ Every background collector reports each attempt (`src/core/health.ts`): `usage` 
 - **Not alerted:** turned-off collectors (no `proxmox.json`, `"enabled": false`, no Windows user) and setup steps never completed (key not installed, invalid config). Once a collector has worked, a setup error (key removed) is an outage again.
 - **Expiry (hourly, and at start):** the Proxmox token (`/access/users/{user}/token/{id}`, else `/access/users?full=1`, which PVEAuditor may read; the user's own `expire` counts too) and remote MCP clients' newest refresh token (`remote.json`, read only, no hashes). One warning per credential and date at 7 days or past. The SSH key and the ntfy topic show "no expiry"; anything unreadable shows "unknown", never a guess.
 - **Where:** `GET /api/health` stays `{"ok": true}`; `GET /api/health?detail` adds `collectors`, `failing`, `summary` and `expiry`. The header chip (수집 정상 / N개 실패) opens the details. MCP `portboard://status` (local) has a `collection` section. `PORTBOARD_ALERTS=off` keeps tracking but sends nothing.
-- **compute-pool watching Portboard:** with compute-pool's `watch` support (c10dev/compute-pool#25), `config.json` → `"watch": [{"name": "portboard", "url": "http://127.0.0.1:8790/api/health"}]` makes `cpool monitor` alert when Portboard itself stops answering for 3 min.
+- **compute-pool watching Portboard:** with compute-pool's `watch` support, `config.json` → `"watch": [{"name": "portboard", "url": "http://127.0.0.1:8790/api/health"}]` makes `cpool monitor` alert when Portboard itself stops answering for 3 min.
 
 ## Proxmox ports over SSH (read-only)
 

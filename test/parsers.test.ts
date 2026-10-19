@@ -14,7 +14,7 @@ test('parseSs handles v4, v6, wildcard, iface suffix and names with spaces', () 
       'LISTEN 0      4096                                     [::]:22            [::]:*',
       'LISTEN 0      511                                         *:3000             *:*    users:(("next-server (v1",pid=42,fd=20))',
       'LISTEN 0      4096                           127.0.0.53%lo:53         0.0.0.0:*',
-      'LISTEN 0      4096      [fd7a:115c:a1e0::182b:1a3c]:7721             [::]:*    users:(("cpool",pid=1,fd=7),("cpool",pid=2,fd=7))',
+      'LISTEN 0      4096      [fd7a:115c:a1e0::10:1]:7721             [::]:*    users:(("cpool",pid=1,fd=7),("cpool",pid=2,fd=7))',
       '',
     ].join('\n'),
   );
@@ -25,7 +25,7 @@ test('parseSs handles v4, v6, wildcard, iface suffix and names with spaces', () 
       ['::', 22, 'all'],
       ['*', 3000, 'all'],
       ['127.0.0.53', 53, 'loopback'],
-      ['fd7a:115c:a1e0::182b:1a3c', 7721, 'tailnet'],
+      ['fd7a:115c:a1e0::10:1', 7721, 'tailnet'],
     ],
   );
   assert.deepEqual(out[0].processes, [{ name: 'MainThread', pid: 3247206 }]);

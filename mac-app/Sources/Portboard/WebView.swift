@@ -284,7 +284,7 @@ final class WebController: NSObject, ObservableObject, WKNavigationDelegate, WKU
         let alert = NSAlert()
         alert.messageText = "Portboard"
         alert.informativeText = message
-        alert.addButton(withTitle: "확인")
+        alert.addButton(withTitle: L10n.t("mac.alert.ok"))
         alert.runModal()
         completionHandler()
     }
@@ -293,8 +293,8 @@ final class WebController: NSObject, ObservableObject, WKNavigationDelegate, WKU
         let alert = NSAlert()
         alert.messageText = "Portboard"
         alert.informativeText = message
-        alert.addButton(withTitle: "확인")
-        alert.addButton(withTitle: "취소")
+        alert.addButton(withTitle: L10n.t("mac.alert.ok"))
+        alert.addButton(withTitle: L10n.t("mac.alert.cancel"))
         completionHandler(alert.runModal() == .alertFirstButtonReturn)
     }
 
@@ -305,8 +305,8 @@ final class WebController: NSObject, ObservableObject, WKNavigationDelegate, WKU
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
         field.stringValue = defaultText ?? ""
         alert.accessoryView = field
-        alert.addButton(withTitle: "확인")
-        alert.addButton(withTitle: "취소")
+        alert.addButton(withTitle: L10n.t("mac.alert.ok"))
+        alert.addButton(withTitle: L10n.t("mac.alert.cancel"))
         alert.window.initialFirstResponder = field
         completionHandler(alert.runModal() == .alertFirstButtonReturn ? field.stringValue : nil)
     }

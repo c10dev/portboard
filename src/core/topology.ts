@@ -13,13 +13,14 @@ import { snapshot, type PortEntry, type PortGroup, type PortKind, type Snapshot 
 import { classify, type BindScope } from './ss.ts';
 import { parsePeers } from './devices.ts';
 import { servedUrl } from './tailscale.ts';
+import { t } from './i18n.ts';
 
 export type Peer = ReturnType<typeof parsePeers>[number];
 
 export type ClientKind = 'device' | 'tailnet' | 'local' | 'lan' | 'docker' | 'internet' | 'serve' | 'funnel';
 
 /** The pseudo-client for Tailscale Funnel traffic: the public internet (claude.ai's connector and the like) */
-export const FUNNEL_LABEL = 'Funnel (공개, claude.ai 등)';
+export const funnelLabel = () => t('topology.funnel');
 
 /** Where connections come from: a tailnet device (dev:<DNS label>), or a pseudo-node for addresses that aren't one. */
 export interface ClientNode {
@@ -230,7 +231,7 @@ export function buildTopology(inp: TopologyInput): Topology {
         proxy.set(port, (proxy.get(port) ?? 0) + 1);
         continue;
       }
-      client = { id: 'local', kind: 'local', label: '이 서버 (로컬)', address: null };
+      client = { id: 'local', kind: 'local', label: t('topology.local'), address: null };
       processes = back?.processes.map((p) => `${p.name} (${p.pid})`) ?? [];
     } else {
       client = clientFor(peer, devByIp);
@@ -281,8 +282,8 @@ export function buildTopology(inp: TopologyInput): Topology {
     clients.set(
       from,
       from === 'funnel'
-        ? { id: 'funnel', kind: 'funnel', label: FUNNEL_LABEL, address: null }
-        : { id: 'serve', kind: 'serve', label: 'tailscale serve · 기기 미확인', address: null },
+        ? { id: 'funnel', kind: 'funnel', label: funnelLabel(), address: null }
+        : { id: 'serve', kind: 'serve', label: t('topology.serve'), address: null },
     );
     edges.set(id, {
       id,
@@ -348,13 +349,13 @@ function fmtAddr(a: string): string {
 function clientFor(ip: string, devByIp: Map<string, Peer>): ClientNode {
   const dev = devByIp.get(ip.toLowerCase());
   if (dev) return { id: `dev:${dev.name}`, kind: 'device', label: dev.name, address: ip };
-  if (classify(ip) === 'tailnet') return { id: `ts:${ip}`, kind: 'tailnet', label: `tailnet ${ip} · 미확인 기기`, address: ip };
+  if (classify(ip) === 'tailnet') return { id: `ts:${ip}`, kind: 'tailnet', label: t('topology.tailnet', { ip }), address: ip };
   const p = ip.split('.').map(Number);
   if (p.length === 4 && p[0] === 172 && (p[1] === 17 || p[1] === 18)) {
-    return { id: 'docker', kind: 'docker', label: 'Docker 컨테이너', address: null };
+    return { id: 'docker', kind: 'docker', label: t('topology.docker'), address: null };
   }
   if (isPrivate(ip)) return { id: `lan:${ip}`, kind: 'lan', label: `LAN ${ip}`, address: ip };
-  return { id: `net:${ip}`, kind: 'internet', label: `인터넷 ${ip}`, address: ip };
+  return { id: `net:${ip}`, kind: 'internet', label: t('topology.internet', { ip }), address: ip };
 }
 
 function isPrivate(ip: string): boolean {

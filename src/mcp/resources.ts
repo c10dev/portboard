@@ -14,6 +14,7 @@ import { summarize } from './views.ts';
 import { statusReport } from './status.ts';
 
 export { collectionReport, statusReport, type StatusInput } from './status.ts';
+import { t } from '../core/i18n.ts';
 
 export const STATUS_URI = 'portboard://status';
 const JSON_TYPE = 'application/json';
@@ -24,10 +25,12 @@ export const NOT_FOUND = -32002;
 export const STATUS_RESOURCE = {
   uri: STATUS_URI,
   name: 'status',
-  title: '서버 상태 요약',
+  get title() {
+    return t('resources.status.title');
+  },
   description:
-    'Portboard 서버 상태를 한눈에: devices online, compute-pool health, services in use (누가 무엇을), ' +
-    'watched (🔔) ports that are down, 새 기기 not acknowledged yet, and collection: whether Portboard\'s own collectors ' +
+    'Portboard server status at a glance: devices online, compute-pool health, services in use (who uses what), ' +
+    'watched (🔔) ports that are down, new devices not acknowledged yet, and collection: whether Portboard\'s own collectors ' +
     '(compute-pool, Proxmox, Proxmox/Windows SSH, …) work and which tokens expire soon, and memory: available %, swap %, PSI and whether the memory-pressure alert is on. Sections that could not be read are null and listed in unavailable.',
   mimeType: JSON_TYPE,
 };
@@ -36,14 +39,18 @@ export const RESOURCE_TEMPLATES = [
   {
     uriTemplate: 'portboard://port/{port}',
     name: 'port',
-    title: '포트 상세',
+    get title() {
+      return t('resources.port.title');
+    },
     description: 'One port in full (same as the service_detail tool): owner, scope, URLs, who uses it, uptime, alerts sent.',
     mimeType: JSON_TYPE,
   },
   {
     uriTemplate: 'portboard://device/{id}',
     name: 'device',
-    title: '기기 상세',
+    get title() {
+      return t('resources.device.title');
+    },
     description:
       'One device by its id from list_devices (Tailscale name, pool:<name>) or who_uses (lan:<ip>): status, compute-pool load, ' +
       'its listening ports, and what it uses on this server now and in the last 7 days.',

@@ -56,6 +56,7 @@ const tool: Tool = {
 
 export const freePortsFeature: FeatureModule = {
   name: 'free-ports',
+  order: 500,
   routes: [
     {
       method: 'GET',
