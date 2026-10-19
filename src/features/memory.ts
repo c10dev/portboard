@@ -51,9 +51,11 @@ import type { Snapshot } from '../core/index.ts';
 import { parseOptionalInt, text } from '../mcp/kit.ts';
 import { redactMemory } from '../remote/redact.ts';
 import { mcpUseForMemory } from './adoption.ts';
-import { ok } from './router.ts';
+import { ok, reply } from './router.ts';
+import { platform } from '../core/platform/index.ts';
 import type { ServerContext } from './context.ts';
 import type { FeatureModule } from './types.ts';
+import { t } from '../core/i18n.ts';
 
 declare module '../mcp/kit.ts' {
   interface Core {
@@ -282,7 +284,14 @@ export function toolSummary(v: MemoryView, top = 10) {
 export const memoryFeature: FeatureModule = {
   name: 'memory',
   order: 2500,
-  routes: [{ method: 'GET', path: '/api/memory', handler: async (_r, ctx) => ok(await serverView(ctx)) }],
+  routes: [
+    {
+      method: 'GET',
+      path: '/api/memory',
+      // no /proc (macOS, #11): a 501 with the reason instead of a sampling error every request
+      handler: async (_r, ctx) => (platform().procfs ? ok(await serverView(ctx)) : reply(501, { error: t('errors.noProcfs', { os: platform().os }) })),
+    },
+  ],
   tools: [
     {
       def: {
@@ -305,6 +314,7 @@ export const memoryFeature: FeatureModule = {
         const top = parseOptionalInt(args, 'top', 1, 50);
         if (!top.ok) return text(top.error, true);
         if (!core.memory) return text('memory_usage is not available here', true);
+        if (!platform().procfs) return text(t('errors.noProcfs', { os: platform().os }), true);
         return text(toolSummary(await core.memory(), top.value ?? 10));
       },
       remote: {
@@ -326,7 +336,7 @@ export const memoryFeature: FeatureModule = {
     },
   ],
   mcpCore: () => ({ memory: () => fileView() }),
-  jobs: [{ name: 'memory', everyMs: SAMPLE_EVERY, runAtStart: true, run: (ctx) => sampleOnce(ctx) }],
+  jobs: [{ name: 'memory', everyMs: SAMPLE_EVERY, runAtStart: true, enabled: () => platform().procfs, run: (ctx) => sampleOnce(ctx) }],
   collectors: ['memory'],
   ui: [{ pages: ['devices.html'], script: 'features/memory.js' }],
 };

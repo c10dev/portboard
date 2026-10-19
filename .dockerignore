@@ -1,0 +1,19 @@
+# The image needs package.json, bin/, src/, public/, CHANGELOG.md and portboard.example.json only (Dockerfile)
+.git
+.github
+.claude
+node_modules
+dist
+demo
+demo.staging
+test
+scripts
+docs
+mac-app
+menubar
+claude-plugin
+deploy
+changelog.d
+*.log
+# this install's own site config never goes into an image
+/portboard.json

@@ -2,7 +2,7 @@
 // context: every write route goes through the same X-Portboard guard here, before its handler can run.
 //
 // Order of checks, as before the registry: path (404) → `:port` range (400 "bad port") → method (405) → guard
-// (403) → owner (403, with a WriteGuard) → JSON body (400) → handler.
+// (403) → read-only install (403, with a WriteGuard; #11) → owner (403, with a WriteGuard) → JSON body (400) → handler.
 //
 // The dashboard's router (appRouter, what server.ts uses) also checks who is calling (src/core/access.ts, #29) and
 // writes every write — allowed, denied or failed — to the audit log (src/core/audit.ts, #30). createRouter without a
@@ -15,6 +15,7 @@ import { randomBytes } from 'node:crypto';
 import { resolveCaller, type Caller } from '../core/access.ts';
 import { clean, deviceOf, record, targetOf, whoOf, type AuditEntry, type AuditLog, type Target } from '../core/audit.ts';
 import { t } from '../core/i18n.ts';
+import { platform } from '../core/platform/index.ts';
 
 const TOKENS: Record<string, string> = {
   ':port': '(?<port>\\d{1,5})',
@@ -87,6 +88,8 @@ export function tailscaleRequired(ctx: Pick<ServerContext, 'ts'>): Reply | null 
 export interface WriteGuard {
   caller(req: IncomingMessage): Promise<Caller>;
   record(e: AuditEntry): Promise<void>;
+  /** Why every write is refused on this install (PORTBOARD_READ_ONLY, the Docker image; #11), or null */
+  readOnly?(): string | null;
 }
 
 /** The answer's own short message, error, or why the caller may not write, for the audit line. */
@@ -144,6 +147,12 @@ export function createRouter(routes: Route[], guard?: WriteGuard) {
       await log(out, targetOf(params, null));
       return out;
     }
+    const readOnly = guard?.readOnly?.() ?? null;
+    if (readOnly) {
+      const out = reply(403, { error: 'read-only', reason: readOnly });
+      await log(out, targetOf(params, null));
+      return out;
+    }
     if (caller && !caller.canWrite) {
       // Denied before the body is read: nothing from a caller who may not write goes further than the route params.
       const out = reply(403, { error: 'owner only', reason: caller.reason ?? '' });
@@ -183,5 +192,9 @@ export function appRouter(routes: Route[], ctx: Pick<ServerContext, 'owner' | 'd
   return createRouter(routes, {
     caller: (req) => resolveCaller(req, ctx),
     record: (e) => record(ctx.audit, e),
+    readOnly: () => {
+      const p = platform();
+      return p.readOnly ? t('errors.readOnly', { reason: p.readOnlyReason }) : null;
+    },
   });
 }

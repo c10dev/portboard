@@ -50,6 +50,17 @@ Each value of `pve` and `windows` resolves in this order: `pveports.json`/`winpo
 
 The dashboard's own ports are not keys: 8790 (`PORTBOARD_PORT`) and 8794 (`PORTBOARD_REMOTE_PORT`) are set by environment, as before. The https port in front of the dashboard (8443) is whatever `tailscale serve` publishes.
 
+## Platform environment
+
+How Portboard reads ports and acts on services is picked from the OS ([platforms.md](platforms.md)); these variables override it. They are environment only, read once at start. A value that isn't understood is ignored, and the start log says so.
+
+| Env | Values | Default | Meaning |
+|---|---|---|---|
+| `PORTBOARD_PORT_READER` | `ss`, `lsof` | `ss` on Linux, `lsof` elsewhere | The listening-port reader: `ss -ltnpH`, or `lsof -nP +c 0 -iTCP -sTCP:LISTEN -F pcnL` |
+| `PORTBOARD_SERVICES` | `systemd`, `none` | `systemd` on Linux outside a container, else `none` | The service manager. `none` never runs `systemctl`, `journalctl` or `systemd-run`: unit restart/stop/logs and dev servers answer with why they can't |
+| `PORTBOARD_READ_ONLY` | `1`, `0` | `1` in a container, else `0` | Refuse every write: write routes answer `403` (`"error": "read-only"`), and restart, stop and dev servers are refused for MCP tools and auto-stop too |
+| `PORTBOARD_CONTAINER` | `1` | unset (the Docker image sets it) | Running in the Docker image: no service manager, read-only unless `PORTBOARD_READ_ONLY=0` |
+
 ## Example
 
 A server with a Proxmox host and a Windows desktop on its LAN. Tailscale reports `host` and `tailnet` anyway; set them for the text that is fixed at start:

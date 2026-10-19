@@ -10,15 +10,17 @@
 //   portboard token                          make (or replace) the owner token for token mode (#12)
 //
 // The unit text and the argument parsing are pure (test/cli.test.ts); main() takes its paths and systemctl from deps.
+// On macOS install-service writes launchd agents instead (src/core/platform/launchd.ts, #11; launchctl from deps).
 
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { VERSION } from './version.ts';
+import { bootoutCommands, bootstrapCommands, launchAgentsDir, launchdLogDir, PLIST_MARKER, plistPath, plistText, LAUNCHD_LABELS } from './core/platform/launchd.ts';
 
-export const USAGE = `portboard ${VERSION}: dashboard of the ports listening on this Linux server
+export const USAGE = `portboard ${VERSION}: dashboard of the ports listening on this server (Linux; macOS read-mostly)
 
 Usage:
   portboard start                       run the dashboard on :8790 (loopback + tailnet)
@@ -27,9 +29,9 @@ Usage:
   portboard mcp                         run the stdio MCP server (for claude mcp add / Claude Desktop)
   portboard agent                       serve this machine's ports read-only on :8797 to a board on another machine
   portboard install-service [--remote | --agent] [--enable] [--dry-run]
-                                        write systemd user units for this node and this install
-                                        (--remote also the remote MCP unit; --agent only the agent unit;
-                                        --enable runs systemctl for you)
+                                        write systemd user units (macOS: launchd agents) for this node
+                                        and this install (--remote also the remote MCP unit; --agent only
+                                        the agent unit; --enable runs systemctl / launchctl for you)
   portboard uninstall-service [--dry-run]
                                         disable and remove the units install-service wrote
   portboard token                       make the owner token for token mode (printed once; running it
@@ -173,6 +175,10 @@ export interface Deps {
   platform: NodeJS.Platform;
   /** runs systemctl with these arguments; resolves false (after printing why) on failure */
   systemctl: (args: string[]) => Promise<boolean>;
+  /** macOS: runs launchctl with these arguments, the same way (#11) */
+  launchctl?: (args: string[]) => Promise<boolean>;
+  /** macOS: the user id for launchctl's gui/<uid> domain */
+  uid?: number;
   /** owner-token.json and access.json of this profile (paths.ts; PORTBOARD_PORT picks a preview's); read when needed */
   accessFiles?: () => Promise<{ token: string; access: string }>;
 }
@@ -188,21 +194,91 @@ function defaultDeps(): Deps {
     home: homedir(),
     env: process.env,
     platform: process.platform,
-    systemctl: (args) =>
-      new Promise((resolve) =>
-        execFile('systemctl', args, { timeout: 60_000 }, (e, _out, stderr) => {
-          if (e) process.stderr.write(`systemctl ${args.join(' ')}: ${(stderr || e.message).trim()}\n`);
-          resolve(!e);
-        }),
-      ),
+    systemctl: execTool('systemctl'),
+    launchctl: execTool('launchctl'),
   };
 }
 
 const shown = (cmd: readonly string[]) => cmd.join(' ');
 
+/** Runs `cmd args` without a shell; resolves false (after printing why) on failure */
+function execTool(cmd: string) {
+  return (args: string[]) =>
+    new Promise<boolean>((resolve) =>
+      execFile(cmd, args, { timeout: 60_000 }, (e, _out, stderr) => {
+        if (e) process.stderr.write(`${cmd} ${args.join(' ')}: ${(stderr || e.message).trim()}\n`);
+        resolve(!e);
+      }),
+    );
+}
+
+const uidOf = (d: Deps) => d.uid ?? (typeof process.getuid === 'function' ? process.getuid() : userInfo().uid);
+
+/** macOS (#11): launchd agents in ~/Library/LaunchAgents, loaded with `launchctl bootstrap` when --enable */
+async function installLaunchd(p: Parsed, d: Deps): Promise<number> {
+  const kinds = unitsFor(p.remote, p.agent);
+  const input = { node: d.node, root: d.root, version: VERSION, home: d.home };
+  if (d.root.split('/').includes('_npx')) {
+    d.err('warning: this is an npx cache copy, which npm may delete. Install for good first: npm i -g portboard');
+  }
+  for (const k of kinds) {
+    const file = plistPath(d.home, k);
+    const text = plistText(k, input);
+    if (p.dryRun) {
+      d.out(`# ${file}\n${text}`);
+      continue;
+    }
+    const before = existsSync(file) ? readFileSync(file, 'utf8') : null;
+    mkdirSync(launchAgentsDir(d.home), { recursive: true });
+    // launchd won't make the log folder itself
+    mkdirSync(launchdLogDir(d.home), { recursive: true, mode: 0o700 });
+    writeFileSync(file, text, { mode: 0o644 });
+    d.out(`${before === null ? 'wrote' : before === text ? 'unchanged' : 'updated'} ${file}`);
+  }
+  const cmds = bootstrapCommands(kinds, uidOf(d), d.home);
+  if (p.enable && !p.dryRun) {
+    const launchctl = d.launchctl ?? execTool('launchctl');
+    for (const c of cmds) if (!(await launchctl(c.slice(1)))) return 1;
+    d.out(`started: ${kinds.map((k) => LAUNCHD_LABELS[k]).join(', ')}. ${p.agent ? 'Agent: http://127.0.0.1:8797/agent/v1/info' : 'Dashboard: http://127.0.0.1:8790'}`);
+  } else {
+    d.out(`\n${p.dryRun ? 'Would write the above. Then load' : 'Load'} ${kinds.length > 1 ? 'them' : 'it'} (launchd starts ${kinds.length > 1 ? 'them' : 'it'} again at every login):\n  ${cmds.map(shown).join(' && ')}`);
+  }
+  d.out(`Logs: ${launchdLogDir(d.home)}. On macOS restart, dev servers and the memory view are not available (docs/platforms.md).`);
+  if (p.remote) d.out('The remote server is public only after `tailscale funnel`: docs/remote-mcp/README.md.');
+  if (p.agent) d.out('Say who may read it (agent.allow or agent.token in portboard.json), then list it in the board\'s agents: docs/multi-host.md.');
+  return 0;
+}
+
+async function uninstallLaunchd(p: Parsed, d: Deps): Promise<number> {
+  const ours = (['dashboard', 'remote', 'agent'] as const).map((k) => ({ kind: k, file: plistPath(d.home, k) })).filter((u) => existsSync(u.file));
+  const foreign = ours.filter((u) => !readFileSync(u.file, 'utf8').includes(PLIST_MARKER));
+  for (const u of foreign) d.err(`left alone: ${u.file} was not written by install-service (remove it by hand)`);
+  const mine = ours.filter((u) => !foreign.includes(u));
+  if (!mine.length) {
+    d.out(`nothing to remove in ${launchAgentsDir(d.home)}`);
+    return foreign.length ? 1 : 0;
+  }
+  const cmds = bootoutCommands(mine.map((u) => u.kind), uidOf(d));
+  if (p.dryRun) {
+    for (const c of cmds) d.out(`would run: ${shown(c)}`);
+    for (const u of mine) d.out(`would remove ${u.file}`);
+    return 0;
+  }
+  const launchctl = d.launchctl ?? execTool('launchctl');
+  // an agent that isn't loaded makes bootout fail: the file goes anyway
+  for (const c of cmds) if (!(await launchctl(c.slice(1)))) d.err(`continuing: ${shown(c)} failed (not loaded?)`);
+  for (const u of mine) {
+    rmSync(u.file);
+    d.out(`removed ${u.file}`);
+  }
+  d.out('State and config stay in ~/.local/state/portboard and ~/.config/portboard.');
+  return foreign.length ? 1 : 0;
+}
+
 async function installService(p: Parsed, d: Deps): Promise<number> {
+  if (d.platform === 'darwin') return installLaunchd(p, d);
   if (d.platform !== 'linux') {
-    d.err('install-service writes systemd user units: Linux only. On a Mac, use the menu bar app as a client (docs/mac-app/).');
+    d.err(`install-service writes systemd user units (Linux) or launchd agents (macOS), not for ${d.platform}. Run \`portboard start\` under your own service manager, or use the Docker image (docs/platforms.md).`);
     return 1;
   }
   const dir = unitDir(d.home, d.env);
@@ -237,6 +313,7 @@ async function installService(p: Parsed, d: Deps): Promise<number> {
 }
 
 async function uninstallService(p: Parsed, d: Deps): Promise<number> {
+  if (d.platform === 'darwin') return uninstallLaunchd(p, d);
   const dir = unitDir(d.home, d.env);
   const ours = (['dashboard', 'remote', 'agent'] as const)
     .map((k) => ({ name: UNIT_NAMES[k], file: join(dir, `${UNIT_NAMES[k]}.service`) }))

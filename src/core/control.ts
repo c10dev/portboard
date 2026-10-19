@@ -3,7 +3,11 @@
 
 import { open, readlink, stat } from 'node:fs/promises';
 import { run } from './exec.ts';
+import { platform } from './platform/index.ts';
+import { stdioFiles } from './platform/procs.ts';
+import { services } from './platform/services.ts';
 import type { ActionResult } from './tailscale.ts';
+import { t } from './i18n.ts';
 
 export type Control =
   | { type: 'systemd'; unit: string }
@@ -21,14 +25,24 @@ export function controlFor(o: { container: string | null; processes: { pid: numb
   return null;
 }
 
+/** Why writes are refused on this install (PORTBOARD_READ_ONLY, a container), or null (#11) */
+export function readOnlyRefusal(): ActionResult | null {
+  const p = platform();
+  return p.readOnly ? { ok: false, message: t('errors.readOnly', { reason: p.readOnlyReason }) } : null;
+}
+
 export async function restartTarget(c: Control): Promise<ActionResult> {
+  const refused = readOnlyRefusal();
+  if (refused) return refused;
   if (c.type === 'systemd') {
+    const sm = services();
+    if (sm.unavailable) return { ok: false, message: `${c.unit}: ${sm.unavailable}` };
     if (c.unit === SELF_UNIT) {
       // Restarting ourselves: let the HTTP reply leave first, systemd SIGTERMs us right away otherwise.
-      setTimeout(() => void run('systemctl', ['--user', '--no-block', 'restart', c.unit]), 500);
+      setTimeout(() => void sm.restart(c.unit), 500);
       return { ok: true, message: `restarting ${c.unit} in a moment` };
     }
-    const r = await run('systemctl', ['--user', '--no-block', 'restart', c.unit]);
+    const r = await sm.restart(c.unit);
     return r.ok ? { ok: true, message: `restarting ${c.unit}` } : { ok: false, message: (r.stderr || r.stdout).trim() };
   }
   if (c.type === 'docker') {
@@ -39,9 +53,13 @@ export async function restartTarget(c: Control): Promise<ActionResult> {
 }
 
 export async function stopTarget(c: Control): Promise<ActionResult> {
+  const refused = readOnlyRefusal();
+  if (refused) return refused;
   if (c.type === 'systemd') {
     if (c.unit === SELF_UNIT) return { ok: false, message: 'refusing to stop portboard itself' };
-    const r = await run('systemctl', ['--user', '--no-block', 'stop', c.unit]);
+    const sm = services();
+    if (sm.unavailable) return { ok: false, message: `${c.unit}: ${sm.unavailable}` };
+    const r = await sm.stop(c.unit);
     return r.ok ? { ok: true, message: `stopping ${c.unit}` } : { ok: false, message: (r.stderr || r.stdout).trim() };
   }
   if (c.type === 'docker') {
@@ -74,8 +92,8 @@ export const MAX_LOG_LINES = 1000;
 export async function logsFor(c: Control, lines: number): Promise<Logs> {
   const n = String(Math.max(1, Math.min(MAX_LOG_LINES, Math.floor(lines))));
   if (c.type === 'systemd') {
-    const r = await run('journalctl', ['--user', '-u', c.unit, '-n', n, '--no-pager', '-o', 'short-iso']);
-    return { ok: r.ok, source: `journalctl --user -u ${c.unit}`, lines: splitLines(r.stdout), message: r.ok ? undefined : r.stderr.trim() };
+    const r = await services().logs(c.unit, n);
+    return { ok: r.ok, source: r.source, lines: splitLines(r.stdout), message: r.ok ? undefined : r.stderr.trim() };
   }
   if (c.type === 'docker') {
     // docker logs replays the container's stdout and stderr on the matching streams; keep both.
@@ -84,6 +102,15 @@ export async function logsFor(c: Control, lines: number): Promise<Logs> {
     return { ok: r.ok, source: `docker logs ${c.container}`, lines: merged.slice(-Number(n)) };
   }
   // Plain process: only readable when stdout/stderr were redirected to a regular file.
+  if (!platform().procfs) {
+    // no /proc: lsof says where descriptors 1 and 2 go (#11)
+    for (const pid of c.pids) {
+      for (const target of await stdioFiles(pid)) {
+        const st = await stat(target).catch(() => null);
+        if (st?.isFile()) return { ok: true, source: target, lines: await tailFile(target, st.size, Number(n)) };
+      }
+    }
+  }
   for (const pid of c.pids) {
     for (const fd of [1, 2]) {
       const target = await readlink(`/proc/${pid}/fd/${fd}`).catch(() => null);

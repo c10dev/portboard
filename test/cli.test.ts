@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { enableCommands, main, parseArgs, systemdArg, UNIT_MARKER, unitDir, unitsFor, unitText, type Deps } from '../src/cli.ts';
 import { VERSION } from '../src/version.ts';
+import { plistText } from '../src/core/platform/launchd.ts';
 
 const INPUT = { node: '/home/me/.nvm/versions/node/v24.19.0/bin/node', root: '/home/me/.nvm/versions/node/v24.19.0/lib/node_modules/portboard', version: '1.2.3' };
 
@@ -154,11 +155,12 @@ test('main install-service writes the unit, prints systemctl, runs it only with 
   h.done();
 });
 
-test('main install-service: not on macOS; warns for an npx cache copy', async () => {
-  const mac = harness({ platform: 'darwin' });
-  assert.equal(await main(['install-service'], mac.deps), 1);
-  assert.match(mac.err[0], /Linux only/);
-  mac.done();
+test('main install-service: not on Windows; warns for an npx cache copy', async () => {
+  const win = harness({ platform: 'win32' });
+  assert.equal(await main(['install-service'], win.deps), 1);
+  assert.match(win.err[0], /not for win32/);
+  assert.deepEqual(win.calls, []);
+  win.done();
   const npx = harness({ root: '/home/me/.npm/_npx/abc/node_modules/portboard' });
   assert.equal(await main(['install-service', '--dry-run'], npx.deps), 0);
   assert.match(npx.err[0], /npx cache/);
@@ -202,4 +204,56 @@ test('package.json: publishable, bin/portboard is plain JavaScript with a sheban
   const bin = readFileSync(new URL('../bin/portboard', import.meta.url), 'utf8');
   assert.ok(bin.startsWith('#!/usr/bin/env node\n'));
   assert.ok(bin.includes("'../src/cli.ts'") && bin.includes("'../dist/cli.js'"));
+});
+
+// ---- macOS: launchd agents (#11) ----
+
+function macHarness() {
+  const launchctl: string[][] = [];
+  const h = harness({ platform: 'darwin', uid: 501, launchctl: async (args) => (launchctl.push(args), true) });
+  return { ...h, launchctl, agents: join(h.home, 'Library', 'LaunchAgents') };
+}
+
+test('main install-service on macOS: --dry-run prints the plists and launchctl, writes and runs nothing', async () => {
+  const h = macHarness();
+  assert.equal(await main(['install-service', '--remote', '--dry-run'], h.deps), 0);
+  assert.ok(!existsSync(h.agents));
+  assert.deepEqual(h.launchctl, []);
+  assert.deepEqual(h.calls, [], 'no systemctl on a Mac');
+  const text = h.out.join('\n');
+  assert.ok(text.includes(`# ${join(h.agents, 'io.github.c10dev.portboard.plist')}`));
+  assert.ok(text.includes(`# ${join(h.agents, 'io.github.c10dev.portboard-remote.plist')}`));
+  assert.ok(text.includes(`launchctl bootstrap gui/501 ${join(h.agents, 'io.github.c10dev.portboard.plist')}`));
+  h.done();
+});
+
+test('main install-service on macOS writes the plist and log folder; --enable bootstraps; uninstall boots out and removes', async () => {
+  const h = macHarness();
+  assert.equal(await main(['install-service'], h.deps), 0);
+  const file = join(h.agents, 'io.github.c10dev.portboard.plist');
+  assert.equal(readFileSync(file, 'utf8'), plistText('dashboard', { ...INPUT, version: VERSION, home: h.home }));
+  assert.ok(existsSync(join(h.home, 'Library', 'Logs', 'portboard')));
+  assert.deepEqual(h.launchctl, []);
+  assert.equal(await main(['install-service', '--enable'], h.deps), 0);
+  assert.ok(h.out.includes(`unchanged ${file}`));
+  assert.deepEqual(h.launchctl, [['bootstrap', 'gui/501', file]]);
+
+  h.launchctl.length = 0;
+  assert.equal(await main(['uninstall-service', '--dry-run'], h.deps), 0);
+  assert.deepEqual(h.launchctl, []);
+  assert.ok(existsSync(file));
+  assert.equal(await main(['uninstall-service'], h.deps), 0);
+  assert.deepEqual(h.launchctl, [['bootout', 'gui/501/io.github.c10dev.portboard']]);
+  assert.ok(!existsSync(file));
+  assert.deepEqual(h.calls, []);
+  h.done();
+
+  // a plist written by hand is left alone
+  const hand = macHarness();
+  mkdirSync(hand.agents, { recursive: true });
+  writeFileSync(join(hand.agents, 'io.github.c10dev.portboard.plist'), '<plist/>\n');
+  assert.equal(await main(['uninstall-service'], hand.deps), 1);
+  assert.match(hand.err[0], /not written by install-service/);
+  assert.deepEqual(hand.launchctl, []);
+  hand.done();
 });

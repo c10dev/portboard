@@ -21,12 +21,16 @@ import { startJobs } from './features/jobs.ts';
 import { noteMenubar } from './core/onboarding.ts';
 import { SITE } from './core/site.ts';
 import { expandShell } from './core/shell.ts';
+import { describePlatform } from './core/platform/index.ts';
 import { requestLocale, withLocale } from './core/i18n.ts';
 
 const PORT = Number(process.env.PORTBOARD_PORT ?? 8790);
 // A preview (any other port) gets its own config/state dir, seeded once from production's prefs and clients.
 await seedPreview();
 console.log(describe());
+// Not Linux with systemd (#11): which readers it uses and what it can't do here
+const platformLine = describePlatform();
+if (platformLine) console.log(platformLine);
 if (SITE.fileError) console.error(`[portboard] ${SITE.file}: ${SITE.fileError}`);
 const PUBLIC = fileURLToPath(new URL('../public/', import.meta.url));
 const TYPES: Record<string, string> = {

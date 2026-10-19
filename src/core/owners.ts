@@ -15,6 +15,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { TtlMap } from './cache.ts';
 import { GIT_NO_HOOKS, run } from './exec.ts';
+import { services } from './platform/services.ts';
 import { stillEnded, type EndedLookup } from './claude-sessions.ts';
 import { t } from './i18n.ts';
 
@@ -270,7 +271,7 @@ export async function transientUnits(units: string[], now = Date.now()): Promise
   if (now - transientCache.at > 60_000) transientCache = { at: now, units: new Map() };
   const missing = [...new Set(units)].filter((u) => !transientCache.units.has(u));
   if (missing.length) {
-    const r = await run('systemctl', ['--user', 'show', '-p', 'Id,FragmentPath', ...missing], 5_000);
+    const r = await services().show(missing, 'Id,FragmentPath', 5_000);
     for (const block of r.stdout.split('\n\n')) {
       const id = /^Id=(.*)$/m.exec(block)?.[1];
       const frag = /^FragmentPath=(.*)$/m.exec(block)?.[1] ?? '';

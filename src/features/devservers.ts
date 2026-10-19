@@ -12,6 +12,9 @@ import { freePorts } from '../core/index.ts';
 import { run } from '../core/exec.ts';
 import { devScripts, hasScript, listDevServers, planStart, startUnit, stopUnit, unitFor, type DevScripts, type DevServer } from '../core/devservers.ts';
 import { loadReservations, reserve } from '../core/reservations.ts';
+import { readOnlyRefusal } from '../core/control.ts';
+import { platform } from '../core/platform/index.ts';
+import { services } from '../core/platform/services.ts';
 import { discoverRepos, parsePorcelain } from '../core/worktrees.ts';
 import { text, type Core } from '../mcp/kit.ts';
 import { redactDevServers } from '../remote/redact.ts';
@@ -66,7 +69,17 @@ export async function devServersDoc(): Promise<DevServersDoc> {
   return { running: running.map((r) => ({ ...r, owner: dirs.get(r.path)?.owner ?? null })), startable };
 }
 
+/** Why dev servers can't be started or stopped here (#11): a read-only install (403), no systemd (501); null when they can */
+export function devServersRefusal(): { ok: false; status: number; message: string } | null {
+  const refused = readOnlyRefusal();
+  if (refused) return { ok: false, status: 403, message: refused.message };
+  if (services().unavailable) return { ok: false, status: 501, message: t('errors.noDevServers', { os: platform().os }) };
+  return null;
+}
+
 export async function startDevServer(path: string, scriptArg?: string, portArg?: number, env?: Record<string, string | undefined>): Promise<{ ok: boolean; message: string; port?: number; unit?: string; status?: number }> {
+  const refused = devServersRefusal();
+  if (refused) return refused;
   const dir = (await knownDirs()).get(path);
   if (!dir) return { ok: false, status: 400, message: t('devservers.unknownDir') };
   const s = await devScripts(path);
@@ -94,6 +107,8 @@ export async function startDevServer(path: string, scriptArg?: string, portArg?:
 }
 
 export async function stopDevServer(path: string): Promise<{ ok: boolean; message: string; status?: number }> {
+  const refused = devServersRefusal();
+  if (refused) return refused;
   const unit = unitFor(path);
   if (!(await listDevServers()).some((r) => r.unit === unit)) return { ok: false, status: 404, message: t('devservers.notRunning') };
   return stopUnit(unit);

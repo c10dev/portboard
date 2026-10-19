@@ -8,7 +8,9 @@
 import { readdir, readFile, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { run } from './exec.ts';
+import { platform } from './platform/index.ts';
+import { psDetails } from './platform/procs.ts';
+import { services } from './platform/services.ts';
 
 export interface ProcInfo {
   pid: number;
@@ -63,6 +65,27 @@ export async function procInfo(pid: number): Promise<ProcInfo> {
   };
 }
 
+/**
+ * procInfo() for each pid: /proc on Linux; elsewhere one `ps` and one `lsof` for the whole batch (#11), with no
+ * systemd unit.
+ */
+export async function procInfos(pids: number[]): Promise<ProcInfo[]> {
+  if (platform().procfs) return Promise.all(pids.map((pid) => procInfo(pid)));
+  const { cmdlines, cwds } = await psDetails(pids);
+  return pids.map((pid) => {
+    const cmdline = cmdlines.get(pid) ?? '';
+    const cwd = cwds.get(pid) ?? null;
+    return {
+      pid,
+      cmdline: cmdline.length > 300 ? `${cmdline.slice(0, 300)}…` : cmdline,
+      cwd: cwd ? shortPath(cwd) : null,
+      project: cwd ? projectOf(cwd) : null,
+      unit: null,
+      unitDescription: null,
+    };
+  });
+}
+
 export function shortPath(p: string): string {
   return p === HOME || p.startsWith(`${HOME}/`) ? `~${p.slice(HOME.length)}` : p;
 }
@@ -92,7 +115,7 @@ export async function unitDescriptions(units: string[]): Promise<Map<string, str
   }
   const missing = units.filter((u) => !descCache.has(u));
   if (missing.length) {
-    const r = await run('systemctl', ['--user', 'show', '-p', 'Id,Description', ...missing]);
+    const r = await services().show(missing, 'Id,Description');
     for (const block of r.stdout.split('\n\n')) {
       const id = /^Id=(.*)$/m.exec(block)?.[1];
       const desc = /^Description=(.*)$/m.exec(block)?.[1];

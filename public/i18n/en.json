@@ -534,6 +534,9 @@
     "other": "🌿 {n} removable worktrees · {size}"
   },
   "errors.internal": "Server error (request ID {id}).",
+  "errors.noDevServers": "Portboard starts dev servers as systemd user units, and this platform has none ({os}).",
+  "errors.noProcfs": "The memory view reads /proc, which this platform doesn't have ({os}).",
+  "errors.readOnly": "This Portboard is read-only: {reason}.",
   "errors.tailscaleRequired": "This needs Tailscale, and it isn't running on this server.",
   "groupsMsg.web": "Web (HTTP)",
   "health.collector.alerts": "Down alert checks",

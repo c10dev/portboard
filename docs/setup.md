@@ -24,8 +24,9 @@ portboard uninstall-service [--dry-run]
 
 The unit names absolute paths, so run `install-service` again after upgrading node under nvm or moving the install.
 npx copies live in a cache npm may clear: `npm i -g portboard` before `install-service`. User units stop at logout
-unless lingering is on (`sudo loginctl enable-linger $USER`). `install-service` is Linux only; on a Mac, the app
-(below) is the client.
+unless lingering is on (`sudo loginctl enable-linger $USER`). On macOS `install-service` writes launchd agents to
+`~/Library/LaunchAgents` instead ([platforms.md](platforms.md#macos)); a Mac can also be just a client, with the app
+(below).
 
 The npm package carries `src/` compiled to `dist/`, because Node refuses to strip types under `node_modules`
 (`npm run build`, run by `prepack`, with `tsconfig.build.json`). A checkout runs the `.ts` files directly;

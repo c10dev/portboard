@@ -53,7 +53,9 @@ The screenshots and the [live demo](https://c10dev.github.io/portboard/) use exa
 ## Quick start
 
 Requirements: Linux with `ss` (iproute2), Node.js ≥ 22.18 (24 recommended), and [Tailscale](https://tailscale.com)
-for anything beyond `localhost`. systemd and docker are used when present.
+for anything beyond `localhost`. systemd and docker are used when present. It also runs on **macOS** (ports through
+`lsof`; no restart, dev servers or memory view) and as a read-only **Docker** image over the host's ports:
+[docs/platforms.md](docs/platforms.md).
 
 ```bash
 npx portboard start       # try it: dashboard + REST API on 127.0.0.1:8790 and this machine's Tailscale IP
@@ -147,6 +149,7 @@ Details: [docs/mac-app](docs/mac-app/README.md).
 | Topic | |
 |---|---|
 | [Setup and running](docs/setup.md) | environment variables, previews, systemd, Mac app, one-time `tailscale serve` setup |
+| [Platforms](docs/platforms.md) | Linux, macOS (lsof, launchd) and the read-only Docker image: what works where |
 | [Site config](docs/config.md) | `portboard.json`: host, tailnet, repos, Proxmox and Windows readers, port rules |
 | [Dashboard](docs/dashboard.md) | rows, last-used history, service page, devices, alerts, new devices |
 | [REST API](docs/api.md) | endpoints and guards |

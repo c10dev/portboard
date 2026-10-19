@@ -4,6 +4,8 @@
 src/core/index.ts     snapshot() / expose(port) / unexpose(port)  ← the single core API
 src/core/ss.ts        parses `ss -ltnpH`
 src/core/proc.ts      /proc (cmdline, cwd, cgroup→systemd unit) and the shared process scan (scanProcs, readProcText, readCwd)
+src/core/platform/    backends per OS (docs/platforms.md): index (detection, env overrides, read-only), ports (ss | lsof),
+                      procs (ps + lsof where there is no /proc), services (systemd | none), launchd (install-service on macOS)
 src/core/cache.ts     the TTL caches: ttlCache (one value), keyedCache (per key, bounded), TtlMap (bounded value store)
 src/core/throttle.ts  cachedValue (the ?fresh-aware snapshot cache) and gate (one forced run per window)
 src/core/docker.ts    docker ps → container that owns each port

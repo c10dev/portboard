@@ -12,12 +12,14 @@ import { hostname, userInfo } from 'node:os';
 import { controlFor, logsFor, pickFreePorts, restartTarget, SELF_UNIT, stopTarget, type Control, type Logs } from './control.ts';
 import { dockerPs } from './docker.ts';
 import { assignGroups, type PortGroup } from './groups.ts';
-import { run } from './exec.ts';
 import { loadPrefs, setPortPrefs, type OnNew, type PortPrefs, type PrefsPatch } from './prefs.ts';
 import { resolvePrefs, ruleResolver, type ResolvedPrefs, type RuleField, type RuleSource } from './portrules.ts';
-import { procInfo, unitDescriptions, type ProcInfo } from './proc.ts';
+import { procInfos, unitDescriptions, type ProcInfo } from './proc.ts';
+import { platform } from './platform/index.ts';
+import { readListeners } from './platform/ports.ts';
+import { services } from './platform/services.ts';
 import { probe, probeKey, pruneProbes, type Probe } from './probe.ts';
-import { parseSs, type BindScope } from './ss.ts';
+import type { BindScope } from './ss.ts';
 import { loadReservations, reservedFor, type Reservation } from './reservations.ts';
 import {
   serveOff,
@@ -100,21 +102,20 @@ export function kindOf(o: { port: number; owned: boolean; container: string | nu
 }
 
 export async function snapshot(): Promise<Snapshot> {
-  const [ss, ts, serve, dockerInfo, prefs] = await Promise.all([
-    run('ss', ['-ltnpH']),
+  const [listeners, ts, serve, dockerInfo, prefs] = await Promise.all([
+    readListeners(true),
     tailscaleInfo(),
     serveStatus(),
     dockerPs(),
     loadPrefs(),
   ]);
   const docker = dockerInfo.ports;
-  const listeners = parseSs(ss.stdout);
 
   const byPort = new Map<number, typeof listeners>();
   for (const l of listeners) byPort.set(l.port, [...(byPort.get(l.port) ?? []), l]);
 
   const pids = [...new Set(listeners.flatMap((l) => l.processes.map((p) => p.pid)))];
-  const infos = new Map((await Promise.all(pids.map(procInfo))).map((i) => [i.pid, i]));
+  const infos = new Map((await procInfos(pids)).map((i) => [i.pid, i]));
   const units = [...new Set([...infos.values()].map((i) => i.unit).filter((u): u is string => !!u))];
   const descs = units.length ? await unitDescriptions(units) : new Map<string, string>();
   for (const i of infos.values()) if (i.unit) i.unitDescription = descs.get(i.unit) ?? null;
@@ -127,6 +128,9 @@ export async function snapshot(): Promise<Snapshot> {
   const serveFor = (port: number) =>
     serve.find((e) => e.upstreamPort === port && e.httpsPort === port) ?? serve.find((e) => e.upstreamPort === port) ?? null;
 
+  // #11: no writes on a read-only install, no unit restarts without systemd
+  const { readOnly } = platform();
+  const unitsManaged = !services().unavailable;
   const aliveProbes = new Set<string>();
   const ports = await Promise.all(
     [...byPort.entries()].map(async ([port, ls]): Promise<PortEntry> => {
@@ -185,8 +189,8 @@ export async function snapshot(): Promise<Snapshot> {
         canExpose: exposeBlocker === null,
         exposeBlocker,
         control,
-        canRestart: control?.type === 'systemd' || control?.type === 'docker',
-        canStop: control !== null && !isSelf,
+        canRestart: !readOnly && ((control?.type === 'systemd' && unitsManaged) || control?.type === 'docker'),
+        canStop: !readOnly && control !== null && !isSelf && (control.type !== 'systemd' || unitsManaged),
       };
     }),
   );
@@ -329,8 +333,8 @@ export async function logs(port: number, lines = 100, snap: () => Promise<Snapsh
  * that owner's reserved ports that are free right now come first.
  */
 export async function freePorts(count = 1, preferred?: number, forOwner?: string | null): Promise<number[]> {
-  const [ss, serve, reservations] = await Promise.all([run('ss', ['-ltnH']), serveStatus(), loadReservations()]);
-  const taken = new Set(parseSs(ss.stdout).map((l) => l.port));
+  const [listeners, serve, reservations] = await Promise.all([readListeners(false), serveStatus(), loadReservations()]);
+  const taken = new Set(listeners.map((l) => l.port));
   for (const e of serve) taken.add(e.httpsPort);
   return pickFor(taken, reservations, count, preferred, forOwner);
 }
