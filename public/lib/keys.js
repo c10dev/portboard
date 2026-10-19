@@ -1,3 +1,4 @@
+// @ts-check
 // The dashboard's one shortcut registry (docs/research/rea-references.md #3, after claude.ai's command registry): every
 // shortcut is defined here once — id, keys, label, group and scope — and the same entry drives the key handler, the
 // command palette's 명령 rows (with their keys at the right) and the ⌘/ 키보드 단축키 dialog. A module registers the
@@ -185,7 +186,7 @@ const DIALOG_ID = 'keysDialog';
 /** The ⌘/ 키보드 단축키 dialog (made on first use; shell.css has its look) */
 export function showShortcuts(doc = globalThis.document) {
   const mac = isMacPlatform();
-  let d = doc.getElementById(DIALOG_ID);
+  let d = /** @type {HTMLDialogElement | null} */ (doc.getElementById(DIALOG_ID));
   if (!d) {
     d = doc.createElement('dialog');
     d.id = DIALOG_ID;

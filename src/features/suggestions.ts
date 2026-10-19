@@ -83,24 +83,34 @@ const ownUnit = cached(3600_000, async () => unitOf(await readFile('/proc/self/c
 const PTR_TTL = 10 * 60_000;
 const ptrCache = new Map<string, { at: number; name: string | null }>();
 
+/** The one call hostnames() makes of a resolver (node:dns's Resolver; a fake in test/suggestions-ptr.test.ts) */
+export interface PtrResolver {
+  reverse(ip: string): Promise<string[]>;
+}
+
+function gatewayResolver(servers: string[]): PtrResolver {
+  const resolver = new Resolver({ timeout: 1000, tries: 1 });
+  resolver.setServers(servers);
+  return resolver;
+}
+
 /**
  * PTR names for LAN addresses, asked of the default gateway only (the router is the LAN's DNS and DHCP server; a
  * public resolver would be told our LAN addresses for nothing). No answer within a second is "no name", for 10 min.
  */
-async function hostnames(ips: string[], via: string[]): Promise<Map<string, string>> {
+export async function hostnames(ips: string[], via: string[], resolverFor: (servers: string[]) => PtrResolver = gatewayResolver, now: () => number = Date.now): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   const ask = ips.filter((ip) => /^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(ip));
   if (!ask.length || !via.length) return out;
-  const resolver = new Resolver({ timeout: 1000, tries: 1 });
-  resolver.setServers(via);
+  const resolver = resolverFor(via);
   await Promise.all(ask.map(async (ip) => {
     const hit = ptrCache.get(ip);
-    if (hit && Date.now() - hit.at < PTR_TTL) {
+    if (hit && now() - hit.at < PTR_TTL) {
       if (hit.name) out.set(ip, hit.name);
       return;
     }
     const name = await resolver.reverse(ip).then((n) => n[0] ?? null, () => null);
-    ptrCache.set(ip, { at: Date.now(), name });
+    ptrCache.set(ip, { at: now(), name });
     if (name) out.set(ip, name);
   }));
   return out;

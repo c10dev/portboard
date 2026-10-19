@@ -1,3 +1,4 @@
+// @ts-check
 // fetch helpers for /api. Every write carries X-Portboard: 1 (the router refuses writes without it, docs/security.md).
 // Writes are the owner's only (#29): once the page knows this browser may not write (lib/access.js), post() answers
 // 403 with the reason instead of sending.

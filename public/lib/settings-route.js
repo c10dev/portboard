@@ -1,3 +1,4 @@
+// @ts-check
 // Where the 설정 modal is in the URL (docs/settings/): only the hash, #settings/<section>, over whatever page is open.
 // The pages that read their own hash (app.js: the selected port; service.js, dev.js, devices.js: what to show) leave a
 // settings hash alone (isSettingsHash). The old settings.html and its anchors (#remote, from the consent page and the

@@ -1,3 +1,4 @@
+// @ts-check
 // The toast stack every page has (its #toast becomes the stack on first use), and copying text with it as feedback.
 // Bottom right, 360 px; the newest toast is in front and the older ones are tucked behind it (only the front one shows
 // its text). A toast stays at least 6 s; one with an action (되돌리기) stays until it is used or closed. The same message
@@ -13,13 +14,20 @@ export const MERGE_MS = 30_000;
 /** Toasts kept at once; the oldest goes first */
 export const MAX_TOASTS = 5;
 
-/** How long a toast stays in ms: 20 s with a link, 7 s for an error, else 6 s, never under 6 s; null (until closed) with an action */
+/**
+ * How long a toast stays in ms: 20 s with a link, 7 s for an error, else 6 s, never under 6 s; null (until closed) with an action
+ * @param {{ error?: boolean, link?: unknown, ms?: number, action?: unknown }} [opts]
+ */
 export function lifetime({ error = false, link = null, ms, action = null } = {}) {
   if (action) return null;
   return Math.max(MIN_MS, ms ?? (link ? 20000 : error ? 7000 : MIN_MS));
 }
 
-/** Two toasts with the same key merge: the given key, else the text (and error); an action toast only with a key */
+/**
+ * Two toasts with the same key merge: the given key, else the text (and error); an action toast only with a key
+ * @param {string} text
+ * @param {{ error?: boolean, action?: unknown, key?: unknown }} [opts]
+ */
 export function mergeKey(text, { error = false, action = null, key } = {}) {
   if (key != null) return String(key);
   return action ? null : `${error ? 'error' : 'info'}:${text}`;

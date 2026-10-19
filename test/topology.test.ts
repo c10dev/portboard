@@ -5,6 +5,7 @@ import { parseSs } from '../src/core/ss.ts';
 import { parsePeers } from '../src/core/devices.ts';
 import { buildTopology, isPortboard } from '../src/core/topology.ts';
 import type { PortEntry, Snapshot } from '../src/core/index.ts';
+import { L } from './fixtures/locale.ts';
 
 const EST = [
   '0      0               192.168.1.205:22             192.168.1.201:62776                                              ',
@@ -133,7 +134,7 @@ test('buildTopology attributes connections to devices, LAN, docker, local proces
 test('buildTopology shows unpaired serve proxy legs without guessing a device', () => {
   const t = build(['0      0                   127.0.0.1:41000              127.0.0.1:8790', '0      0                   127.0.0.1:8790              127.0.0.1:41000'].join('\n'));
   assert.deepEqual(t.edges.map((e) => [e.from, e.port, e.via, e.servePort, e.connections]), [['serve', 8790, 'serve', 443, 1]]);
-  assert.equal(t.clients.find((d) => d.id === 'serve')?.label, 'tailscale serve · 기기 미확인');
+  assert.equal(t.clients.find((d) => d.id === 'serve')?.label, L('tailscale serve · 기기 미확인', 'tailscale serve · unknown device'));
 });
 
 test("buildTopology leaves out Portboard's own HTTP probe connections", () => {

@@ -22,6 +22,7 @@ import {
 } from '../src/core/alerts.ts';
 import { loadPrefs, setDeviceAlert, setPortPrefs } from '../src/core/prefs.ts';
 import { callTool, type Core } from '../src/mcp/tools.ts';
+import { L } from './fixtures/locale.ts';
 
 const TOPIC = 'pb-secret-topic-1234567890';
 const HOOK = 'https://hooks.example.com/services/T000/B000/XXXXSECRET';
@@ -233,7 +234,7 @@ test('checker: no channel means no sends and no outage lost', async () => {
   assert.equal(h.sent.length, 0);
   const st = await c.status();
   assert.deepEqual(st.channel, { configured: false, kinds: [] });
-  assert.deepEqual(await c.test(), { ok: false, message: '알림 채널 없음', sent: [] });
+  assert.deepEqual(await c.test(), { ok: false, message: L('알림 채널 없음', 'No alert channel'), sent: [] });
 });
 
 test('checker: a down alert that could not be delivered is retried on the next check', async () => {

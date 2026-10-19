@@ -1,3 +1,4 @@
+// @ts-check
 // DOM helpers shared by every page. el() is the workhorse; h() builds a small tree in one call; escapeHtml() is for
 // the few places that write an HTML string (insertAdjacentHTML), so data never becomes markup.
 

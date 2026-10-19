@@ -1,3 +1,4 @@
+// @ts-check
 // Sizes and ratios as short text.
 
 /** "0 B", "512 B", "3.4 KB", "12 MB" (1024-based) */

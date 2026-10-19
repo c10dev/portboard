@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { createRemoteHandler } from '../src/remote/http.ts';
 import { Store } from '../src/remote/store.ts';
 import type { RemoteCore } from '../src/remote/tools.ts';
+import { L } from './fixtures/locale.ts';
 
 let dir: string;
 let server: Server;
@@ -239,7 +240,7 @@ test('wrong approval codes are refused, logged, limited per address, and burn th
   for (let i = 0; i < 15; i++) assert.equal((await attempt(`198.51.100.${30 + Math.floor(i / 5)}`, 'AAAA-AAAA')).status, 401);
   const late = await attempt('198.51.100.40', code);
   assert.equal(late.status, 401, 'the right code no longer works after twenty wrong ones from all addresses');
-  assert.match(late.body, /유효한 승인 코드가 없습니다/);
+  assert.match(late.body, L(/유효한 승인 코드가 없습니다/, /There(&#39;|')s no valid approval code/));
   assert.ok(logs.some((l) => l.startsWith('auth-fail') && l.includes('wrong-code')));
   assert.equal(logs.join('\n').includes(code), false);
 

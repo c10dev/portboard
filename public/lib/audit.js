@@ -1,3 +1,4 @@
+// @ts-check
 // 기록 (#30): one audit entry (GET /api/audit) as a list row — when, what, on what, who, from where, and how it went.
 // Used by service.html's 기록 section and the dashboard's 최근 기록 list (features/audit.js).
 

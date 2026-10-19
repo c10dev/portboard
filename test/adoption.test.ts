@@ -27,6 +27,7 @@ import {
   type SessionRecord,
 } from '../src/core/adoption.ts';
 import { buildDigest } from '../src/core/digest.ts';
+import { L } from './fixtures/locale.ts';
 
 const FIXTURES = fileURLToPath(new URL('./fixtures/adoption/', import.meta.url));
 const NOW = Date.parse('2026-10-18T06:00:00Z'); // 15:00 KST
@@ -249,13 +250,13 @@ test('viewOf: this window and the one before, when the scan reaches back that fa
 
 test('adoptionLine, and the digest shows it as an info line', () => {
   const t = (mcp: number, inspect: number, kill: number, hardcoded: number, nudges = 0) => ({ sessions: 20, tools: 0, shell: 0, mcp, inspect, kill, hardcoded, nudges, followed: 0 });
-  assert.equal(adoptionLine(t(14, 100, 10, 300), t(4, 120, 10, 300)), '🤖 Claude 세션 20개 포트 사용: Portboard MCP 14(+10) · 직접 조회·종료 110(−20) · 고정 포트 300');
-  assert.equal(adoptionLine(t(1, 2, 0, 3, 5), null), '🤖 Claude 세션 20개 포트 사용: Portboard MCP 1 · 직접 조회·종료 2 · 고정 포트 3 · 안내 5');
+  assert.equal(adoptionLine(t(14, 100, 10, 300), t(4, 120, 10, 300)), L('🤖 Claude 세션 20개 포트 사용: Portboard MCP 14(+10) · 직접 조회·종료 110(−20) · 고정 포트 300', '🤖 Port use in 20 Claude sessions: Portboard MCP 14(+10) · direct lookups/kills 110(−20) · hard-coded ports 300'));
+  assert.equal(adoptionLine(t(1, 2, 0, 3, 5), null), L('🤖 Claude 세션 20개 포트 사용: Portboard MCP 1 · 직접 조회·종료 2 · 고정 포트 3 · 안내 5', '🤖 Port use in 20 Claude sessions: Portboard MCP 1 · direct lookups/kills 2 · hard-coded ports 3 · 5 hints'));
   const input = { watching: [], uptime: { version: 1 as const, ports: {} }, known: null, cleanup: [{ port: 3001, name: 'vite' }], worktrees: null, selfwatch: null, history: null, adoption: { current: t(1, 2, 0, 3), previous: null } };
   const d = buildDigest(input, 'weekly', { from: NOW - 7 * 86_400_000, to: NOW }, NOW);
   const line = d.lines.find((l) => l.text.startsWith('🤖'));
   assert.ok(line && !line.problem, 'an info line');
-  assert.ok(d.body.includes('🤖 Claude 세션 20개'));
+  assert.ok(d.body.includes(L('🤖 Claude 세션 20개', '🤖 Port use in 20 Claude sessions')));
   // without the source the digest is as before
   const { adoption: _a, ...without } = input;
   assert.ok(!buildDigest(without, 'weekly', { from: NOW - 7 * 86_400_000, to: NOW }, NOW).body.includes('🤖'));

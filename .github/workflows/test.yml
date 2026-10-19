@@ -23,5 +23,9 @@ jobs:
       # Runtime has zero dependencies; TypeScript and @types/node are dev-only, for the typecheck.
       - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
+      # public/ JS: only files that opt in with // @ts-check (tsconfig.public.json, CONTRIBUTING.md)
+      - run: npm run typecheck:public
       # Tests use fixtures; anything that shells out to ss, tailscale or docker must cope with them missing.
       - run: npm test
+      # The same suite in English, minus the files that assert Korean wording (scripts/test-en.ts)
+      - run: npm run test:en

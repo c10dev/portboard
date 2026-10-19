@@ -1,3 +1,4 @@
+// @ts-check
 // The ⋯ menu: a <details class="menu"> with a panel of buttons. Picking an item closes the menu first. Destructive
 // items (danger) go last, after a separator, in red. A click outside an open menu closes it; openMenuAt() opens one
 // from elsewhere (a right-click on its row, app.js). In dense rows the ⋯ only shows on hover or focus (shell.css).
@@ -15,6 +16,7 @@ export function menuOrder(items) {
 /**
  * items: [{ label, onClick, danger?, disabled?, title?, write? }]. open: start open (a re-render keeps it under the finger);
  * onToggle(open) hears every open/close, including the close an item click does.
+ * @param {{ ariaLabel: string, items: Array<{ label: string, onClick: () => void, danger?: boolean, disabled?: boolean, title?: string, write?: boolean } | null>, open?: boolean, onToggle?: (open: boolean) => void }} opts
  */
 export function moreMenu({ ariaLabel, items, open = false, onToggle = () => {} }) {
   const menu = el('details', 'menu');

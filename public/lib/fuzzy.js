@@ -1,3 +1,4 @@
+// @ts-check
 // Fuzzy matching for the command palette (lib/palette.js). Pure: no DOM, tested in node (test/ui-fuzzy.test.ts).
 // Case-insensitive; a Hangul initial consonant in the query matches any syllable that starts with it (ㅍㅌ → 포트).
 // Every space-separated word of the query must match. A word scores higher at the start of the text, at a word start,

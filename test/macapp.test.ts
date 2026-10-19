@@ -7,6 +7,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { expandShell } from '../src/core/shell.ts';
 // @ts-expect-error plain browser module, no types
 import { barReport, inMacApp, NO_DRAG, setupMacApp } from '../public/lib/macapp.js';
+import { L } from './fixtures/locale.ts';
 
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
 
@@ -76,7 +77,7 @@ test('setupMacApp: data-app, one back button, and the layout reported to the app
   setupMacApp(doc, win);
   assert.equal(doc.documentElement.dataset.app, 'mac');
   assert.equal(brandKids.length, 1);
-  assert.equal(brandKids[0].attrs['aria-label'], '뒤로');
+  assert.equal(brandKids[0].attrs['aria-label'], L('뒤로', 'Back'));
   brandKids[0].on();
   assert.equal(back, 1);
 

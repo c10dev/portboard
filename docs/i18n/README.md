@@ -62,4 +62,6 @@ The same example data in both languages, replayed against a preview:
    - `test/macapp.test.ts`: the same for the Mac app's strings files.
 
 The tests run in Korean (`PORTBOARD_LOCALE=ko` in `npm test`), so the existing assertions check that production's
-text is unchanged; the i18n tests cover English.
+text is unchanged. `npm run test:en` runs them again in English, except the files that assert Korean wording throughout
+(`KO_ONLY` in [scripts/test-en.ts](../../scripts/test-en.ts)); a test that checks a message picks its expected text
+with `L(ko, en)` from `test/fixtures/locale.ts`.

@@ -11,16 +11,30 @@ Thanks for helping. Bug reports, docs fixes and pull requests are all welcome.
 
 ```bash
 npm ci                # dev dependencies only: TypeScript and @types/node
-npm test              # node --test, no network, no root, no Tailscale needed
+npm test              # node --test, no network, no root, no Tailscale needed (in Korean: PORTBOARD_LOCALE=ko)
+npm run test:en       # the same suite in English, minus the files that assert Korean wording
 npm run typecheck
+npm run typecheck:public   # public/ JS files that start with // @ts-check
 PORTBOARD_PORT=8797 npm start   # a preview: its own state dir, alerts off (docs/setup.md#preview-instances)
 ```
+
+**Languages in tests.** `npm test` runs in Korean. `npm run test:en` ([scripts/test-en.ts](scripts/test-en.ts)) runs
+every test file in English except `KO_ONLY`, the files whose assertions are Korean wording throughout (digests, the
+setup checklist, the UI's own strings). A test that checks a message picks the expected text with
+`L(ko, en)` from `test/fixtures/locale.ts`, so both catalogs get checked; once a ko-only file does that everywhere,
+take it off the list. `npm test` itself skips nothing.
+
+**Type-checking the pages.** `tsconfig.json` covers `src` and `claude-plugin`. The page scripts in `public/` have
+their own `tsconfig.public.json` (DOM types, `checkJs` off), and a file is checked once its first line is
+`// @ts-check`. Every `public/lib` module is, except the few listed in `test/public-typecheck.test.ts`; add the pragma
+to a file you touch when it passes, and fix types with JSDoc rather than changing behaviour.
 
 Requirements: Node.js ≥ 22.18 (24 recommended), git, and Linux for running the server (`ss`, `/proc`). The tests run on
 any Linux with Node and git, including a bare container; anything that shells out to `ss`, `tailscale`, `systemctl` or
 `docker` copes with it missing.
 
-The Mac app is a Swift package: `cd mac-app && swift test` (macOS, or the `swift` Docker image on Linux).
+The Mac app is a Swift package: `cd mac-app && swift test` (macOS, or the `swift` Docker image on Linux). CI has no
+macOS job (runner cost), so run it yourself before sending a change under `mac-app/`.
 
 ## Rules of the codebase
 
@@ -43,7 +57,7 @@ The Mac app is a Swift package: `cd mac-app && swift test` (macOS, or the `swift
 ## Pull requests
 
 - One topic per pull request, on its own branch.
-- `npm test` and `npm run typecheck` pass (CI runs both).
+- `npm test`, `npm run test:en`, `npm run typecheck` and `npm run typecheck:public` pass (CI runs all four).
 - Describe what changed for the user and how you checked it, with a screenshot for UI changes (from a preview with
   example data, not your own machines).
 

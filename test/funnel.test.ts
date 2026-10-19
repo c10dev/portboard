@@ -10,6 +10,7 @@ import { buildTopology, funnelLabel } from '../src/core/topology.ts';
 import { buildUsage } from '../src/core/usage.ts';
 import { usageReport } from '../src/features/usage.ts';
 import { redactUsage } from '../src/remote/redact.ts';
+import { L } from './fixtures/locale.ts';
 
 const FUNNEL_LABEL = funnelLabel();
 const DNS = 'devbox.tail.ts.net';
@@ -87,7 +88,7 @@ test('buildTopology names unpaired proxy legs on a Funnel port as Funnel, not an
   const t = topo(true, [...leg(1), ...leg(2)]);
   assert.deepEqual(edgesOf(t), [['funnel', 8794, 'serve', 443, 2]]);
   assert.deepEqual(t.clients, [{ id: 'funnel', kind: 'funnel', label: FUNNEL_LABEL, address: null }]);
-  assert.equal(FUNNEL_LABEL, 'Funnel (공개, claude.ai 등)');
+  assert.equal(FUNNEL_LABEL, L('Funnel (공개, claude.ai 등)', 'Funnel (public: claude.ai and others)'));
 });
 
 test('buildTopology keeps Funnel legs beyond the tailnet-side connections instead of hiding them', () => {
@@ -103,7 +104,7 @@ test('buildTopology keeps Funnel legs beyond the tailnet-side connections instea
 test('buildTopology: a tailnet-only serve port still shows its unpaired legs as tailscale serve', () => {
   const t = topo(false, [...leg(1)]);
   assert.deepEqual(edgesOf(t), [['serve', 8794, 'serve', 443, 1]]);
-  assert.equal(t.clients[0].label, 'tailscale serve · 기기 미확인');
+  assert.equal(t.clients[0].label, L('tailscale serve · 기기 미확인', 'tailscale serve · unknown device'));
   assert.deepEqual(edgesOf(topo(false, [TAILNET_FRONT, ...leg(1), ...leg(2)])), [['dev:dev-mac', 8794, 'serve', 443, 1]]);
 });
 

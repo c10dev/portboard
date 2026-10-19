@@ -1,3 +1,4 @@
+// @ts-check
 // Why a list is empty, and the next step (#35): one bold line, a short explanation, buttons. Only phrasing content,
 // so the box can be the page's existing <p class="empty"> as well as a <div>. Style: .why-empty in palette.css.
 

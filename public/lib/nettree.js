@@ -1,3 +1,4 @@
+// @ts-check
 // The network tree (src/core/nettree.ts: tree on GET /api/devices and /api/usage) in words, one copy for the sidebar's
 // 기기 rows (features/nav.js) and the 기기 tab's 구조 view (features/nettree-view.js): what a row says, its badges,
 // where a click goes, and the rows in order with their depth and the groups above them (for collapsing).
