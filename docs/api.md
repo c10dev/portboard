@@ -3,7 +3,7 @@
 | Method | Path | |
 |---|---|---|
 | GET | `/api/health` | `{ok, profile, port}`: `profile` is `production` or `preview` |
-| GET | `/api/whoami` | `{login, source, owner, canWrite, reason?, device?}`: whether this caller may write (`source` `loopback`, `serve` or `direct`; `reason` in Korean; `device` `{addr, name?, id?}` for serve and direct, from `tailscale whois`) ([security.md](security.md)) |
+| GET | `/api/whoami` | `{login, source, owner, canWrite, reason?, device?, mode?, tailscale?}`: whether this caller may write (`source` `loopback`, `serve`, `direct` or `token`; `reason` in the page's language; `device` `{addr, name?, id?}` for serve, direct and token callers, from `tailscale whois`; `mode: "token"` in token mode; `tailscale: false` when Tailscale isn't running on the server) ([security.md](security.md)) |
 | GET | `/api/audit?port=&limit=50` | 기록, newest first: `entries[]` with `at`, `who`, `source`, `route`, `target`, `result` (`ok`/`denied`/`error`), `status`, `detail`; `port` keeps that port's entries, `limit` 1–500. **The owner only** (#7): anyone else gets `403 {error: "owner only", reason}` ([security.md](security.md#audit-log-c10devportboard30)) |
 | GET | `/api/ports` | Snapshot of every port (`?fresh` skips the 2 s cache, at most once per 5 s; see **Load bounds**) |
 | GET | `/api/ports/:port/logs?lines=100` | Recent logs of whatever owns the port (max 1000 lines); the owner comes from the shared 2 s snapshot |

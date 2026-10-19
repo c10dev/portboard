@@ -72,6 +72,17 @@ export function internalError(err: unknown, where: string): Reply {
   return reply(500, { error: t('errors.internal', { id: requestId }), requestId });
 }
 
+/**
+ * A Tailscale-only write (expose, unexpose, the write-device allowlist) on a machine where `tailscale status` didn't
+ * answer when the server started (#12): a 409 saying so, before anything runs. `message` too, for the port actions'
+ * {ok, message} answers.
+ */
+export function tailscaleRequired(ctx: Pick<ServerContext, 'ts'>): Reply | null {
+  if (ctx.ts.available) return null;
+  const error = t('errors.tailscaleRequired');
+  return reply(409, { ok: false, error, message: error });
+}
+
 /** Who may write, and where writes are recorded. */
 export interface WriteGuard {
   caller(req: IncomingMessage): Promise<Caller>;
@@ -168,7 +179,7 @@ export function createRouter(routes: Route[], guard?: WriteGuard) {
  * The dashboard's router: createRouter with the owner check and the audit log from the server context. server.ts
  * uses only this (a test reads server.ts to make sure).
  */
-export function appRouter(routes: Route[], ctx: Pick<ServerContext, 'owner' | 'device' | 'writeDevices' | 'audit'>) {
+export function appRouter(routes: Route[], ctx: Pick<ServerContext, 'owner' | 'device' | 'writeDevices' | 'policy' | 'audit'>) {
   return createRouter(routes, {
     caller: (req) => resolveCaller(req, ctx),
     record: (e) => record(ctx.audit, e),

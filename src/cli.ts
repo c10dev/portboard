@@ -7,6 +7,7 @@
 //   portboard agent                          this machine's read-only agent for a board elsewhere (src/agent.ts, #10)
 //   portboard install-service [--remote | --agent] [--enable] [--dry-run]
 //   portboard uninstall-service [--dry-run]
+//   portboard token                          make (or replace) the owner token for token mode (#12)
 //
 // The unit text and the argument parsing are pure (test/cli.test.ts); main() takes its paths and systemctl from deps.
 
@@ -31,15 +32,18 @@ Usage:
                                         --enable runs systemctl for you)
   portboard uninstall-service [--dry-run]
                                         disable and remove the units install-service wrote
+  portboard token                       make the owner token for token mode (printed once; running it
+                                        again replaces it, and the old one stops working)
   portboard --version | --help
 
 Docs: https://github.com/c10dev/portboard/blob/main/docs/setup.md`;
 
-export type Command = 'start' | 'remote' | 'mcp' | 'agent' | 'install-service' | 'uninstall-service' | 'version' | 'help';
-const COMMANDS: readonly string[] = ['start', 'remote', 'mcp', 'agent', 'install-service', 'uninstall-service'];
+export type Command = 'start' | 'remote' | 'mcp' | 'agent' | 'install-service' | 'uninstall-service' | 'token' | 'version' | 'help';
+const COMMANDS: readonly string[] = ['start', 'remote', 'mcp', 'agent', 'install-service', 'uninstall-service', 'token'];
 const FLAGS: Record<string, readonly string[]> = {
   'install-service': ['--remote', '--agent', '--enable', '--dry-run'],
   'uninstall-service': ['--dry-run'],
+  token: [],
 };
 
 export interface Parsed {
@@ -169,6 +173,8 @@ export interface Deps {
   platform: NodeJS.Platform;
   /** runs systemctl with these arguments; resolves false (after printing why) on failure */
   systemctl: (args: string[]) => Promise<boolean>;
+  /** owner-token.json and access.json of this profile (paths.ts; PORTBOARD_PORT picks a preview's); read when needed */
+  accessFiles?: () => Promise<{ token: string; access: string }>;
 }
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url)).replace(/\/+$/, '');
@@ -260,6 +266,25 @@ async function uninstallService(p: Parsed, d: Deps): Promise<number> {
   return foreign.length ? 1 : 0;
 }
 
+/**
+ * `portboard token` (#12): a new owner token, its sha256 written to owner-token.json (0600, atomically), the token
+ * printed once on stdout and nowhere else. Running it again is the rotation: the old token stops working at the next
+ * request (the server reads the file on every write).
+ */
+async function ownerToken(d: Deps): Promise<number> {
+  const { generateToken, loadAccessPolicy, loadTokenHash, saveTokenHash } = await import('./core/access.ts');
+  const files = await (d.accessFiles ?? (async () => (await import('./core/paths.ts')).PATHS))();
+  const before = await loadTokenHash(files.token);
+  const { token, hash } = generateToken();
+  await saveTokenHash(files.token, hash);
+  d.out(token);
+  d.err(`${before.hash ? 'Replaced the owner token (the old one no longer works)' : 'Owner token made'}; its hash is in ${files.token}.`);
+  d.err('It is shown only now. Paste it in the dashboard (Settings > Display > Owner token) or send it as "Authorization: Bearer <token>".');
+  const policy = await loadAccessPolicy(files.access, files.token, d.env);
+  if (policy.mode !== 'token') d.err('Token mode is off: set "mode": "token" in access.json or PORTBOARD_ACCESS_MODE=token (docs/setup.md#without-tailscale).');
+  return 0;
+}
+
 /** Runs one server module as if it were started with `node <entry> ...rest` (they read process.argv themselves) */
 function asEntry(entry: string, rest: readonly string[]) {
   process.argv = [process.argv[0], join(ROOT, entry), ...rest];
@@ -285,6 +310,8 @@ export async function main(argv: readonly string[], deps: Partial<Deps> = {}): P
       return installService(p, d);
     case 'uninstall-service':
       return uninstallService(p, d);
+    case 'token':
+      return ownerToken(d);
     // The servers keep running after these imports resolve (listeners, readline); main's exit code is not used.
     case 'start':
       asEntry('src/server.ts', p.rest);

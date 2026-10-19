@@ -40,6 +40,7 @@ const ctx = () =>
     owner: async () => OWNER,
     device: async (addr: string) => devices.get(addr) ?? { addr },
     writeDevices: async () => allow,
+    ts: { available: true },
   }) as any;
 
 // The dashboard's router with the real owner check (access.ts) and an audit log the test can read.

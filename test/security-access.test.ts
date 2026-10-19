@@ -19,6 +19,7 @@ import {
   parseWhois,
   resolveCaller,
   restrictToDevices,
+  TAILSCALE_POLICY,
   type Device,
   type WriteDevices,
 } from '../src/core/access.ts';
@@ -213,7 +214,7 @@ function request(method: string, remoteAddress: string, headers: Record<string, 
 }
 
 function context(audit: AuditLog, allow: WriteDevices | null) {
-  return { owner: async () => OWNER, device: async (a: string) => DEVICES[a] ?? { addr: a }, writeDevices: async () => allow, audit } as unknown as ServerContext;
+  return { owner: async () => OWNER, device: async (a: string) => DEVICES[a] ?? { addr: a }, writeDevices: async () => allow, policy: async () => TAILSCALE_POLICY, ts: { available: true }, audit } as unknown as ServerContext;
 }
 
 const ROUTES: Route[] = [

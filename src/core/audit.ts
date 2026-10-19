@@ -124,10 +124,13 @@ export function targetOf(params: { port?: number; device?: string } | null, body
   return t;
 }
 
-/** "who" for a caller: login through serve, "local" on this machine, the address of a direct caller. */
+/**
+ * "who" for a caller: login through serve, "local" on this machine, the address of a direct caller or of an owner-token
+ * caller from elsewhere (#12; the source says `token`).
+ */
 export function whoOf(c: Caller): string {
   if (c.login) return clean(c.login, 200);
-  if (c.source === 'direct') return clean(c.addr ?? 'unknown', 60);
+  if (c.source === 'direct' || (c.source === 'token' && c.addr)) return clean(c.addr ?? 'unknown', 60);
   if (c.source === 'serve') return t('auditMsg.noUser');
   return 'local';
 }

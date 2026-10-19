@@ -18,7 +18,7 @@ import { agents } from '../core/agents.ts';
 import { pvePorts } from '../core/pveports.ts';
 import { winPorts } from '../core/winports.ts';
 import { createSelfWatch, type SelfWatch } from '../core/selfwatch.ts';
-import { deviceResolver, loadWriteDevices, ownerLogin, type Device, type WriteDevices } from '../core/access.ts';
+import { deviceResolver, loadAccessPolicy, loadWriteDevices, ownerLogin, type AccessPolicy, type Device, type WriteDevices } from '../core/access.ts';
 import { AuditLog } from '../core/audit.ts';
 import { cachedValue } from '../core/throttle.ts';
 import type { Paths } from '../core/paths.ts';
@@ -62,6 +62,8 @@ export interface ServerContext {
   device(addr: string): Promise<Device>;
   /** The write-device allowlist (access.json writeDevices + PORTBOARD_WRITE_DEVICES), null when not set */
   writeDevices(): Promise<WriteDevices | null>;
+  /** Token mode (#12): access.json's mode and requireTokenOnLoopback, their env overrides and the owner token's hash */
+  policy(): Promise<AccessPolicy>;
   /** 기록: every write through the routes (#30) */
   audit: AuditLog;
 }
@@ -131,6 +133,7 @@ export async function createServerContext(paths: Paths, ts: TailscaleInfo): Prom
     owner: () => ownerLogin(),
     device: deviceResolver(),
     writeDevices: () => loadWriteDevices(paths.access),
+    policy: () => loadAccessPolicy(paths.access, paths.token),
     audit: new AuditLog(paths.audit),
   };
 }

@@ -8,7 +8,7 @@
 //                                      owner login, the current allowlist). Refused (409) when the list leaves out the
 //                                      device the request comes from, so nobody locks themselves out; loopback stays
 //                                      the owner whatever the list says. access.json is written 0600, atomically,
-//                                      keeping its other keys.
+//                                      keeping its other keys. 409 when Tailscale isn't running here (#12).
 //
 // PORTBOARD_WRITE_DEVICES (env) is merged in by loadWriteDevices and shown, never written. A preview has its own
 // access.json (paths.ts), so saving there never changes production.
@@ -17,7 +17,7 @@ import { homedir } from 'node:os';
 import { checkWriteDevices, deviceAllowed, deviceLabel, loadWriteDevices, resolveCaller, saveWriteDevices, type Caller } from '../core/access.ts';
 import { runShared } from '../core/exec.ts';
 import { ownerDevicesFromStatus } from '../core/onboarding.ts';
-import { ok, reply } from './router.ts';
+import { ok, reply, tailscaleRequired } from './router.ts';
 import type { ServerContext } from './context.ts';
 import type { FeatureModule } from './types.ts';
 import { t } from '../core/i18n.ts';
@@ -100,6 +100,9 @@ export const writeDevicesFeature: FeatureModule = {
       write: true,
       body: { limit: 8192 },
       async handler({ body, req }, ctx) {
+        // a list of tailnet devices means nothing without Tailscale (#12)
+        const no = tailscaleRequired(ctx);
+        if (no) return no;
         const list = checkWriteDevices((body as { writeDevices?: unknown } | null)?.writeDevices);
         if (typeof list === 'string') return reply(400, { error: list });
         const why = lockoutReason(await resolveCaller(req, ctx), list, envList(process.env));

@@ -2,6 +2,7 @@
 // 기록 (#30): one audit entry (GET /api/audit) as a list row — when, what, on what, who, from where, and how it went.
 // Used by service.html's 기록 section and the dashboard's 최근 기록 list (features/audit.js).
 
+import { getInit } from './api.js';
 import { badge } from './badge.js';
 import { el } from './dom.js';
 import { t } from './i18n.js';
@@ -45,7 +46,7 @@ const ACTIONS = {
   'mcp set_digest': 'audit.action.digest',
 };
 const FIELDS = { label: 'audit.field.name', pinned: 'audit.field.pinned', hidden: 'audit.field.hidden', alert: 'audit.field.alert', time: 'audit.field.time', name: 'audit.field.name', note: 'audit.field.note' };
-const SOURCES = { serve: 'tailnet', loopback: t('audit.source.loopback'), direct: t('audit.source.direct'), mcp: 'MCP' };
+const SOURCES = { serve: 'tailnet', loopback: t('audit.source.loopback'), direct: t('audit.source.direct'), mcp: 'MCP', token: t('audit.source.token') };
 const RESULTS = { ok: ['audit.result.ok', 'ok'], denied: ['audit.result.denied', 'bad'], error: ['audit.result.error', 'warn'] };
 
 const field = (k) => (FIELDS[k] ? t(FIELDS[k]) : k);
@@ -108,7 +109,8 @@ export function auditRow(e, opts = {}) {
  */
 export async function loadAudit(path) {
   try {
-    const res = await fetch(path);
+    // the owner token (token mode, #12) makes this browser the owner here too
+    const res = await fetch(path, getInit());
     if (res.status === 403) return { ownerOnly: true };
     return res.ok ? await res.json() : null;
   } catch {

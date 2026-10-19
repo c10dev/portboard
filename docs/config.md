@@ -157,6 +157,28 @@ The following never produce a notice:
 
 A look whose `ss` returned nothing changes nothing. The events are kept in memory for the toast and the Mac app: `GET /api/new-ports` ([api.md](api.md#new-ports)).
 
+## Access: `access.json`
+
+Who may change things ([security.md](security.md)). A separate file because it is a security setting: it must be mode
+0600 (a file group or others can read or write is refused), and it is read on every write, so an edit applies at once.
+
+- **Where it is:** `~/.config/portboard/access.json` (a preview: its own config dir). `PORTBOARD_ACCESS` moves it.
+- **The code:** `src/core/access.ts` (`loadWriteDevices`, `loadAccessPolicy`).
+
+| Key | Type | Default | Env | Meaning |
+|---|---|---|---|---|
+| `writeDevices` | string array | unset (every device logged in as the owner) | `PORTBOARD_WRITE_DEVICES` (merged) | Tailscale only: the devices that may write through `tailscale serve` ([security.md](security.md#write-devices)); 설정 › 쓰기 허용 기기 writes it |
+| `mode` | `"tailscale"` or `"token"` | `"tailscale"` | `PORTBOARD_ACCESS_MODE` (wins) | `"token"`: a request with the owner token (`Authorization: Bearer …`) may write from any address but Funnel ([token mode](security.md#token-mode-c10devportboard12)). Any other value is reported and counts as `"tailscale"` |
+| `requireTokenOnLoopback` | boolean | `false` | `PORTBOARD_REQUIRE_TOKEN_ON_LOOPBACK=1` (can only turn it on) | Token mode only: processes on this machine (and `tailscale serve`) need the token too |
+
+The owner token itself is never stored: `portboard token` writes its sha256 to `~/.config/portboard/owner-token.json`
+(`PORTBOARD_TOKEN_FILE`; 0600, `{"sha256": "…", "created": "…"}`) and prints the token once. A file that isn't 0600
+or isn't that shape refuses every token until `portboard token` runs again.
+
+```json
+{ "mode": "token", "requireTokenOnLoopback": false }
+```
+
 ## Device health: `devhealth.json`
 
 The thresholds of the device health alerts ([operations.md](operations.md#device-health-alerts)). A separate file, read on every check and never written; every key is optional, and a missing, wrong-typed or out-of-range key keeps its default.

@@ -112,6 +112,8 @@ function context(over: Record<string, unknown> = {}) {
       acknowledge: async (key: string) => (acked.push(key), key === 'all' ? 3 : 1),
     },
     alerts: { test: async () => ({ ok: false, message: 'no channel', sent: [] }) },
+    // Tailscale is running (the Tailscale-only routes answer 409 before anything else without it, #12)
+    ts: { available: true },
     ...over,
   };
   return { ctx: ctx as any, invalidated, acked };

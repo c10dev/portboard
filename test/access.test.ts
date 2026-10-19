@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { classify, decodeHeader, localOnly, ownerFromStatus, ownerLogin, MCP_CALLER, type Caller, type Device, type WriteDevices } from '../src/core/access.ts';
+import { classify, decodeHeader, localOnly, ownerFromStatus, ownerLogin, MCP_CALLER, TAILSCALE_POLICY, type AccessPolicy, type Caller, type Device, type WriteDevices } from '../src/core/access.ts';
 import { AuditLog, clean, targetOf, whoOf, type AuditEntry } from '../src/core/audit.ts';
 import { appRouter } from '../src/features/router.ts';
 import { REGISTRY, FEATURES } from '../src/features/registry.ts';
@@ -165,10 +165,10 @@ const DEVICES: Record<string, Device> = {
   '100.64.0.9': { addr: '100.64.0.9', name: 'docker-vm', id: 'nDockerStbl1CNTRL' },
 };
 
-function context(dir = tmp(), allow: WriteDevices | null = null) {
+function context(dir = tmp(), allow: WriteDevices | null = null, policy: AccessPolicy = TAILSCALE_POLICY, tailscale = true) {
   const audit = new AuditLog(join(dir, 'audit.jsonl'));
-  // Anything but owner/device/writeDevices/audit throws: a denied write never reaches its handler.
-  const fake = { owner: async () => OWNER, device: async (addr: string) => DEVICES[addr] ?? { addr }, writeDevices: async () => allow, audit };
+  // Anything but owner/device/writeDevices/policy/ts/audit throws: a denied write never reaches its handler.
+  const fake = { owner: async () => OWNER, device: async (addr: string) => DEVICES[addr] ?? { addr }, writeDevices: async () => allow, policy: async () => policy, ts: { available: tailscale }, audit };
   const ctx = new Proxy(fake as Record<string, unknown>, {
     get: (t, k) => (k in t ? t[k as string] : assert.fail(`handler touched ctx.${String(k)}`)),
   }) as unknown as ServerContext;
