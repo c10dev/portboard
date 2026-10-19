@@ -1,0 +1,224 @@
+/* 설정 (docs/settings/): the modal over the app (lib/modal.js .pb-modal, features/settings-modal.js .st), its rows and
+   controls (lib/controls.js .st-row, .ctl-*), and what the section scripts draw inside (.set-*, .ac, .wd-*).
+   Measured from the Claude app's settings modal: at most 1024 × 800 and 16 px from the window, 12 px corners, a
+   black 40 % backdrop (50 % in dark) without blur; a 212 px menu of 32 px items; content 812 px wide (rows 764 px);
+   rows 57 px, 69 px with a description, 1 px dividers at 5 %; section titles 15 px. Loaded by settings-modal.js. */
+
+:root {
+  --st-divider: rgb(0 0 0 / 5%);
+  --st-hover: rgb(0 0 0 / 4%);
+  --st-current: rgb(0 0 0 / 6%);
+  --st-seg-bg: rgb(0 0 0 / 5%);
+  --st-seg-on: var(--surface);
+  --st-backdrop: rgb(0 0 0 / 40%);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --st-divider: rgb(255 255 255 / 7%);
+    --st-hover: rgb(255 255 255 / 5%);
+    --st-current: rgb(255 255 255 / 8%);
+    --st-seg-bg: rgb(255 255 255 / 6%);
+    --st-seg-on: #3a3a37;
+    --st-backdrop: rgb(0 0 0 / 50%);
+  }
+}
+
+/* ---- the modal (lib/modal.js) ---- */
+html[data-modal] { overflow: hidden; }
+.pb-modal {
+  box-sizing: border-box;
+  width: min(1024px, calc(100vw - 32px));
+  height: min(800px, calc(100vh - 32px));
+  height: min(800px, calc(100dvh - 32px));
+  max-width: none; max-height: none; margin: auto; padding: 0; border: 0; border-radius: 12px; overflow: hidden;
+  background: var(--surface); color: var(--text); font-size: var(--fs-4);
+  box-shadow: 0 0 0 0.5px var(--line), 0 24px 64px rgb(0 0 0 / .22);
+}
+.pb-modal::backdrop { background: var(--st-backdrop); }
+.pb-modal:focus { outline: none; }
+
+/* ---- 설정: menu | content ---- */
+.st { position: relative; display: grid; grid-template-columns: 212px minmax(0, 1fr); height: 100%; }
+.st-side { display: flex; flex-direction: column; gap: 2px; min-height: 0; padding: 18px 8px 16px; overflow: auto; background: var(--side-bg); box-shadow: inset -0.5px 0 0 var(--line); }
+.st-title { margin: 0 0 10px; padding: 0 10px; font-size: 18px; font-weight: 600; line-height: 28px; }
+.st-nav { display: flex; flex-direction: column; gap: 1px; }
+.st-tab {
+  display: flex; align-items: center; height: 32px; padding: 0 10px; border-radius: 8px; box-sizing: border-box;
+  color: var(--text-2); font-size: 14px; text-decoration: none; white-space: nowrap;
+}
+.st-tab:hover { background: var(--st-hover); color: var(--text); }
+.st-tab[aria-current] { background: var(--st-current); color: var(--text); font-weight: 500; }
+.st-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.st-content { min-width: 0; min-height: 0; overflow: auto; padding: 22px 24px 40px; overscroll-behavior: contain; }
+.st-content:focus { outline: none; }
+.st-content a:not(.btn) { color: var(--accent); text-decoration: none; }
+.st-content a:not(.btn):hover { text-decoration: underline; }
+.st-close { position: absolute; top: 12px; right: 12px; z-index: 1; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; color: var(--text-2); }
+.st-close:hover { background: var(--st-hover); color: var(--text); }
+
+.st-sec[hidden] { display: none; }
+.st-sec-title { margin: 0 44px 4px 0; font-size: 15px; font-weight: 600; line-height: 24px; }
+.st-sec h3:not(.st-sec-title) { margin: 20px 0 4px; font-size: 14px; font-weight: 600; }
+.set-sub { color: var(--text-2); font-size: 13px; font-weight: 400; margin-left: 6px; }
+.set-lead { margin: 0 0 12px; color: var(--text-2); font-size: 13px; line-height: 1.5; }
+.set-lead b { color: var(--text); font-weight: 600; }
+.set-lead code { font: 12px var(--mono); }
+.set-note { margin: 8px 0 0; color: var(--text-2); font-size: 13px; line-height: 1.5; }
+.set-ro { margin: 0 0 12px; padding: 7px 10px; border-radius: 8px; font-size: 13px; background: var(--warn-bg); color: var(--warn); }
+.set-ro[hidden] { display: none; }
+.set-body > :first-child { margin-top: 0; }
+
+/* ---- rows (lib/controls.js row(), and the lists the sections draw) ---- */
+.st-rows { display: flex; flex-direction: column; list-style: none; margin: 0; padding: 0; }
+.st-row {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 16px;
+  box-sizing: border-box; min-height: 57px; padding: 10px 0;
+}
+.st-row.has-desc, .st-row:has(.st-row-desc) { min-height: 69px; }
+.st-row + .st-row { border-top: 1px solid var(--st-divider); }
+/* the label never gets crushed: under ~240 px beside the control, the control wraps under it */
+.st-row-text { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.st-row-label { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: 14px; line-height: 20px; color: var(--text); }
+.st-row-label strong { font-weight: 500; }
+.st-row-desc { font-size: 13px; line-height: 18px; color: var(--text-2); overflow-wrap: anywhere; }
+.st-row-ctl { flex: 0 1 auto; min-width: 0; max-width: 100%; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+label.st-row-text { cursor: pointer; }
+
+/* ---- controls (lib/controls.js) ---- */
+/* toggle: 36 × 20, a real checkbox over the track (Portboard's accent, not Claude's blue) */
+.ctl-toggle { position: relative; display: inline-flex; flex: none; width: 36px; height: 20px; cursor: pointer; }
+.ctl-toggle-input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }
+.ctl-toggle-track { position: relative; width: 36px; height: 20px; border-radius: 999px; background: color-mix(in srgb, var(--text) 20%, transparent); transition: background-color .15s ease; }
+.ctl-toggle-track::after {
+  content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / .25); transition: transform .15s ease;
+}
+.ctl-toggle-input:checked + .ctl-toggle-track { background: var(--accent); }
+.ctl-toggle-input:checked + .ctl-toggle-track::after { transform: translateX(16px); }
+.ctl-toggle-input:focus-visible + .ctl-toggle-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ctl-toggle-input:disabled { cursor: default; }
+.ctl-toggle-input:disabled + .ctl-toggle-track { opacity: .55; }
+/* read-only (style.css greys every [data-write] to .45): the switch is greyed once, by its wrapper; the checkbox over
+   the track stays invisible */
+html[data-readonly] .ctl-toggle-input[data-write] { opacity: 0; }
+
+/* segmented: 32 px, only the picked segment raised; segments shrink (ellipsis) before the row overflows */
+.ctl-seg { display: inline-flex; box-sizing: border-box; height: 32px; max-width: 100%; min-width: 0; padding: 2px; gap: 2px; border-radius: 8px; background: var(--st-seg-bg); }
+.ctl-seg-opt {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 1 1 auto; min-width: 0;
+  padding: 0 12px; border-radius: 6px; color: var(--text-2); font-size: 13px; cursor: pointer; white-space: nowrap;
+}
+.ctl-seg-opt > span { overflow: hidden; text-overflow: ellipsis; }
+.ctl-seg-input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.ctl-seg-opt:hover { color: var(--text); }
+.ctl-seg-opt:has(.ctl-seg-input:checked) { background: var(--st-seg-on); color: var(--text); font-weight: 500; box-shadow: 0 0 0 0.5px var(--line), 0 1px 2px rgb(0 0 0 / .1); }
+.ctl-seg-opt:has(.ctl-seg-input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ctl-seg.disabled { opacity: .55; }
+
+/* menu-select: a borderless text button with a chevron; the list is fixed so the scrolling content can't clip it */
+.ctl-menu { position: relative; display: inline-flex; min-width: 0; max-width: 100%; }
+.ctl-menu-btn {
+  display: inline-flex; align-items: center; gap: 4px; box-sizing: border-box; height: 32px; min-width: 0; max-width: 100%;
+  padding: 0 6px 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--text);
+  font: inherit; font-size: 14px; cursor: pointer;
+}
+.ctl-menu-btn:hover:not(:disabled), .ctl-menu-btn[aria-expanded="true"] { background: var(--st-hover); }
+.ctl-menu-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+.ctl-menu-btn:disabled { opacity: .55; cursor: default; }
+.ctl-menu-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctl-menu-btn svg { flex: none; color: var(--text-3); }
+.ctl-menu-list {
+  position: fixed; z-index: 60; box-sizing: border-box; margin: 0; padding: 4px; list-style: none;
+  max-width: min(360px, calc(100vw - 32px)); max-height: min(50vh, 360px); overflow: auto;
+  background: var(--surface); border-radius: 10px; box-shadow: 0 0 0 0.5px var(--line), 0 10px 28px rgb(0 0 0 / .18);
+}
+.ctl-menu-opt { display: flex; flex-direction: column; gap: 1px; padding: 7px 28px 7px 10px; border-radius: 6px; position: relative; cursor: pointer; font-size: 14px; }
+.ctl-menu-opt:hover, .ctl-menu-opt:focus { background: var(--st-hover); outline: none; }
+.ctl-menu-opt:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.ctl-menu-opt[aria-selected="true"]::after { content: '✓'; position: absolute; right: 10px; top: 7px; color: var(--accent); font-size: 13px; }
+.ctl-menu-desc { font-size: 12.5px; line-height: 1.4; color: var(--text-2); }
+
+.ctl-text, .ctl-time {
+  box-sizing: border-box; height: 32px; max-width: 100%; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); color: var(--text); font: inherit; font-size: 14px;
+}
+.ctl-text { width: min(320px, 100%); }
+.ctl-text:focus, .ctl-time:focus { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 0; border-color: var(--accent); }
+.ctl-group { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; max-width: 100%; font-size: 13px; }
+
+/* ---- what the sections draw ---- */
+/* 시작하기, 비밀값, 포트 규칙, 알림 채널: a list of rows (a status dot, the title and its state, the detail under it) */
+.set-list { list-style: none; margin: 0; padding: 0; }
+.set-list > li {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 10px; align-items: baseline;
+  box-sizing: border-box; min-height: 57px; padding: 12px 0; font-size: 14px;
+}
+.set-list > li:has(.set-detail) { min-height: 69px; }
+.set-list > li + li { border-top: 1px solid var(--st-divider); }
+.set-list > li > strong { font-weight: 500; }
+.set-list .dot { align-self: center; }
+.set-list .dot.ok { background: var(--ok); }
+.set-list .dot.warn { background: var(--warn); }
+.set-list .dot.todo { background: var(--danger); }
+.set-list .set-detail { grid-column: 2 / -1; margin: 0; color: var(--text-2); font-size: 13px; line-height: 18px; }
+.set-list .set-extra { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin-top: 4px; font-size: 13px; }
+.set-list details > summary { cursor: pointer; }
+.set-body > details { margin-top: 12px; }
+.set-body > details > summary { margin: 0; padding: 6px 0; cursor: pointer; }
+.set-state { font-size: 12.5px; white-space: nowrap; }
+.set-state.ok { color: var(--ok); }
+.set-state.warn { color: var(--warn); }
+.set-state.todo { color: var(--danger); }
+.set-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.set-cmd { font: 12px var(--mono); padding: 2px 6px; border-radius: 6px; background: var(--neutral-bg); overflow-wrap: anywhere; }
+
+/* 정보: label | value rows */
+.set-kv { display: grid; grid-template-columns: minmax(96px, max-content) minmax(0, 1fr); gap: 0; margin: 0; font-size: 14px; }
+.set-kv dt, .set-kv dd { box-sizing: border-box; min-height: 57px; padding: 17px 0 12px; }
+.set-kv dt { color: var(--text-2); }
+.set-kv dd { margin: 0; padding-left: 20px; min-width: 0; overflow-wrap: anywhere; }
+.set-kv dt:nth-of-type(n + 2), .set-kv dt:nth-of-type(n + 2) + dd { border-top: 1px solid var(--st-divider); }
+.set-kv code, .set-url code { font: 12.5px var(--mono); }
+
+/* 원격 커넥터 */
+.set-url { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.set-url code { font-size: 14px; overflow-wrap: anywhere; }
+.set-howto { margin: 8px 0 0; padding-left: 1.2em; color: var(--text-2); font-size: 13px; }
+.set-howto li { margin: 2px 0; }
+.set-howto b { color: var(--text); font-weight: 600; }
+.ac { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--st-divider); border-radius: 10px; background: color-mix(in srgb, var(--side-bg) 60%, var(--surface)); }
+.ac h3 { margin-top: 0; }
+.ac-code { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 10px 0 4px; }
+.ac-code code { font: 600 30px/1.1 var(--mono); letter-spacing: .12em; padding: 6px 12px; border-radius: 8px; background: var(--neutral-bg); user-select: all; }
+.ac-code.expired code { opacity: .4; text-decoration: line-through; }
+.ac-timer { font: 600 14px var(--mono); color: var(--accent); }
+.ac-code.expired .ac-timer { color: var(--text-2); }
+.ac-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+
+/* 쓰기 허용 기기 */
+.wd-list { margin-bottom: 4px; }
+.wd-os { color: var(--text-2); font-size: 12.5px; }
+
+/* 알림: the digest rows (features/digest.js) */
+.st-row .digest-actions { margin: 0; }
+.st-rows .digest-preview { margin: 4px 0 8px; }
+
+/* ---- under 768 px: the menu becomes tabs under the title; at 390 px still a card 16 px from the edges ---- */
+@media (max-width: 767.98px) {
+  .st { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .st-side { gap: 8px; padding: 14px 16px 0; overflow: visible; background: var(--surface); box-shadow: inset 0 -1px 0 var(--st-divider); }
+  .st-title { margin: 0; padding: 0 40px 0 0; font-size: 17px; }
+  .st-nav { flex-direction: row; gap: 2px; margin: 0 -16px; padding: 0 16px 8px; overflow-x: auto; scrollbar-width: none; }
+  .st-nav::-webkit-scrollbar { display: none; }
+  .st-tab { flex: none; height: 32px; padding: 0 12px; }
+  .st-content { padding: 16px 16px 32px; }
+  .st-close { top: 10px; right: 10px; }
+  .st-sec-title { margin-right: 0; }
+  .ctl-text, .ctl-time { font-size: 16px; }
+}
+@media (max-width: 560px) {
+  .set-kv { grid-template-columns: minmax(0, 1fr); }
+  .set-kv dt { min-height: 0; padding: 12px 0 0; }
+  .set-kv dd { min-height: 0; padding: 2px 0 12px; border-top: 0 !important; }
+  .ac-code code { font-size: 24px; }
+}

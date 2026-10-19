@@ -1,0 +1,1 @@
+{"parentUuid":null,"type":"assistant","uuid":"a-1","timestamp":"2026-09-01T00:00:00.000Z","sessionId":"s","message":{"role":"assistant","content":[{"type":"tool_use","id":"o1","name":"Bash","input":{"command":"ss -ltnp","description":"x"}}]}}

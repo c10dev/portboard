@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>기기 · Portboard</title>
+  <meta name="theme-color" content="#2f6feb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Portboard">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="shell.css">
+  <link rel="stylesheet" href="devices.css">
+  <!--#shell:boot-->
+</head>
+<body data-view="devices">
+  <!-- The shell: the server fills in each shell marker (src/core/shell.ts) and lib/shell.js wires it. -->
+  <header class="top">
+    <div class="brand">
+      <!--#shell:nav-->
+      <h1 id="shellTitle" class="shell-title"><!--#shell:view--><span class="t-ctx" id="shellCtx"></span></h1>
+    </div>
+    <!--#shell:tabs-->
+    <div class="controls">
+      <!--#shell:palette-->
+      <button id="alertsBtn" type="button" class="alerts-btn" title="다운 알림" aria-label="다운 알림">🔔<span id="alertsCount" class="count-pill"></span></button>
+      <button id="refresh" type="button" title="새로고침">↻</button>
+      <!--#shell:insp-toggle-->
+    </div>
+  </header>
+  <div class="shell">
+    <!--#shell:sidebar-->
+    <div class="shell-main" id="shellMain">
+    <main class="dev-main" data-wait="page">
+      <h2 id="headline" class="headline"></h2>
+      <p id="status" class="status" aria-live="polite"></p>
+
+      <section id="newDevs" class="new-devs" aria-label="새 기기" hidden></section>
+
+      <div class="view-switch" role="group" aria-label="보기">
+        <button type="button" id="viewTree" class="seg" data-view-mode="tree" aria-pressed="true">구조</button>
+        <button type="button" id="viewCards" class="seg" data-view-mode="cards" aria-pressed="false">카드</button>
+      </div>
+      <section id="netTree" class="net-tree tree-only" aria-label="네트워크 구조"></section>
+
+      <section id="active" class="cards cards-only" aria-label="지금 쓰는 기기"></section>
+
+      <p id="pveHint" class="pve-hint" hidden></p>
+      <p id="pvePortsHint" class="pve-hint" hidden></p>
+      <p id="winPortsHint" class="pve-hint" hidden></p>
+
+      <h3 class="sec-h cards-only">이 서버</h3>
+      <section id="self" class="cards one cards-only" aria-label="이 서버"></section>
+
+      <h3 class="sec-h cards-only" id="idleH"></h3>
+      <section id="idle" class="idle-chips cards-only" aria-label="지금 안 쓰는 기기"></section>
+
+      <h3 class="sec-h" id="idleSvcH"></h3>
+      <ul id="idleSvcList" class="uses idle-svc-list" aria-label="아무도 안 쓰는 서비스"></ul>
+      <a id="idleSvc" class="idle-svc" href="./">서비스 탭에서 보기 →</a>
+
+      <h3 class="sec-h">새 기기 알림</h3>
+      <section id="ndSettings" class="nd-settings" aria-label="새 기기 알림 설정"></section>
+
+      <p class="pve-hint"><a href="settings.html#remote">원격 커넥터(claude.ai · ChatGPT)는 설정 탭으로 옮겼어요 →</a></p>
+    </main>
+    </div>
+    <!--#shell:aside-->
+  </div>
+
+  <aside id="detail" class="detail" hidden aria-live="polite">
+    <button type="button" class="detail-close" id="detailClose" aria-label="닫기">×</button>
+    <div id="detailBody"></div>
+  </aside>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="devices.js" type="module"></script>
+</body>
+</html>

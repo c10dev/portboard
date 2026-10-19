@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Portboard</title>
+  <meta name="theme-color" content="#2f6feb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Portboard">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="shell.css">
+  <!--#shell:boot-->
+</head>
+<body data-view="services" data-inspector>
+  <!-- The shell: the server fills in each shell marker (src/core/shell.ts) and lib/shell.js wires it. -->
+  <header class="top">
+    <div class="brand">
+      <!--#shell:nav-->
+      <h1 id="shellTitle" class="shell-title"><!--#shell:view--><span class="t-ctx" id="shellCtx"><span id="host" class="host">이 서버 <!--#shell:hostname--></span><select id="hostSel" title="어느 기기의 포트를 볼지 (다른 기기는 compute-pool이 알려 준 목록)" aria-label="기기" hidden></select></span></h1>
+    </div>
+    <!--#shell:tabs-->
+    <div class="controls">
+      <!--#shell:palette-->
+      <div class="filter-pop" id="filterPop">
+        <!--#shell:filter-->
+        <div class="menu-panel filter-panel" id="filterPanel">
+          <input id="q" type="search" placeholder="포트, 이름, 프로젝트 검색" autocomplete="off">
+          <label class="check" title="지금 다른 기기나 이 서버의 프로세스가 연결해 쓰고 있는 포트만"><input id="inUse" type="checkbox"> 지금 사용 중<span id="inUseCount" class="count-pill"></span></label>
+          <label class="check" title="시스템·임시·숨긴 포트도 보기"><input id="showSystem" type="checkbox"> 전체</label>
+        </div>
+      </div>
+      <button id="alertsBtn" type="button" class="alerts-btn" title="다운 알림" aria-label="다운 알림">🔔<span id="alertsCount" class="count-pill"></span></button>
+      <button id="refresh" type="button" title="새로고침">↻</button>
+      <!--#shell:insp-toggle-->
+    </div>
+  </header>
+  <div class="shell">
+    <!--#shell:sidebar-->
+    <div class="shell-main" id="shellMain">
+    <p id="status" class="status" aria-live="polite"></p>
+
+    <main data-wait="page owners alerts">
+      <section id="devices" class="devices" aria-label="기기 상태" hidden></section>
+      <ul id="list" class="list"></ul>
+      <section id="remote" class="remote" aria-live="polite" hidden></section>
+      <p id="empty" class="empty" hidden>표시할 포트가 없어요.</p>
+    </main>
+    </div>
+    <!--#shell:aside-->
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <dialog id="logs" class="logs">
+    <header>
+      <div>
+        <strong id="logsTitle"></strong>
+        <div id="logsSource" class="logs-source"></div>
+      </div>
+      <div class="logs-controls">
+        <select id="logsLines" aria-label="줄 수">
+          <option value="100">100줄</option>
+          <option value="300">300줄</option>
+          <option value="1000">1000줄</option>
+        </select>
+        <button type="button" id="logsRefresh" title="새로고침">↻</button>
+        <button type="button" id="logsClose">닫기</button>
+      </div>
+    </header>
+    <pre id="logsBody"></pre>
+  </dialog>
+
+  <template id="row">
+    <li class="row">
+      <div class="port"></div>
+      <div class="main">
+        <div class="name-line">
+          <button type="button" class="pin" aria-label="고정" data-write="1"></button>
+          <a class="name"></a>
+        </div>
+        <div class="meta"></div>
+        <div class="badges"></div>
+      </div>
+      <div class="actions"></div>
+      <details class="more">
+        <summary>상세</summary>
+        <dl></dl>
+      </details>
+    </li>
+  </template>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>

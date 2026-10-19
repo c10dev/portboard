@@ -1,0 +1,442 @@
+/* The dashboard shell (lib/shell.js, docs/layout/): one 48 px bar, a 288 px left sidebar, the main column (centred,
+   808 px at most; 960 on the 기기 tab) and, on pages that have one, a 300 px right inspector. Sizes and colours follow a
+   measured teardown of the Claude desktop app (docs/layout/README.md). Widths: ≥1200 the inspector is a column (288 +
+   8 + 808 + 300 fits from 1404); under 1200 a right sheet; under 768 no column padding and 16 px inputs; under 704
+   the sidebar is a drawer; at 640 and below (phone) the bar wraps into the old mobile layout and rows show everything.
+   The colours and the type scale are tokens in style.css. */
+
+:root {
+  --bar-h: 48px;
+  --side-w: 288px;
+  --insp-w: 0px;
+  --col-max: 808px;
+  --col-wide: 960px;
+  --col-pad: 20px;
+}
+:root[data-side="closed"] { --side-w: 0px; }
+:root[data-insp="open"] { --insp-w: 300px; }
+
+/* ---- the bar ---- */
+.top {
+  position: sticky; top: 0; z-index: 30;
+  display: flex; flex-wrap: nowrap; gap: 8px; align-items: center; justify-content: space-between;
+  box-sizing: border-box; min-height: var(--bar-h); padding: 6px 12px 5px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 1 1 auto; min-height: 36px; }
+.controls { display: flex; gap: 6px; align-items: center; flex: none; justify-content: flex-end; }
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px;
+  background: none; color: var(--muted); font-size: 16px; line-height: 1;
+}
+.icon-btn:hover { background: var(--neutral-bg); color: var(--text); border: 0; }
+.icon-btn:disabled { opacity: .35; background: none; }
+.icon-btn[aria-pressed="true"], .icon-btn[aria-expanded="true"] { color: var(--text); }
+.nav-btn { font-size: 15px; }
+.side-toggle { margin-right: 2px; position: relative; }
+/* something in the sidebar footer wants a look, and the sidebar is closed or an overlay: a dot on its toggle */
+html:has(#swChip.alarm, #swChip.warn, #obChip.warn) .side-toggle[aria-expanded="false"]::after,
+html[data-readonly] .side-toggle[aria-expanded="false"]::after {
+  content: ''; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn);
+}
+html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background: var(--danger); }
+
+.shell-title {
+  display: flex; align-items: baseline; gap: 6px; min-width: 0; margin: 0 0 0 8px;
+  font-size: var(--fs-4); font-weight: 600; white-space: nowrap;
+}
+.shell-title .t-view { flex: none; }
+.shell-title .t-sep { color: var(--text-3); font-weight: 400; }
+.t-ctx { position: relative; display: inline-flex; align-items: baseline; min-width: 0; overflow: hidden; font-weight: 500; color: var(--text-2); }
+.t-ctx > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t-sep:has(+ .t-ctx:empty) { display: none; }
+.t-ctx .host { font: inherit; color: inherit; }
+/* the host picker is the title: the label shows the pick, a transparent native <select> over it opens the list */
+.t-ctx #hostSel {
+  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0;
+  opacity: 0; font: inherit; cursor: pointer;
+}
+.t-ctx:has(#hostSel:not([hidden])) { padding: 2px 6px; margin: -2px 0; border-radius: 6px; color: var(--text); cursor: pointer; }
+.t-ctx:has(#hostSel:not([hidden])):hover { background: var(--neutral-bg); }
+.t-ctx:has(#hostSel:not([hidden]))::after { content: '⌄'; flex: none; margin-left: 5px; color: var(--text-3); font-size: var(--fs-4); position: relative; top: -2px; }
+.t-ctx:has(#hostSel:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ⌘K is lib/palette.js's button, prepended to .controls */
+.controls .palette-btn { padding: 4px 9px; }
+.controls #refresh, .controls #rescan { font-size: 15px; padding: 4px 9px; }
+.alerts-btn { padding: 4px 9px; }
+
+/* filter popover: 지금 사용 중, 전체 and the search field (on a phone: inline under the bar) */
+/* a button and a panel (not <details>: on a phone the panel shows inline with no script, see below) */
+.filter-pop { position: relative; }
+.filter-btn { position: relative; padding: 5px 9px; color: var(--muted); }
+.filter-btn:hover { color: var(--text); }
+.filter-pop .filter-dot { display: none; position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.filter-pop.active .filter-dot { display: block; }
+.filter-pop.active > .filter-btn { color: var(--accent); }
+.filter-panel { min-width: 280px; padding: 10px; gap: 8px; }
+.filter-pop:not(.open) > .filter-panel { display: none; }
+.filter-panel input[type=search] {
+  width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); color: var(--text); font: inherit; font-size: var(--fs-4);
+}
+.filter-panel .check { padding: 2px 2px; color: var(--text); }
+
+/* today's tab strip: on a phone only (the sidebar has the views) */
+.shell-tabs { display: none; gap: 2px; padding: 2px; border-radius: 9px; background: var(--neutral-bg); }
+.shell-tabs a { padding: 3px 10px; border-radius: 7px; color: var(--text-2); text-decoration: none; font-size: var(--fs-3); white-space: nowrap; }
+.shell-tabs a[aria-current] { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+
+/* ---- layout ---- */
+.shell { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr) var(--insp-w); align-items: start; min-height: calc(100dvh - var(--bar-h)); }
+/* the main area: 8 px on the left, then a centred column; past its cap the extra width goes to the margins */
+.shell-main { grid-column: 2; min-width: 0; padding-left: 8px; }
+.shell-main > main { max-width: var(--col-max); margin-inline: auto; padding: 8px var(--col-pad) 40px; }
+.shell-main > main.dev-main { max-width: var(--col-wide); }
+.shell-main > .status, .shell-main > .empty { max-width: var(--col-max); margin-inline: auto; padding-inline: var(--col-pad); }
+.shell-side, .insp {
+  position: sticky; top: var(--bar-h); height: calc(100dvh - var(--bar-h));
+  overflow: auto; overscroll-behavior: contain; scrollbar-width: thin;
+}
+.shell-scrim { display: none; }
+
+/* ---- sidebar ---- */
+.shell-side {
+  grid-column: 1; display: flex; flex-direction: column; gap: 16px;
+  /* the 0.5 px right edge is an inset shadow, so the rows keep their full 272 px */
+  padding: 8px; background: var(--side-bg); box-shadow: inset -0.5px 0 0 var(--line);
+}
+:root[data-side="closed"] .shell-side { display: none; }
+.side-views { display: grid; gap: 1px; }
+/* menu rows 272 × 32 at 14 px (8 px inset in the 288 px sidebar); secondary rows 24 px at 13 px; labels 12 px */
+.side-view, .side-item {
+  display: flex; align-items: center; gap: 8px; min-width: 0; box-sizing: border-box;
+  height: 32px; padding: 0 8px; border-radius: 8px; color: var(--text); text-decoration: none; font-size: var(--fs-4);
+}
+.side-view:hover, .side-item:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+.side-view[aria-current] { background: color-mix(in srgb, var(--text) 8%, transparent); font-weight: 600; }
+.side-view .sv-label { flex: 1; }
+.side-count { color: var(--text-3); font-size: var(--fs-2); font-variant-numeric: tabular-nums; }
+.side-sec h2 { margin: 0 0 2px; padding: 0 8px; color: var(--text-3); font-size: var(--fs-2); font-weight: 500; line-height: 24px; }
+.side-sec ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.side-sec[hidden] { display: none; }
+.side-item { height: 24px; font-size: var(--fs-3); border-radius: 6px; color: var(--text-2); }
+.side-item:hover { color: var(--text); }
+.side-item .si-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-item .si-sub { flex: none; color: var(--text-3); font: var(--fs-1) var(--mono); }
+.side-item.selected { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.side-item .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: color-mix(in srgb, var(--muted) 55%, var(--surface)); }
+.side-item.t-ok .dot { background: var(--ok); }
+.side-item.t-warn .dot { background: var(--warn); }
+.side-item.t-bad .dot { background: var(--danger); }
+.side-item.t-off { color: var(--text-3); }
+/* ---- the 기기 tree (features/nav.js, lib/shell-boot.js fill): 24 px rows indented 12 px a level, a ▸ to fold ---- */
+.side-tree ul { gap: 0; }
+.si-row { display: flex; align-items: center; min-width: 0; padding-left: calc(var(--d, 0) * 12px); }
+.si-row[hidden] { display: none; }
+.si-row > .side-item { flex: 1; min-width: 0; padding-left: 2px; gap: 6px; }
+.si-fold, .si-fold-pad { flex: none; width: 16px; height: 24px; }
+.si-fold {
+  display: grid; place-items: center; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--text-3); cursor: pointer;
+}
+.si-fold::before { content: ''; width: 0; height: 0; border-style: solid; border-width: 4px 0 4px 5px; border-color: transparent transparent transparent currentColor; transition: transform 0.12s; }
+.si-fold[aria-expanded="true"]::before { transform: rotate(90deg); }
+.si-fold:hover { color: var(--text); background: color-mix(in srgb, var(--text) 5%, transparent); }
+.si-fold:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.side-item.si-group { color: var(--text-3); cursor: pointer; user-select: none; }
+.side-item.si-group:hover { color: var(--text-2); }
+.side-item .si-badge {
+  flex: none; padding: 0 4px; border-radius: 4px; line-height: 15px; font-size: var(--fs-1); color: var(--text-3);
+  background: color-mix(in srgb, var(--text) 6%, transparent); white-space: nowrap;
+}
+.side-item.t-lan .dot { background: transparent; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--muted) 70%, var(--surface)); }
+@media (prefers-reduced-motion: reduce) { .si-fold::before { transition: none; } }
+/* the footer: 설정 n/m, 수집 정상, 읽기 전용 (like the Claude app's account area) */
+.side-foot { margin-top: auto; display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0 0; border-top: 0.5px solid var(--line); }
+.side-foot:not(:has(> :not([hidden]))) { display: none; }
+.side-foot .readonly-note { margin: 0; width: 100%; max-width: none; padding: 6px 9px; }
+.side-foot .ob-chip, .side-foot .sw-chip { flex: 1 1 auto; justify-content: center; }
+
+/* ---- inspector ---- */
+.insp { grid-column: 3; display: none; background: var(--surface); border-left: 0.5px solid var(--line); }
+:root[data-insp="open"] .insp { display: block; }
+.insp-head {
+  position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 10px 8px 14px; background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.insp-head strong { font-size: var(--fs-3); color: var(--text-2); font-weight: 600; }
+.insp-body { padding: 12px 14px 24px; font-size: var(--fs-3); }
+.insp-empty { color: var(--text-3); margin: 24px 0; text-align: center; font-size: var(--fs-3); }
+.insp-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.insp-title .port { font: 600 var(--fs-5) var(--mono); }
+.insp-title a.name { font-size: var(--fs-5); font-weight: 600; white-space: normal; overflow-wrap: anywhere; }
+.insp-title { align-items: flex-start; }
+.insp-title .port { line-height: 1.3; }
+.insp-sub { color: var(--text-2); font-size: var(--fs-2); margin-top: 2px; overflow-wrap: anywhere; }
+.insp-port .badges { margin-top: 8px; }
+.insp-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.insp-actions button.danger { color: var(--danger); }
+.insp-sec { margin-top: 16px; }
+.insp-sec h3 { margin: 0 0 6px; color: var(--text-3); font-size: var(--fs-2); font-weight: 500; }
+.insp-sec dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 10px; margin: 0; font-size: var(--fs-2); }
+.insp-sec dt { color: var(--text-2); }
+.insp-sec dd { margin: 0; font-family: var(--mono); overflow-wrap: anywhere; }
+.insp-sec .uptime-line { margin-top: 0; }
+.insp-sec ul.insp-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: var(--fs-3); }
+.insp-sec ul.insp-list .muted { font-size: var(--fs-2); }
+.insp-sugg:empty, .insp-owner:empty { display: none; }
+.insp-logs pre {
+  margin: 0; max-height: 260px; overflow: auto; padding: 8px 10px; border-radius: 8px;
+  background: var(--bg); border: 1px solid var(--line);
+  font: var(--fs-1)/1.45 var(--mono); white-space: pre-wrap; word-break: break-all;
+}
+.insp-logs .insp-logs-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.insp-logs .insp-logs-head button { padding: 1px 8px; font-size: var(--fs-2); }
+.insp-src { color: var(--text-3); font: var(--fs-1) var(--mono); margin: 0 0 4px; overflow-wrap: anywhere; }
+
+/* ---- the 서비스 list: dense bordered rows (not on a phone) ---- */
+@media (min-width: 641px) {
+  .list { gap: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .list > li + li { border-top: 1px solid var(--line); }
+  .list .row, .list .group { border: 0; border-radius: 0; background: transparent; }
+  .list .row {
+    grid-template-columns: 58px minmax(0, 1fr) auto auto;
+    grid-template-areas: "port name badges actions" "port meta badges actions";
+    gap: 0 12px; padding: 6px 12px; min-height: 46px; cursor: pointer;
+  }
+  .list .row > .main { display: contents; }
+  .list .row > .port { grid-area: port; font-size: var(--fs-3); align-self: center; }
+  .list .row .name-line { grid-area: name; align-self: end; }
+  .list .row .name { font-size: var(--fs-4); font-weight: 600; }
+  .list .row .meta { grid-area: meta; align-self: start; font-size: var(--fs-2); color: var(--text-2); }
+  .list .row .meta:empty::before { content: '\00a0'; }
+  .list .row .badges { grid-area: badges; align-self: center; margin: 0; flex-wrap: nowrap; justify-content: flex-end; }
+  .list .row .badges > :not(.key) { display: none; }
+  .list .row .actions { grid-area: actions; align-self: center; flex-wrap: nowrap; }
+  .list .row .actions > :not(:first-child):not(.menu) { display: none; }
+  .list .row .actions .btn, .list .row .actions button, .list .row .menu summary { padding: 3px 9px; font-size: var(--fs-2); }
+  .list .row .uptime-line, .list .row .users, .list .row .last-used, .list .row > .more { display: none; }
+  .list .row:hover { background: color-mix(in srgb, var(--text) 3%, transparent); }
+  .list .row.selected { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); box-shadow: inset 3px 0 0 var(--accent); }
+  .list .row.missing .badges > * { display: inline-flex; }
+  .list .row.missing { cursor: default; }
+  .list .row.sub .port { font-size: var(--fs-3); color: var(--text-2); }
+  /* compose / unit groups: a section header, then its rows */
+  .list .group { padding: 0; }
+  .list .group-head { padding: 6px 12px 5px; background: var(--side-bg); border-bottom: 1px solid var(--line); font-size: var(--fs-3); }
+  .list .row.sub { border-top: 0; padding: 6px 12px; }
+  .list .row.sub + .row.sub { border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent); }
+  .meta-use { color: var(--text-3); }
+  /* the devices strip is in the sidebar now */
+  .shell-main .devices { display: none; }
+}
+@media (max-width: 640px) {
+  .meta-use, .badge.dense-only { display: none; }
+}
+
+/* ---- under 1200: the inspector is a right sheet (288 + 8 + the list + 300 no longer fits well) ---- */
+@media (max-width: 1199.98px) {
+  :root[data-insp] { --insp-w: 0px; }
+  :root[data-insp] .insp {
+    display: block; position: fixed; z-index: 25; top: var(--bar-h); right: 0; bottom: 0; height: auto;
+    width: min(360px, 92vw); border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgb(0 0 0 / .08);
+    transform: translateX(105%); transition: transform .16s ease; visibility: hidden;
+  }
+  :root[data-insp-overlay] .insp { transform: none; visibility: visible; }
+}
+/* ---- under 768: no column padding (the pane keeps 8 px on both sides), 16 px inputs (no iOS zoom) ---- */
+@media (max-width: 767.98px) {
+  :root { --col-pad: 0px; }
+  .shell-main { padding-right: 8px; }
+  .top input, .filter-panel input[type=search], .shell-main input:not([type=checkbox]):not([type=radio]), .shell-main select, .shell-main textarea { font-size: 16px; }
+}
+/* ---- under 704: the sidebar is a drawer ---- */
+@media (max-width: 703.98px) {
+  :root, :root[data-side] { --side-w: 0px; }
+  :root[data-side] .shell-side {
+    display: flex; position: fixed; z-index: 26; top: var(--bar-h); left: 0; bottom: 0; height: auto; width: min(270px, 86vw);
+    border-right: 1px solid var(--line); box-shadow: 8px 0 24px rgb(0 0 0 / .1); transform: translateX(-105%); transition: transform .16s ease; visibility: hidden;
+  }
+  :root[data-side-overlay] .shell-side { transform: none; visibility: visible; }
+  :root[data-side-overlay] .shell-scrim { display: block; position: fixed; inset: var(--bar-h) 0 0 0; z-index: 24; background: rgb(0 0 0 / .28); }
+}
+/* ==== Resizable panes and the shortcut registry (docs/research/rea-references.md #3 and #6) ====
+   lib/shell-boot.js and lib/shell.js set --side-open / --insp-open (the remembered widths) and data-side-mode /
+   data-insp-mode ('column' or 'overlay', lib/shell.js layoutFor). At the default widths the modes are what the media
+   queries above already do; wider panes move the breakpoints up (the list keeps 324 px), so the rules below show a
+   pane as its drawer or sheet above its usual breakpoint too. The handles sit just under the bar, outside header.top,
+   so the Mac app's bar hit-test (lib/macapp.js) never treats them as window drag space. */
+@media (min-width: 704px) {
+  :root[data-side="open"]:not([data-side-mode="overlay"]) { --side-w: var(--side-open, 288px); }
+  /* the drawer, as under 704 */
+  :root[data-side-mode="overlay"] { --side-w: 0px; }
+  :root[data-side-mode="overlay"] .shell-side {
+    display: flex; position: fixed; z-index: 26; top: var(--bar-h); left: 0; bottom: 0; height: auto; width: min(270px, 86vw);
+    border-right: 1px solid var(--line); box-shadow: 8px 0 24px rgb(0 0 0 / .1); transform: translateX(-105%); transition: transform .16s ease; visibility: hidden;
+  }
+  :root[data-side-mode="overlay"][data-side-overlay] .shell-side { transform: none; visibility: visible; }
+  :root[data-side-mode="overlay"][data-side-overlay] .shell-scrim { display: block; position: fixed; inset: var(--bar-h) 0 0 0; z-index: 24; background: rgb(0 0 0 / .28); }
+}
+@media (min-width: 1200px) {
+  :root[data-insp="open"]:not([data-insp-mode="overlay"]) { --insp-w: var(--insp-open, 300px); }
+  /* the right sheet, as under 1200 */
+  :root[data-insp][data-insp-mode="overlay"] { --insp-w: 0px; }
+  :root[data-insp][data-insp-mode="overlay"] .insp {
+    display: block; position: fixed; z-index: 25; top: var(--bar-h); right: 0; bottom: 0; height: auto;
+    width: min(360px, 92vw); border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgb(0 0 0 / .08);
+    transform: translateX(105%); transition: transform .16s ease; visibility: hidden;
+  }
+  :root[data-insp-mode="overlay"][data-insp-overlay] .insp { transform: none; visibility: visible; }
+}
+/* the handles: a 7 px strip over the pane's edge, a 1 px accent line on hover, focus and while dragging */
+.pane-handle { display: none; position: fixed; z-index: 27; top: var(--bar-h); bottom: 0; width: 7px; cursor: col-resize; touch-action: none; outline: none; }
+.pane-handle::after { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: transparent; transition: background .1s ease; }
+.pane-handle:hover::after, .pane-handle:focus-visible::after { background: var(--accent); }
+.pane-handle:focus-visible { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.side-handle { left: calc(var(--side-w) - 4px); }
+.insp-handle { right: calc(var(--insp-w) - 4px); }
+@media (min-width: 641px) {
+  :root[data-side-mode="column"] .side-handle { display: block; }
+  :root[data-insp="open"][data-insp-mode="column"] .insp-handle { display: block; }
+}
+/* closed: the sidebar's handle is the window's left edge (a click or a drag opens it) */
+:root[data-side="closed"] .side-handle { left: 0; width: 5px; }
+:root[data-side="closed"] .side-handle::after { left: 0; }
+:root[data-resizing], :root[data-resizing] * { cursor: col-resize !important; -webkit-user-select: none; user-select: none; }
+:root[data-resizing="side"] .side-handle::after, :root[data-resizing="insp"] .insp-handle::after { background: var(--accent); }
+:root[data-resizing] .shell-side, :root[data-resizing] .insp { transition: none; }
+
+/* palette rows say their key (lib/keys.js), the ⌘/ 키보드 단축키 dialog */
+.pal-keys { flex: none; display: inline-flex; gap: 3px; }
+.keys-dialog {
+  width: min(520px, calc(100vw - 24px)); max-height: min(640px, calc(100vh - 96px)); margin: 72px auto auto; padding: 0;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: 0 16px 48px rgb(0 0 0 / .25);
+}
+.keys-dialog[open] { display: flex; flex-direction: column; }
+.keys-dialog::backdrop { background: rgb(0 0 0 / .35); }
+.keys-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 10px 18px; border-bottom: 1px solid var(--line); }
+.keys-head h2 { margin: 0; font-size: var(--fs-5); }
+.keys-body { overflow: auto; padding: 6px 18px 18px; overscroll-behavior: contain; }
+.keys-sec h3 { margin: 14px 0 6px; color: var(--text-3); font-size: var(--fs-2); font-weight: 500; }
+.keys-sec dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; margin: 0; align-items: center; font-size: var(--fs-3); }
+.keys-sec dt { color: var(--text); }
+.keys-sec dd { margin: 0; display: flex; gap: 4px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+.keys-sec kbd, .pal-keys kbd {
+  font: 11px var(--mono); padding: 1px 5px; border: 1px solid var(--line); border-radius: 4px; background: var(--neutral-bg); color: var(--muted);
+}
+.keys-or { color: var(--text-3); font-size: var(--fs-1); }
+/* ==== end: resizable panes and the shortcut registry ==== */
+
+/* ---- phone: the old mobile layout. The bar wraps: toggle + title + ⌘K 🔔 ↻, the tabs, the filters inline ---- */
+@media (max-width: 640px) {
+  .top { flex-wrap: wrap; row-gap: 6px; padding: 6px 10px 8px; }
+  /* the old mobile padding: 16 px on both sides, nothing from the pane */
+  :root { --col-pad: 16px; }
+  .shell-main { padding: 0; }
+  .top .controls { display: contents; }
+  .top .controls > * { order: 1; }
+  .nav-btn, .insp-toggle, .palette-btn kbd { display: none; }
+  .brand { flex: 1 1 0; }
+  .shell-title { font-size: var(--fs-5); margin-left: 4px; }
+  /* the tab strip says the view; the title keeps its context (the host picker), or the view when there is none */
+  .shell-title:has(.t-ctx:not(:empty)) .t-view, .shell-title .t-sep { display: none; }
+  .shell-tabs { display: flex; order: 2; flex-basis: 100%; margin: 0; width: max-content; max-width: 100%; }
+  .top .controls > .filter-pop { order: 3; flex-basis: 100%; }
+  .filter-btn { display: none; }
+  .filter-pop > .filter-panel, .filter-pop:not(.open) > .filter-panel {
+    position: static; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
+    min-width: 0; padding: 0; border: 0; background: none; box-shadow: none;
+  }
+  .filter-panel input[type=search] { flex-basis: 100%; background: var(--surface); }
+  .filter-panel .check { color: var(--muted); }
+  :root[data-insp] .insp { display: none; }
+}
+
+/* ---- no flash on a tab click ----
+   The bar and sidebar are in the page's HTML (src/core/shell.ts), so they paint at once. The main content that only
+   makes sense with its data waits: <main data-wait="page …"> keeps its children invisible (taking their space) until
+   lib/shell.js done() clears each token. If a script fails, the CSS shows them after 2.5 s anyway. */
+[data-wait] > * { visibility: hidden; animation: pb-wait-over 0s linear 2.5s forwards; }
+@keyframes pb-wait-over { to { visibility: visible; } }
+[data-wait] { position: relative; min-height: 60vh; }
+[data-wait]::before {
+  content: '불러오는 중…'; position: absolute; left: var(--col-pad); top: 16px; color: var(--text-3); font-size: var(--fs-3);
+  opacity: 0; animation: pb-wait-note .2s ease .4s forwards;
+}
+@keyframes pb-wait-note { to { opacity: 1; } }
+
+/* Cross-document view transitions (progressive enhancement: Chromium today, Safari 18.2+): the bar and the sidebar keep
+   their place and only the main area cross-fades. Without support, or with reduced motion, it is a plain page load. */
+@view-transition { navigation: auto; }
+.top { view-transition-name: pb-bar; }
+.shell-side { view-transition-name: pb-side; }
+.insp { view-transition-name: pb-insp; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .12s; }
+::view-transition-group(pb-bar), ::view-transition-group(pb-side), ::view-transition-group(pb-insp) { animation-duration: 0s; }
+@media (prefers-reduced-motion: reduce) {
+  @view-transition { navigation: none; }
+  [data-wait]::before { animation: none; opacity: 1; }
+}
+
+/* ==== Toast stack, undo and hover row actions (REA proposals #4, #7, #8; docs/layout/README.md § Toasts) ====
+   lib/toast.js makes each page's #toast the stack: bottom right, 360 px, the newest toast in front (data-depth 0) and up
+   to two tucked behind it, 14 px up and 4 % smaller each, as tall as the front one and without their text. */
+.toast-stack {
+  position: fixed; z-index: 40; right: 16px; bottom: 16px; width: 360px; max-width: calc(100vw - 32px); height: 0;
+  pointer-events: none;
+}
+.toast-stack .toast {
+  position: absolute; left: 0; right: 0; bottom: 0; box-sizing: border-box; max-width: none; transform: none;
+  display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; border-radius: 10px;
+  background: var(--text); color: var(--bg); font-size: var(--fs-3); line-height: 1.4;
+  box-shadow: 0 6px 24px rgb(0 0 0 / .2); pointer-events: auto;
+  transform-origin: 50% 100%; transition: transform .18s ease, opacity .18s ease;
+}
+.toast-stack .toast.error { background: var(--danger); color: #fff; }
+.toast-stack .toast-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.toast-stack .toast button {
+  flex: none; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; border-radius: 6px;
+}
+.toast-stack .toast-action { padding: 3px 9px; font-weight: 600; box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 40%, transparent); }
+.toast-stack .toast-action:hover, .toast-stack .toast-close:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
+.toast-stack .toast-close { padding: 1px 7px; font-size: 16px; line-height: 1; opacity: .7; }
+.toast-stack .toast[data-depth="0"] { z-index: 3; }
+.toast-stack .toast:not([data-depth="0"]) { height: var(--toast-front-h, auto); overflow: hidden; pointer-events: none; }
+.toast-stack .toast:not([data-depth="0"]) > * { visibility: hidden; }
+.toast-stack .toast[data-depth="1"] { z-index: 2; transform: translateY(-14px) scale(.96); opacity: .9; }
+.toast-stack .toast[data-depth="2"] { z-index: 1; transform: translateY(-28px) scale(.92); opacity: .75; }
+.toast-stack .toast:not([data-depth="0"]):not([data-depth="1"]):not([data-depth="2"]) { opacity: 0; transform: translateY(-28px) scale(.92); }
+@media (prefers-reduced-motion: reduce) { .toast-stack .toast { transition: none; } }
+
+/* the ⋯ menu: destructive items after a separator (lib/menu.js), red as before */
+.menu-sep { height: 1px; margin: 4px 2px; background: var(--line); }
+
+/* dense rows: ⋯ shows on hover, focus, the selected row and while its menu is open; always on touch. The "◷ n분 전
+   사용" meta gives way while the row is hovered or focused. A right-click on a row opens the same menu (app.js). */
+@media (min-width: 641px) {
+  .list .row .actions > .menu:not([open]) > summary { opacity: 0; transition: opacity .12s ease; }
+  .list .row:hover .actions > .menu > summary, .list .row:focus-within .actions > .menu > summary,
+  .list .row.selected .actions > .menu > summary { opacity: 1; }
+  .list .row:hover .meta-last, .list .row:focus-within .meta-last { visibility: hidden; }
+}
+@media (pointer: coarse) {
+  .list .row .actions > .menu:not([open]) > summary { opacity: 1; }
+}
+/* ==== end: toast stack, undo and hover row actions ==== */
+
+/* The Mac app (lib/macapp.js): no title bar, so this bar is the window's one bar. 78 px stay clear for the traffic
+   lights (the app centres them in the 48 px bar), the empty parts drag the window (the app hit-tests every mouse-down
+   against the controls lib/macapp.js reports), and ← → and the sidebar's views replace the native toolbar. */
+.app-back { display: none; }
+[data-app="mac"] .top {
+  box-sizing: border-box; min-height: 48px; padding: 6px 12px 5px 78px;
+  -webkit-user-select: none; user-select: none; cursor: default;
+}
+[data-app="mac"][data-fullscreen] .top { padding-left: 12px; }
+[data-app="mac"] .top input { -webkit-user-select: text; user-select: text; }
+/* a 36 px row: 6 + 36 + 5 + 1 px border = 48, its middle (24 px) level with the traffic lights */
+[data-app="mac"] .brand { min-height: 36px; }
+[data-app="mac"] .shell-side { -webkit-user-select: none; user-select: none; }
+

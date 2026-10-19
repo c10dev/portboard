@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>서비스 상세 · Portboard</title>
+  <meta name="theme-color" content="#2f6feb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Portboard">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="shell.css">
+  <link rel="stylesheet" href="service.css">
+  <!--#shell:boot-->
+</head>
+<body data-view="services">
+  <!-- The shell: the server fills in each shell marker (src/core/shell.ts) and lib/shell.js wires it. -->
+  <header class="top">
+    <div class="brand">
+      <!--#shell:nav-->
+      <h1 id="shellTitle" class="shell-title"><!--#shell:view--><span class="t-ctx" id="shellCtx"></span></h1>
+    </div>
+    <!--#shell:tabs-->
+    <div class="controls">
+      <!--#shell:palette-->
+      <button id="refresh" type="button" title="새로고침">↻</button>
+      <!--#shell:insp-toggle-->
+    </div>
+  </header>
+  <div class="shell">
+    <!--#shell:sidebar-->
+    <div class="shell-main" id="shellMain">
+    <main class="svc-main" data-wait="page">
+      <a href="./" class="back">← 서비스 목록</a>
+      <section class="svc-head">
+        <div class="svc-title">
+          <span id="port" class="svc-port"></span>
+          <h2 id="name"></h2>
+          <span id="bell"></span>
+        </div>
+        <div id="sub" class="svc-sub"></div>
+        <div id="badges" class="badges"></div>
+        <div id="actions" class="actions svc-actions"></div>
+      </section>
+      <p id="status" class="status" aria-live="polite">불러오는 중…</p>
+
+      <div class="svc-grid">
+        <section class="svc-card" aria-labelledby="hWhat">
+          <h3 id="hWhat">무엇인지</h3>
+          <dl id="what" class="facts"></dl>
+        </section>
+
+        <section class="svc-card" aria-labelledby="hNow">
+          <h3 id="hNow">지금 사용 중</h3>
+          <div id="now"></div>
+        </section>
+
+        <section class="svc-card wide" aria-labelledby="hUp">
+          <h3 id="hUp">업/다운 이력</h3>
+          <div id="uptime"></div>
+        </section>
+
+        <section class="svc-card wide" aria-labelledby="hUsed">
+          <h3 id="hUsed">사용 기록</h3>
+          <div id="used"></div>
+        </section>
+
+        <section class="svc-card wide" aria-labelledby="hEvents">
+          <h3 id="hEvents">보낸 알림</h3>
+          <ul id="events" class="events"></ul>
+        </section>
+
+        <section class="svc-card wide" aria-labelledby="hAudit">
+          <h3 id="hAudit">기록</h3>
+          <ul id="audit" class="audit-list"></ul>
+        </section>
+      </div>
+    </main>
+    </div>
+    <!--#shell:aside-->
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <dialog id="logs" class="logs">
+    <header>
+      <div>
+        <strong id="logsTitle"></strong>
+        <div id="logsSource" class="logs-source"></div>
+      </div>
+      <div class="logs-controls">
+        <select id="logsLines" aria-label="줄 수">
+          <option value="100">100줄</option>
+          <option value="300">300줄</option>
+          <option value="1000">1000줄</option>
+        </select>
+        <button type="button" id="logsRefresh" title="새로고침">↻</button>
+        <button type="button" id="logsClose">닫기</button>
+      </div>
+    </header>
+    <pre id="logsBody"></pre>
+  </dialog>
+
+  <script src="service.js" type="module"></script>
+</body>
+</html>

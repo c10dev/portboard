@@ -1,0 +1,13 @@
+{"type":"custom-title","customTitle":"SECRET-TITLE","sessionId":"s"}
+{"type":"user","uuid":"u0","timestamp":"2026-10-17T01:00:00.000Z","message":{"role":"user","content":"please run on port 9999 SECRET-PROMPT"}}
+{"parentUuid":null,"type":"assistant","uuid":"a-1","timestamp":"2026-10-17T01:00:01.000Z","sessionId":"s","message":{"role":"assistant","content":[{"type":"thinking","thinking":"SECRET-THINKING ss -ltnp"}]}}
+{"parentUuid":null,"type":"assistant","uuid":"a-2","timestamp":"2026-10-17T01:00:02.000Z","sessionId":"s","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ss -ltnp | grep 3001","description":"x"}}]}}
+{"type":"user","uuid":"r1","timestamp":"2026-10-17T01:00:03.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"LISTEN 0 511 *:3001 SECRET-OUTPUT"}]}}
+{"parentUuid":null,"type":"assistant","uuid":"a-3","timestamp":"2026-10-17T01:00:04.000Z","sessionId":"s","message":{"role":"assistant","content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"fuser -k 3001/tcp; PORT=3001 npm run dev","description":"x"}}]}}
+{"parentUuid":null,"type":"assistant","uuid":"a-4","timestamp":"2026-10-17T01:00:05.000Z","sessionId":"s","message":{"role":"assistant","content":[{"type":"tool_use","id":"t3","name":"Bash","input":{"command":"cat > notes.md <<'EOF'\nss -ltnp\nPORT=4444 npm start\nEOF","description":"x"}}]}}
+{"parentUuid":null,"type":"assistant","uuid":"a-5","timestamp":"2026-10-17T14:59:00.000Z","sessionId":"s","message":{"role":"assistant","content":[{"type":"tool_use","id":"t4","name":"Bash","input":{"command":"cd web && npx vite --port 5195 --host SECRET-TOKEN-abc123","description":"x"}}]}}
+{"parentUuid":null,"type":"assistant","uuid":"a-6","timestamp":"2026-10-17T15:00:00.000Z","sessionId":"s","message":{"role":"assistant","content":[{"type":"tool_use","id":"t5","name":"mcp__portboard__free_port","input":{}}]}}
+{"parentUuid":null,"type":"assistant","uuid":"a-6","timestamp":"2026-10-17T15:00:00.000Z","sessionId":"s","message":{"role":"assistant","content":[{"type":"tool_use","id":"t5","name":"mcp__portboard__free_port","input":{}}]}}
+{"parentUuid":null,"type":"assistant","uuid":"a-7","timestamp":"2026-10-17T15:01:00.000Z","sessionId":"s","message":{"role":"assistant","content":[{"type":"tool_use","id":"t6","name":"Bash","input":{"command":"kill $(lsof -t -i:5195)","description":"x"}}]}}
+{"parentUuid":null,"type":"assistant","uuid":"a-8","timestamp":"2026-10-17T15:02:00.000Z","sessionId":"s","message":{"role":"assistant","content":[{"type":"text","text":"done SECRET-TEXT"}]}}
+{"type":"assistant","timestamp":"2026-10-1

@@ -1,0 +1,3 @@
+### Added
+- Mac app: the window tries the dashboard again on its own when it can't load (after sleep or a Tailscale reconnect): at once, after 15 s, then every 30 s (±20 %) for 3 minutes, and at once on window focus, wake from sleep and screen unlock. The error screen says "자동으로 다시 시도하는 중…" with the next try's time and keeps 다시 시도. A crashed page process is reloaded at most 3 times in 5 minutes. Rebuild the app (`mac-app/build.sh --install`).
+- Mac app notifications know where you are: none for the port whose page is in front in the key window; 다운 is time-sensitive and 복구 passive; one Notification Center thread per port; the Dock badge counts watched ports that are down. Rebuild the app.

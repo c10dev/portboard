@@ -1,0 +1,10 @@
+node_modules/
+*.log
+.claude/worktrees/
+mac-app/.build/
+mac-app/build/
+mac-app/.swiftpm/
+# This install's site config next to the code (site.ts); the private repo tracks production's, the public tree has none
+/portboard.json
+# The Mac app's build settings for this install (mac-app/build.sh)
+mac-app/build.env

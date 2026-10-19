@@ -1,0 +1,19 @@
+{
+  "name": "portboard",
+  "version": "0.1.0",
+  "description": "Portboard MCP server, a dev-servers-and-ports skill, a PreToolUse nudge when a Bash command hard-codes or kills a port, and SessionEnd cleanup",
+  "author": {
+    "name": "c10dev",
+    "url": "https://github.com/c10dev"
+  },
+  "repository": "https://github.com/c10dev/portboard",
+  "license": "MIT",
+  "userConfig": {
+    "port_nudge": {
+      "type": "boolean",
+      "title": "Port nudge",
+      "description": "Add Portboard context when a Bash command starts a dev server on a hard-coded port or kills by port. Never blocks or asks.",
+      "default": true
+    }
+  }
+}

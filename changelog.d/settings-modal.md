@@ -1,0 +1,6 @@
+### Changed
+- **설정 is a modal over the app** ([docs/settings](docs/settings/README.md)), after the Claude app's settings screen: at most 1024 × 800 and 16 px from the window, a 212 px menu on the left, one section at a time in rows (57 px, 69 px with a description) with switches, segmented buttons and menus. Only the hash changes (`#settings/<section>`) and the view behind stays; back and forward move between sections, Esc, × and the backdrop go back to where it was opened. Under 768 px the menu becomes tabs under the title, and at 390 px it stays a card whose controls wrap under their labels. The section scripts kept their logic; `settings.html` and its old anchors (the consent page's `#remote`) redirect to the modal over 서비스, and a link to it anywhere in the app opens the modal in place. ⌘, opens it in a browser (in the Mac app ⌘, stays the app's own settings, and ⌘4 opens the modal). In the Mac app the modal is no-drag space and the bar around it still moves the window.
+
+### Added
+- **화면 › 목록 너비** (좁게 · 보통 · 넓게): how wide the 서비스 and 개발 list column may get, per browser (`localStorage pb.listWidth`), applied before the first paint.
+- `public/lib/modal.js` (a reusable modal: focus in, Tab wrapped, focus returned, toasts above the backdrop) and `public/lib/controls.js` (toggle, segmented, menu-select, row), with tests.

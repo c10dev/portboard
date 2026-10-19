@@ -1,0 +1,12 @@
+{
+  "host": "devbox",
+  "tailnet": "example.ts.net",
+  "user": "dev",
+  "checkout": "/home/dev/projects/portboard",
+  "reposRoot": ["~/projects"],
+  "poolUrl": "http://127.0.0.1:7720",
+  "dashboardUrl": "https://devbox.example.ts.net:8443",
+  "publicUrl": "https://devbox.example.ts.net",
+  "pve": { "host": "192.168.1.201", "user": "root", "key": "~/.ssh/portboard_ro", "node": "pve1", "enabled": false },
+  "windows": { "host": "192.168.1.7", "user": "Dev", "key": "~/.ssh/portboard_ro", "device": "desktop-pc", "enabled": false }
+}

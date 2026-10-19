@@ -1,0 +1,40 @@
+{
+  "name": "portboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dashboard of the ports listening on a Linux server, its Tailscale devices and dev worktrees, with an MCP server and a Claude Code plugin",
+  "keywords": [
+    "ports",
+    "dashboard",
+    "tailscale",
+    "mcp",
+    "claude-code",
+    "dev-server",
+    "homelab",
+    "self-hosted"
+  ],
+  "homepage": "https://github.com/c10dev/portboard#readme",
+  "bugs": {
+    "url": "https://github.com/c10dev/portboard/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/c10dev/portboard.git"
+  },
+  "license": "MIT",
+  "author": "c10dev",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node src/server.ts",
+    "mcp": "node src/mcp.ts",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^5.9.3"
+  }
+}

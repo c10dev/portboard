@@ -1,0 +1,42 @@
+# Paths left out of the public tree (scripts/public-tree.sh). One git pathspec per line, relative to the repo root.
+# What is here and why: docs/public-release.md. Public files must not link here (test/public-tree.test.ts).
+
+# This install's own config, kept with the code in the private repo
+portboard.json
+mac-app/build.env
+private/
+
+# Screenshots and captured pages of the owner's live dashboard (real hosts, devices, projects, command lines)
+docs/frontend-modules/
+docs/adoption/
+docs/alerts/
+docs/audit/
+docs/devices-insights/
+docs/devices-tab/
+docs/digest/
+docs/history-grouping/
+docs/layout/
+docs/map-mockup/
+docs/map-research/
+docs/multi-host/
+docs/onboarding/
+docs/owners/
+docs/palette/
+docs/proxmox/
+docs/proxmox-ports/
+docs/selfwatch/
+docs/service-detail/
+docs/settings/
+docs/suggestions/
+docs/windows-ports/
+docs/worktrees/
+docs/claude-plugin/*.png
+docs/memory/*.png
+docs/mac-app/*.png
+docs/runbooks/*.png
+
+# Reviews, research and release notes about the owner's machines
+docs/security-review/
+docs/research/
+docs/public-release.md
+ROADMAP.md

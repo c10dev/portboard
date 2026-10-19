@@ -1,0 +1,765 @@
+{
+ "at": "2026-10-17T12:32:24.356Z",
+ "observingSince": "2026-10-17T11:55:54.455Z",
+ "cards": [
+  {
+   "id": "lan:192.168.1.108",
+   "name": "개인 Wi-Fi 주소 기기",
+   "nameSource": "ip",
+   "kind": "lan",
+   "os": null,
+   "vendor": null,
+   "randomMac": true,
+   "networks": [
+    "lan"
+   ],
+   "addresses": [
+    "192.168.1.108"
+   ],
+   "tailscaleIps": [],
+   "lanIps": [
+    "192.168.1.108"
+   ],
+   "online": true,
+   "lastSeen": null,
+   "path": null,
+   "pool": null,
+   "poolMatch": null,
+   "lanVia": {},
+   "routes": [],
+   "virt": null,
+   "guestOf": null,
+   "pveHost": null,
+   "uses": [
+    {
+     "port": 22,
+     "service": "SSH",
+     "fullName": "SSH (sshd)",
+     "kind": "system",
+     "url": "tcp://devbox.example.ts.net:22",
+     "via": "direct",
+     "servePort": null,
+     "connections": 5,
+     "bytesSent": 82611630,
+     "bytesReceived": 17446426,
+     "rttMs": 2.3,
+     "since": "2026-10-17T11:55:54.455Z",
+     "processes": [],
+     "routed": false
+    }
+   ],
+   "connections": 5,
+   "bytes": 100058056
+  },
+  {
+   "id": "dev-mac",
+   "name": "dev-mac",
+   "nameSource": "tailscale",
+   "kind": "tailnet",
+   "os": "macOS",
+   "vendor": null,
+   "randomMac": false,
+   "networks": [
+    "tailnet"
+   ],
+   "addresses": [
+    "100.64.10.3"
+   ],
+   "tailscaleIps": [
+    "100.64.10.3",
+    "fd7a:115c:a1e0::6e3a:8d1d"
+   ],
+   "lanIps": [],
+   "lanVia": {},
+   "routes": [],
+   "virt": null,
+   "guestOf": null,
+   "pveHost": null,
+   "online": true,
+   "lastSeen": null,
+   "path": {
+    "type": "direct"
+   },
+   "pool": {
+    "name": "mac",
+    "kind": "agent",
+    "addresses": [
+     "100.64.10.3"
+    ],
+    "state": "agent-busy",
+    "inRotation": false,
+    "since": 1792239198098,
+    "checkedAt": 1792240308117,
+    "detail": "connected, but not available: idle 0 min of 10",
+    "slots": 1,
+    "busy": 0,
+    "cores": 10,
+    "load1": 5.3,
+    "agent": {
+     "connected": true,
+     "available": false,
+     "why": "idle 0 min of 10"
+    },
+    "last24h": {
+     "runs": 0,
+     "failed": 0,
+     "runMin": 0,
+     "avgWaitSec": 0
+    }
+   },
+   "poolMatch": "address",
+   "uses": [
+    {
+     "port": 22,
+     "service": "SSH",
+     "fullName": "SSH (sshd)",
+     "kind": "system",
+     "url": "tcp://devbox.example.ts.net:22",
+     "via": "direct",
+     "servePort": null,
+     "connections": 2,
+     "bytesSent": 19020,
+     "bytesReceived": 8064,
+     "rttMs": 46,
+     "since": "2026-10-17T11:55:54.455Z",
+     "processes": [],
+     "routed": false
+    },
+    {
+     "port": 7721,
+     "service": "compute-pool monitor",
+     "fullName": "compute-pool monitor (host health, alerts, dashboard on 127.0.0.1:7720)",
+     "kind": "app",
+     "url": "tcp://devbox.example.ts.net:7721",
+     "via": "direct",
+     "servePort": null,
+     "connections": 1,
+     "bytesSent": 39,
+     "bytesReceived": 12438,
+     "rttMs": 3.1,
+     "since": "2026-10-17T11:55:54.455Z",
+     "processes": [],
+     "routed": false
+    }
+   ],
+   "connections": 3,
+   "bytes": 39561
+  },
+  {
+   "id": "pve1",
+   "name": "pve1",
+   "nameSource": "tailscale",
+   "kind": "tailnet",
+   "os": "linux",
+   "vendor": "HP Inc.",
+   "randomMac": false,
+   "networks": [
+    "lan"
+   ],
+   "addresses": [
+    "192.168.1.201"
+   ],
+   "tailscaleIps": [
+    "100.64.10.8",
+    "fd7a:115c:a1e0::f03a:837d"
+   ],
+   "lanIps": [
+    "192.168.1.201"
+   ],
+   "lanVia": {
+    "192.168.1.201": "ssh-hostkey"
+   },
+   "routes": [
+    "192.168.1.0/24"
+   ],
+   "virt": null,
+   "guestOf": null,
+   "pveHost": {
+    "node": "pve1",
+    "status": "online",
+    "cpu": 0.0778855368574386,
+    "maxcpu": 12,
+    "mem": 58664710144,
+    "maxmem": 67158507520,
+    "disk": 9756770304,
+    "maxdisk": 68630765568,
+    "uptime": 896942,
+    "ip": "192.168.1.201",
+    "device": "pve1",
+    "guests": [
+     {
+      "vmid": 202,
+      "name": "docker-vm",
+      "type": "qemu",
+      "node": "pve1",
+      "status": "running",
+      "template": false,
+      "cpu": 0.105025463233348,
+      "maxcpu": 2,
+      "mem": 8078880768,
+      "maxmem": 8589934592,
+      "uptime": 896910,
+      "ips": [],
+      "device": "docker-vm",
+      "deviceMatch": "name",
+      "lanIp": "192.168.1.202"
+     },
+     {
+      "vmid": 203,
+      "name": "nas",
+      "type": "lxc",
+      "node": "pve1",
+      "status": "running",
+      "template": false,
+      "cpu": 0.000398707753878356,
+      "maxcpu": 1,
+      "mem": 114741248,
+      "maxmem": 1073741824,
+      "uptime": 258386,
+      "ips": [
+       "192.168.1.203"
+      ],
+      "device": "nas",
+      "deviceMatch": "mac",
+      "lanIp": "192.168.1.203"
+     },
+     {
+      "vmid": 204,
+      "name": "jellyfin",
+      "type": "lxc",
+      "node": "pve1",
+      "status": "running",
+      "template": false,
+      "cpu": 0.000199353876939178,
+      "maxcpu": 1,
+      "mem": 252919808,
+      "maxmem": 1073741824,
+      "uptime": 258383,
+      "ips": [
+       "192.168.1.204"
+      ],
+      "device": "lan:192.168.1.204",
+      "deviceMatch": "ip",
+      "lanIp": null
+     },
+     {
+      "vmid": 205,
+      "name": "devbox",
+      "type": "qemu",
+      "node": "pve1",
+      "status": "running",
+      "template": false,
+      "cpu": 0.0680446663201974,
+      "maxcpu": 9,
+      "mem": 51874283520,
+      "maxmem": 54760833024,
+      "uptime": 896908,
+      "ips": [],
+      "device": "devbox",
+      "deviceMatch": "mac",
+      "lanIp": null
+     }
+    ]
+   },
+   "online": true,
+   "lastSeen": null,
+   "path": null,
+   "pool": null,
+   "poolMatch": null,
+   "uses": [
+    {
+     "port": 22,
+     "service": "SSH",
+     "fullName": "SSH (sshd)",
+     "kind": "system",
+     "url": "tcp://devbox.example.ts.net:22",
+     "via": "direct",
+     "servePort": null,
+     "connections": 2,
+     "bytesSent": 2889088,
+     "bytesReceived": 398736,
+     "rttMs": 38.7,
+     "since": "2026-10-17T11:55:54.455Z",
+     "processes": [],
+     "routed": true
+    }
+   ],
+   "connections": 2,
+   "bytes": 3287824
+  },
+  {
+   "id": "serve",
+   "name": "tailscale serve · 기기 미확인",
+   "nameSource": "ip",
+   "kind": "other",
+   "os": null,
+   "vendor": null,
+   "randomMac": false,
+   "networks": [
+    "other"
+   ],
+   "addresses": [],
+   "tailscaleIps": [],
+   "lanIps": [],
+   "online": true,
+   "lastSeen": null,
+   "path": null,
+   "pool": null,
+   "poolMatch": null,
+   "lanVia": {},
+   "routes": [],
+   "virt": null,
+   "guestOf": null,
+   "pveHost": null,
+   "uses": [
+    {
+     "port": 8790,
+     "service": "Portboard",
+     "fullName": "Portboard — listening ports dashboard on :8790 (loopback + tailnet)",
+     "kind": "app",
+     "url": "https://devbox.example.ts.net/",
+     "via": "serve",
+     "servePort": 443,
+     "connections": 2,
+     "bytesSent": 0,
+     "bytesReceived": 0,
+     "rttMs": null,
+     "since": "2026-10-17T11:55:54.455Z",
+     "processes": [],
+     "routed": false
+    }
+   ],
+   "connections": 2,
+   "bytes": 0
+  },
+  {
+   "id": "desktop-pc",
+   "name": "desktop-pc",
+   "nameSource": "tailscale",
+   "kind": "tailnet",
+   "os": "windows",
+   "vendor": "Micro-Star INTL CO., LTD.",
+   "randomMac": false,
+   "networks": [
+    "lan"
+   ],
+   "addresses": [
+    "192.168.1.7"
+   ],
+   "tailscaleIps": [
+    "100.64.10.2",
+    "fd7a:115c:a1e0::ef3a:e71d"
+   ],
+   "lanIps": [
+    "192.168.1.7"
+   ],
+   "lanVia": {
+    "192.168.1.7": "compute-pool"
+   },
+   "routes": [],
+   "virt": null,
+   "guestOf": null,
+   "pveHost": null,
+   "online": true,
+   "lastSeen": null,
+   "path": {
+    "type": "direct"
+   },
+   "pool": {
+    "name": "desktop",
+    "kind": "ssh",
+    "addresses": [
+     "192.168.1.7"
+    ],
+    "state": "ok",
+    "inRotation": true,
+    "since": 1792061944919,
+    "checkedAt": 1792240308117,
+    "detail": "ok",
+    "slots": 3,
+    "busy": 0,
+    "cores": 16,
+    "load1": 0.05,
+    "cpuPct": 0,
+    "memTotalMb": 24033,
+    "memAvailMb": 21973,
+    "diskFreePct": 87,
+    "runners": {
+     "active": 4,
+     "total": 4
+    },
+    "last24h": {
+     "runs": 0,
+     "failed": 0,
+     "runMin": 0,
+     "avgWaitSec": 0
+    }
+   },
+   "poolMatch": "link",
+   "uses": [
+    {
+     "port": 22,
+     "service": "SSH",
+     "fullName": "SSH (sshd)",
+     "kind": "system",
+     "url": "tcp://devbox.example.ts.net:22",
+     "via": "direct",
+     "servePort": null,
+     "connections": 1,
+     "bytesSent": 12760254,
+     "bytesReceived": 1586697,
+     "rttMs": 40.1,
+     "since": "2026-10-17T11:55:54.455Z",
+     "processes": [],
+     "routed": false
+    }
+   ],
+   "connections": 1,
+   "bytes": 14346951
+  },
+  {
+   "id": "nas",
+   "name": "nas",
+   "nameSource": "tailscale",
+   "kind": "tailnet",
+   "os": "linux",
+   "vendor": "Proxmox Server Solutions GmbH",
+   "randomMac": false,
+   "networks": [
+    "lan"
+   ],
+   "addresses": [
+    "192.168.1.203"
+   ],
+   "tailscaleIps": [
+    "100.64.10.4",
+    "fd7a:115c:a1e0::a83a:5518"
+   ],
+   "lanIps": [
+    "192.168.1.203"
+   ],
+   "lanVia": {
+    "192.168.1.203": "ssh-hostkey"
+   },
+   "routes": [],
+   "virt": null,
+   "guestOf": {
+    "node": "pve1",
+    "hostDevice": "pve1",
+    "vmid": 203,
+    "type": "lxc",
+    "status": "running",
+    "match": "mac"
+   },
+   "pveHost": null,
+   "online": true,
+   "lastSeen": null,
+   "path": null,
+   "pool": null,
+   "poolMatch": null,
+   "uses": [
+    {
+     "port": 22000,
+     "service": "Syncthing",
+     "fullName": "Syncthing - Open Source Continuous File Synchronization",
+     "kind": "app",
+     "url": "tcp://devbox.example.ts.net:22000",
+     "via": "direct",
+     "servePort": null,
+     "connections": 1,
+     "bytesSent": 105512,
+     "bytesReceived": 103541,
+     "rttMs": 6.1,
+     "since": "2026-10-17T11:55:54.455Z",
+     "processes": [],
+     "routed": false
+    }
+   ],
+   "connections": 1,
+   "bytes": 209053
+  },
+  {
+   "id": "devbox",
+   "name": "devbox",
+   "nameSource": "tailscale",
+   "kind": "self",
+   "os": "linux",
+   "vendor": null,
+   "randomMac": false,
+   "networks": [],
+   "addresses": [],
+   "tailscaleIps": [
+    "100.64.10.1",
+    "fd7a:115c:a1e0::182b:1a3c"
+   ],
+   "lanIps": [],
+   "lanVia": {},
+   "routes": [],
+   "virt": {
+    "type": "kvm",
+    "proxmoxMac": true
+   },
+   "guestOf": {
+    "node": "pve1",
+    "hostDevice": "pve1",
+    "vmid": 205,
+    "type": "qemu",
+    "status": "running",
+    "match": "mac"
+   },
+   "pveHost": null,
+   "online": true,
+   "lastSeen": null,
+   "path": null,
+   "pool": {
+    "name": "devbox",
+    "kind": "local",
+    "addresses": [],
+    "state": "ok",
+    "inRotation": true,
+    "since": 1791722122738,
+    "checkedAt": 1792240308117,
+    "detail": "ok",
+    "slots": 2,
+    "busy": 0,
+    "cores": 9,
+    "load1": 0.32,
+    "cpuPct": 5,
+    "memTotalMb": 50170,
+    "memAvailMb": 23507,
+    "diskFreePct": 71,
+    "last24h": {
+     "runs": 46,
+     "failed": 6,
+     "runMin": 7.5,
+     "avgWaitSec": 0
+    }
+   },
+   "poolMatch": "self",
+   "uses": [],
+   "connections": 0,
+   "bytes": 0
+  },
+  {
+   "id": "iphone",
+   "name": "iphone",
+   "nameSource": "tailscale",
+   "kind": "tailnet",
+   "os": "iOS",
+   "vendor": null,
+   "randomMac": false,
+   "networks": [],
+   "addresses": [],
+   "tailscaleIps": [
+    "100.64.10.7",
+    "fd7a:115c:a1e0::683a:b63d"
+   ],
+   "lanIps": [],
+   "lanVia": {},
+   "routes": [],
+   "virt": null,
+   "guestOf": null,
+   "pveHost": null,
+   "online": true,
+   "lastSeen": null,
+   "path": null,
+   "pool": null,
+   "poolMatch": null,
+   "uses": [],
+   "connections": 0,
+   "bytes": 0
+  },
+  {
+   "id": "gpu-box",
+   "name": "gpu-box",
+   "nameSource": "tailscale",
+   "kind": "tailnet",
+   "os": "linux",
+   "vendor": null,
+   "randomMac": false,
+   "networks": [],
+   "addresses": [],
+   "tailscaleIps": [
+    "100.64.10.6",
+    "fd7a:115c:a1e0::ee2b:9019"
+   ],
+   "lanIps": [],
+   "lanVia": {},
+   "routes": [],
+   "virt": null,
+   "guestOf": null,
+   "pveHost": null,
+   "online": true,
+   "lastSeen": null,
+   "path": null,
+   "pool": null,
+   "poolMatch": null,
+   "uses": [],
+   "connections": 0,
+   "bytes": 0
+  },
+  {
+   "id": "docker-vm",
+   "name": "docker-vm",
+   "nameSource": "tailscale",
+   "kind": "tailnet",
+   "os": "linux",
+   "vendor": null,
+   "randomMac": false,
+   "networks": [],
+   "addresses": [],
+   "tailscaleIps": [
+    "100.64.10.5",
+    "fd7a:115c:a1e0::663a:b32f"
+   ],
+   "lanIps": [
+    "192.168.1.202"
+   ],
+   "lanVia": {
+    "192.168.1.202": "proxmox"
+   },
+   "routes": [],
+   "virt": null,
+   "guestOf": {
+    "node": "pve1",
+    "hostDevice": "pve1",
+    "vmid": 202,
+    "type": "qemu",
+    "status": "running",
+    "match": "name"
+   },
+   "pveHost": null,
+   "online": false,
+   "lastSeen": "2026-08-17T13:41:20.1Z",
+   "path": null,
+   "pool": null,
+   "poolMatch": null,
+   "uses": [],
+   "connections": 0,
+   "bytes": 0
+  }
+ ],
+ "local": {
+  "connections": 2,
+  "uses": [
+   {
+    "port": 34659,
+    "service": "code-07f806f999",
+    "fullName": "code-07f806f999",
+    "kind": "ephemeral",
+    "url": null,
+    "via": "direct",
+    "servePort": null,
+    "connections": 1,
+    "bytesSent": 55314,
+    "bytesReceived": 117322,
+    "rttMs": 0,
+    "since": "2026-10-17T11:55:54.455Z",
+    "processes": [
+     "MainThread (3004500)"
+    ],
+    "routed": false
+   },
+   {
+    "port": 41751,
+    "service": "code-16507d91be",
+    "fullName": "code-16507d91be",
+    "kind": "ephemeral",
+    "url": null,
+    "via": "direct",
+    "servePort": null,
+    "connections": 1,
+    "bytesSent": 775699,
+    "bytesReceived": 557022,
+    "rttMs": 0,
+    "since": "2026-10-17T11:55:54.455Z",
+    "processes": [],
+    "routed": false
+   }
+  ]
+ },
+ "byPort": {
+  "22": [
+   {
+    "id": "lan:192.168.1.108",
+    "name": "개인 Wi-Fi 주소 기기",
+    "kind": "lan",
+    "connections": 5
+   },
+   {
+    "id": "dev-mac",
+    "name": "dev-mac",
+    "kind": "tailnet",
+    "connections": 2
+   },
+   {
+    "id": "pve1~routed",
+    "name": "pve1 경유",
+    "kind": "routed",
+    "via": "pve1",
+    "connections": 2
+   },
+   {
+    "id": "desktop-pc",
+    "name": "desktop-pc",
+    "kind": "tailnet",
+    "connections": 1
+   }
+  ],
+  "7721": [
+   {
+    "id": "dev-mac",
+    "name": "dev-mac",
+    "kind": "tailnet",
+    "connections": 1
+   }
+  ],
+  "8790": [
+   {
+    "id": "serve",
+    "name": "tailscale serve · 기기 미확인",
+    "kind": "other",
+    "connections": 2
+   }
+  ],
+  "22000": [
+   {
+    "id": "nas",
+    "name": "nas",
+    "kind": "tailnet",
+    "connections": 1
+   }
+  ],
+  "34659": [
+   {
+    "id": "local",
+    "name": "이 서버",
+    "kind": "local",
+    "connections": 1
+   }
+  ],
+  "41751": [
+   {
+    "id": "local",
+    "name": "이 서버",
+    "kind": "local",
+    "connections": 1
+   }
+  ]
+ },
+ "idleServices": 9,
+ "pool": {
+  "available": true,
+  "source": "hosts",
+  "url": "http://127.0.0.1:7720",
+  "healthAt": 1792240308117
+ },
+ "selfLanIps": [
+  "192.168.1.205"
+ ],
+ "proxmox": {
+  "configured": true,
+  "ok": true,
+  "hosts": 1
+ }
+}

@@ -1,0 +1,22 @@
+[Unit]
+Description=Portboard — listening ports dashboard on :8790 (loopback + tailnet)
+
+[Service]
+WorkingDirectory=%h/projects/portboard
+# --max-semi-space-size=16: on a host with lots of RAM V8 lets the young generation grow to 2 × 64 MB while a
+# worktree or transcript scan allocates, and keeps it until the process goes idle (RSS 170 → 290 MB after every
+# 15-minute scan); 16 MB costs no scan time: a preview under dashboard load stayed at 182–194 MB through a scan,
+# against 294–306 MB without it.
+ExecStart=%h/.nvm/versions/node/v24.19.0/bin/node --max-semi-space-size=16 src/server.ts
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+# State and config files private to this user (0600 files, 0700 dirs), as in portboard-remote.service (security
+# review v1.0, L6). scripts/deploy.sh does not install unit files: cp this one to ~/.config/systemd/user/ and
+# `systemctl --user daemon-reload` before the next restart.
+NoNewPrivileges=yes
+UMask=0077
+# The Tailscale IP may not exist yet right after boot; the server exits and we retry.
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

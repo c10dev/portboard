@@ -1,0 +1,11 @@
+### Added
+- **Port rules** ([docs/config.md](docs/config.md#port-rules)), after VS Code's `remote.portsAttributes`. Labels, pins, hiding and new-port notices can now be set for many ports at once in `prefs.json` `portRules`. A key is a range (`18891-18899`), a `host:port` matched against the bind address (`localhost:5173`, `*:3000`), or a case-insensitive regex on the owning command line (`vite|next dev`). `otherPorts` applies to ports that no rule matches.
+  - The port's own entry (a rename, pin or hide on the dashboard) always wins. Then come host:port, the narrowest range, and regexes in file order. Each field comes from the first source that sets it. With rules present, an unpin or un-hide is stored, so the rule doesn't pin or hide the port again.
+  - Edit them on the 설정 tab's new **포트 규칙** section, with `GET`/`POST /api/port-rules`, or with the local MCP tools `list_port_rules` and `set_port_rule`. A single-port key is written as that port's own entry, like a rename. Invalid keys and rules are ignored and listed.
+  - The 서비스 inspector's **규칙** section shows which rules matched, in order, and where the name and the new-port setting came from. `GET /api/ports` entries add `onNew` and `rules: {matched, from}`.
+- **New dev-server notices**, after VS Code's `onAutoForward`. When a port starts listening, its `onNew` decides what happens:
+  - `notify` shows a toast in the open dashboard with 열기 and tailnet 공개, and sends one ntfy/webhook message through the down-alert channel with the same actions. It is the default for vite, next dev, astro and `npm/pnpm/yarn/bun run dev` on app ports.
+  - `openBrowserOnce` shows only the toast with 열기.
+  - `silent` (the default for everything else) and `ignore` (which also hides the port) show nothing.
+  - The server looks every 15 s and debounces per port and command for 10 minutes. It never notifies for what was already listening when it started, for its own ports, or for a port in a restart/stop quiet window. The push only goes out where alerts are on.
+  - Events are served at `GET /api/new-ports?since=<id>` for the dashboard and, later, the Mac app ([docs/api.md](docs/api.md#new-ports)).

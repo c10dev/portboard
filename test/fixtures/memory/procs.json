@@ -1,0 +1,32 @@
+{
+  "_comment": "A fake /proc for test/memory.test.ts: rss in MB, start in seconds after boot, cpu in ticks. Neutral names only.",
+  "procs": [
+    { "pid": 2, "ppid": 0, "comm": "kthreadd", "rss": 0, "argv": [] },
+    { "pid": 100, "ppid": 1, "comm": "server", "rss": 400, "start": 10, "argv": ["/home/u/.claude/remote/srv/abc/server", "--serve"] },
+    { "pid": 200, "ppid": 100, "comm": "2.1.299-aaaa", "rss": 300, "start": 1000, "cpu": 5000, "cwd": "/home/u/projects/alpha",
+      "argv": ["/home/u/.claude/remote/ccd-cli/2.1.299-aaaa", "--output-format", "stream-json", "--allowedTools=mcp__x__y"],
+      "environ": "HOME=/home/u\u0000CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-SECRETSECRET\u0000CLAUDE_CODE_HOST_SESSION_ID=local_x" },
+    { "pid": 201, "ppid": 200, "comm": "MainThread", "rss": 80, "start": 1001, "cpu": 100,
+      "argv": ["/home/u/.nvm/bin/node", "/home/u/.nvm/lib/node_modules/@playwright/mcp/cli.js", "--config", "/home/u/.claude/pw.json"],
+      "environ": "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-SECRETSECRET\u0000CLAUDE_CODE_SESSION_ID=11111111-1111-4111-8111-111111111111\u0000CLAUDE_PID=200" },
+    { "pid": 202, "ppid": 200, "comm": "npm exec rea-ag", "rss": 40, "start": 1002, "argv": ["npm", "exec", "rea-agents@6.7.0", "mcp"] },
+    { "pid": 203, "ppid": 202, "comm": "sh", "rss": 2, "start": 1002, "argv": ["sh", "-c", "'rea'", "mcp"] },
+    { "pid": 204, "ppid": 203, "comm": "MainThread", "rss": 220, "start": 1003, "argv": ["node", "/home/u/.npm/_npx/x/node_modules/.bin/rea", "mcp"] },
+    { "pid": 205, "ppid": 200, "comm": "MainThread", "rss": 60, "start": 1003, "argv": ["/home/u/.nvm/bin/node", "/home/u/projects/portboard/src/mcp.ts"] },
+    { "pid": 206, "ppid": 200, "comm": "bash", "rss": 3, "start": 2000, "argv": ["/bin/bash", "-c", "npm run dev"] },
+    { "pid": 207, "ppid": 206, "comm": "node", "rss": 150, "start": 2001, "argv": ["node", "/home/u/projects/alpha/node_modules/.bin/vite"] },
+    { "pid": 300, "ppid": 100, "comm": "2.1.295-bbbb", "rss": 200, "start": 500, "cpu": 900, "cwd": "/home/u/projects/beta",
+      "argv": ["/home/u/.claude/remote/ccd-cli/2.1.295-bbbb", "--output-format", "stream-json"] },
+    { "pid": 301, "ppid": 300, "comm": "MainThread", "rss": 70, "start": 501, "cpu": 10,
+      "argv": ["/home/u/.nvm/bin/node", "/home/u/.nvm/lib/node_modules/@playwright/mcp/cli.js"],
+      "environ": "CLAUDE_CODE_SESSION_ID=22222222-2222-4222-8222-222222222222" },
+    { "pid": 302, "ppid": 300, "comm": "MainThread", "rss": 30, "start": 502, "argv": ["/home/u/.nvm/bin/node", "/home/u/.npm/_npx/y/node_modules/some-mcp-server/dist/index.js"] },
+    { "pid": 400, "ppid": 100, "comm": "2.1.299-aaaa", "rss": 110, "start": 3000, "cwd": "/home/u/projects/alpha",
+      "argv": ["/home/u/.claude/remote/ccd-cli/2.1.299-aaaa", "--resume=11111111-1111-4111-8111-111111111111", "--fork-session", "--no-session-persistence"] },
+    { "pid": 500, "ppid": 1, "comm": "MainThread", "rss": 200, "start": 100, "argv": ["node", "/home/u/.npm/_npx/x/node_modules/.bin/rea", "mcp"] },
+    { "pid": 600, "ppid": 1, "comm": "node", "rss": 190, "start": 50, "argv": ["/usr/bin/node", "src/server.ts"] },
+    { "pid": 701, "ppid": 1, "comm": "postgres", "rss": 100, "start": 60, "argv": ["postgres", "-D", "/var/lib/postgresql/data"] },
+    { "pid": 800, "ppid": 1, "comm": "next-server (v1", "rss": 500, "start": 70, "argv": ["next-server (v16.3.8)"] }
+  ],
+  "docker": [{ "id": "aaaaaaaaaaaabbbbbbbbbbbbccccccccccccddddddddddddeeeeeeeeeeeeffff", "current": 125829120, "inactive": 20971520, "procs": [701] }]
+}

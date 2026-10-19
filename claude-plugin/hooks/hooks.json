@@ -1,0 +1,16 @@
+{
+  "description": "Portboard: port nudge before Bash (adds context, never blocks) and session-end cleanup",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/run.sh\" --hook \"${CLAUDE_PLUGIN_ROOT}/hooks/port-nudge.ts\"", "timeout": 5 }]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/run.sh\" --hook \"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.ts\"" }]
+      }
+    ]
+  }
+}

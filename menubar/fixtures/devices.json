@@ -1,0 +1,353 @@
+{
+ "at": "2026-10-17T12:32:25.878Z",
+ "pool": {
+  "available": true,
+  "source": "hosts",
+  "url": "http://127.0.0.1:7720",
+  "healthAt": 1792240338118
+ },
+ "devices": [
+  {
+   "id": "devbox",
+   "name": "devbox",
+   "os": "linux",
+   "self": true,
+   "online": true,
+   "lastSeen": null,
+   "tailscaleIps": [
+    "100.64.10.1",
+    "fd7a:115c:a1e0::182b:1a3c"
+   ],
+   "path": null,
+   "lanIps": [],
+   "lanVia": {},
+   "routes": [],
+   "pool": {
+    "name": "devbox",
+    "kind": "local",
+    "addresses": [],
+    "state": "ok",
+    "inRotation": true,
+    "since": 1791722122738,
+    "checkedAt": 1792240338118,
+    "detail": "ok",
+    "slots": 2,
+    "busy": 0,
+    "cores": 9,
+    "load1": 0.47,
+    "cpuPct": 7,
+    "memTotalMb": 50170,
+    "memAvailMb": 22660,
+    "diskFreePct": 71,
+    "last24h": {
+     "runs": 46,
+     "failed": 6,
+     "runMin": 7.5,
+     "avgWaitSec": 0
+    }
+   },
+   "poolMatch": "self",
+   "virt": {
+    "type": "kvm",
+    "proxmoxMac": true
+   }
+  },
+  {
+   "id": "desktop-pc",
+   "name": "desktop-pc",
+   "os": "windows",
+   "self": false,
+   "online": true,
+   "lastSeen": null,
+   "tailscaleIps": [
+    "100.64.10.2",
+    "fd7a:115c:a1e0::ef3a:e71d"
+   ],
+   "path": {
+    "type": "direct"
+   },
+   "lanIps": [
+    "192.168.1.7"
+   ],
+   "lanVia": {
+    "192.168.1.7": "compute-pool"
+   },
+   "routes": [],
+   "pool": {
+    "name": "desktop",
+    "kind": "ssh",
+    "addresses": [
+     "192.168.1.7"
+    ],
+    "state": "ok",
+    "inRotation": true,
+    "since": 1792061944919,
+    "checkedAt": 1792240338118,
+    "detail": "ok",
+    "slots": 3,
+    "busy": 0,
+    "cores": 16,
+    "load1": 0.03,
+    "cpuPct": 0,
+    "memTotalMb": 24033,
+    "memAvailMb": 22000,
+    "diskFreePct": 87,
+    "runners": {
+     "active": 4,
+     "total": 4
+    },
+    "last24h": {
+     "runs": 0,
+     "failed": 0,
+     "runMin": 0,
+     "avgWaitSec": 0
+    }
+   },
+   "poolMatch": "link"
+  },
+  {
+   "id": "dev-mac",
+   "name": "dev-mac",
+   "os": "macOS",
+   "self": false,
+   "online": true,
+   "lastSeen": null,
+   "tailscaleIps": [
+    "100.64.10.3",
+    "fd7a:115c:a1e0::6e3a:8d1d"
+   ],
+   "path": {
+    "type": "direct"
+   },
+   "lanIps": [],
+   "lanVia": {},
+   "routes": [],
+   "pool": {
+    "name": "mac",
+    "kind": "agent",
+    "addresses": [
+     "100.64.10.3"
+    ],
+    "state": "agent-busy",
+    "inRotation": false,
+    "since": 1792239198098,
+    "checkedAt": 1792240338118,
+    "detail": "connected, but not available: idle 0 min of 10",
+    "slots": 1,
+    "busy": 0,
+    "cores": 10,
+    "load1": 5.2,
+    "agent": {
+     "connected": true,
+     "available": false,
+     "why": "idle 0 min of 10"
+    },
+    "last24h": {
+     "runs": 0,
+     "failed": 0,
+     "runMin": 0,
+     "avgWaitSec": 0
+    }
+   },
+   "poolMatch": "address"
+  },
+  {
+   "id": "iphone",
+   "name": "iphone",
+   "os": "iOS",
+   "self": false,
+   "online": true,
+   "lastSeen": null,
+   "tailscaleIps": [
+    "100.64.10.7",
+    "fd7a:115c:a1e0::683a:b63d"
+   ],
+   "path": null,
+   "lanIps": [],
+   "lanVia": {},
+   "routes": [],
+   "pool": null,
+   "poolMatch": null
+  },
+  {
+   "id": "nas",
+   "name": "nas",
+   "os": "linux",
+   "self": false,
+   "online": true,
+   "lastSeen": null,
+   "tailscaleIps": [
+    "100.64.10.4",
+    "fd7a:115c:a1e0::a83a:5518"
+   ],
+   "path": null,
+   "lanIps": [
+    "192.168.1.203"
+   ],
+   "lanVia": {
+    "192.168.1.203": "proxmox"
+   },
+   "routes": [],
+   "pool": null,
+   "poolMatch": null
+  },
+  {
+   "id": "gpu-box",
+   "name": "gpu-box",
+   "os": "linux",
+   "self": false,
+   "online": true,
+   "lastSeen": null,
+   "tailscaleIps": [
+    "100.64.10.6",
+    "fd7a:115c:a1e0::ee2b:9019"
+   ],
+   "path": null,
+   "lanIps": [],
+   "lanVia": {},
+   "routes": [],
+   "pool": null,
+   "poolMatch": null
+  },
+  {
+   "id": "pve1",
+   "name": "pve1",
+   "os": "linux",
+   "self": false,
+   "online": true,
+   "lastSeen": null,
+   "tailscaleIps": [
+    "100.64.10.8",
+    "fd7a:115c:a1e0::f03a:837d"
+   ],
+   "path": null,
+   "lanIps": [
+    "192.168.1.201"
+   ],
+   "lanVia": {
+    "192.168.1.201": "ssh-hostkey"
+   },
+   "routes": [
+    "192.168.1.0/24"
+   ],
+   "pool": null,
+   "poolMatch": null
+  },
+  {
+   "id": "docker-vm",
+   "name": "docker-vm",
+   "os": "linux",
+   "self": false,
+   "online": false,
+   "lastSeen": "2026-08-17T13:41:20.1Z",
+   "tailscaleIps": [
+    "100.64.10.5",
+    "fd7a:115c:a1e0::663a:b32f"
+   ],
+   "path": null,
+   "lanIps": [
+    "192.168.1.202"
+   ],
+   "lanVia": {
+    "192.168.1.202": "proxmox"
+   },
+   "routes": [],
+   "pool": null,
+   "poolMatch": null
+  }
+ ],
+ "proxmox": {
+  "configured": true,
+  "url": "https://192.168.1.201:8006",
+  "ok": true,
+  "hosts": [
+   {
+    "node": "pve1",
+    "status": "online",
+    "cpu": 0.0778855368574386,
+    "maxcpu": 12,
+    "mem": 58664710144,
+    "maxmem": 67158507520,
+    "disk": 9756770304,
+    "maxdisk": 68630765568,
+    "uptime": 896942,
+    "ip": "192.168.1.201",
+    "device": "pve1",
+    "guests": [
+     {
+      "vmid": 202,
+      "name": "docker-vm",
+      "type": "qemu",
+      "node": "pve1",
+      "status": "running",
+      "template": false,
+      "cpu": 0.105025463233348,
+      "maxcpu": 2,
+      "mem": 8078880768,
+      "maxmem": 8589934592,
+      "uptime": 896910,
+      "ips": [],
+      "device": "docker-vm",
+      "deviceMatch": "name",
+      "lanIp": "192.168.1.202"
+     },
+     {
+      "vmid": 203,
+      "name": "nas",
+      "type": "lxc",
+      "node": "pve1",
+      "status": "running",
+      "template": false,
+      "cpu": 0.000398707753878356,
+      "maxcpu": 1,
+      "mem": 114741248,
+      "maxmem": 1073741824,
+      "uptime": 258386,
+      "ips": [
+       "192.168.1.203"
+      ],
+      "device": "nas",
+      "deviceMatch": "name",
+      "lanIp": "192.168.1.203"
+     },
+     {
+      "vmid": 204,
+      "name": "jellyfin",
+      "type": "lxc",
+      "node": "pve1",
+      "status": "running",
+      "template": false,
+      "cpu": 0.000199353876939178,
+      "maxcpu": 1,
+      "mem": 252919808,
+      "maxmem": 1073741824,
+      "uptime": 258383,
+      "ips": [
+       "192.168.1.204"
+      ],
+      "device": "lan:192.168.1.204",
+      "deviceMatch": "ip",
+      "lanIp": null
+     },
+     {
+      "vmid": 205,
+      "name": "devbox",
+      "type": "qemu",
+      "node": "pve1",
+      "status": "running",
+      "template": false,
+      "cpu": 0.0680446663201974,
+      "maxcpu": 9,
+      "mem": 51874283520,
+      "maxmem": 54760833024,
+      "uptime": 896908,
+      "ips": [],
+      "device": "devbox",
+      "deviceMatch": "mac",
+      "lanIp": null
+     }
+    ]
+   }
+  ]
+ }
+}
