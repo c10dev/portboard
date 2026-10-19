@@ -1,23 +1,39 @@
 # Portboard
 
-A dashboard of every TCP port listening on a Linux server, the devices on your Tailscale tailnet, and your dev
-worktrees. Open any service from your laptop or phone with one click, no `ssh -N -L …` needed, and let Claude Code
-pick ports and start dev servers through it instead of guessing.
+Portboard coordinates ports and dev servers on one Linux machine shared by people and AI coding agents, so parallel
+Claude Code sessions and worktrees pick ports, start servers and clean up without colliding or killing each other's.
+
+It is also a dashboard of every TCP port listening on that machine, the devices on your Tailscale tailnet and your dev
+worktrees: open any service from your laptop or phone with one click, no `ssh -N -L …` needed.
 
 ![The Services tab: ports grouped by service, with who is using them](docs/images/services-1200.png)
 
+- **Port reservations.** `free_port {for: "<repo>@<branch>"}` returns that owner's reserved port first and never offers
+  another owner's; `reserve_port` keeps a port for a worktree across restarts, so two sessions don't both guess 3000.
+- **Dev servers agents start and stop.** `start_dev_server {path}` runs a worktree's `dev`/`start`/`preview`/`serve`
+  script as a transient systemd unit on its reserved port; `tail_logs` reads its output and `stop_dev_server` stops it.
+- **A nudge on raw port commands.** In the Claude Code plugin, a PreToolUse hook notices a Bash command that starts a
+  server on a hard-coded port or kills by port, and adds a `[portboard]` note: who holds or reserved that port, which
+  port to use, and the MCP call to make instead. It never blocks the command.
+- **Cleanup after sessions.** Servers whose worktree was deleted, whose branch is merged or whose Claude session ended
+  become cleanup candidates. A SessionEnd hook marks a session's servers at once and, only if you turn it on, stops
+  them. Installed services, containers and pinned ports are never touched.
+- **A measure of whether agents use it.** `node scripts/adoption.ts --days 7` (or the `adoption_stats` tool) reads this
+  machine's Claude Code transcripts and counts Portboard MCP calls against raw `ss`/`lsof` inspection, kill-by-port,
+  servers started on a hard-coded port, and nudges shown and followed.
+- **MCP for any client.** A local stdio MCP server that any MCP-capable agent CLI can run, the Claude Code plugin (the
+  server plus a skill and the hooks), and an optional read-only remote connector for claude.ai and ChatGPT.
+  Guide: [running several coding agents on one machine](docs/agents.md).
 - **Services.** Every listening port with its owner: process, project folder, systemd unit or docker container, HTTP
   title, bind scope (loopback / tailnet / all), who is connected now and when it was last used.
 - **One click to open.** A loopback-only HTTP port can be published to the tailnet with `tailscale serve` from its row,
   and unpublished again.
 - **Devices.** Tailnet devices with their load and the ports they use; optionally a Proxmox host and its containers and
   a desktop's Windows side, read over a read-only SSH key.
-- **Dev servers and worktrees.** Start and stop a worktree's dev server, reserve stable ports per project, and find
-  worktrees and servers that are safe to clean up.
+- **Worktrees.** Start and stop a worktree's dev server from the dashboard, and find worktrees and servers that are safe
+  to clean up.
 - **Alerts.** Down alerts for watched ports and devices, new-device and new-port notices, daily or weekly digests, over
   ntfy or a webhook.
-- **For AI agents.** A local MCP server, a Claude Code plugin with a port-picking skill and hooks, and an optional
-  read-only remote MCP connector for claude.ai and ChatGPT.
 - **Zero runtime dependencies.** Node.js and the standard library only. TypeScript runs directly on Node ≥ 22.18
   (type stripping); `typescript` and `@types/node` are dev dependencies for the typecheck.
 
@@ -97,7 +113,8 @@ cleanup of dev servers:
 ```
 
 The plugin runs the MCP server from your checkout (`~/projects/portboard`, or `PORTBOARD_HOME`). Details:
-[docs/claude-plugin](docs/claude-plugin/README.md). Without the plugin: [docs/mcp.md](docs/mcp.md).
+[docs/claude-plugin](docs/claude-plugin/README.md). Without the plugin: [docs/mcp.md](docs/mcp.md). The workflow
+across several sessions, and other agent CLIs: [docs/agents.md](docs/agents.md).
 
 ## Mac app
 
@@ -118,6 +135,7 @@ Details: [docs/mac-app](docs/mac-app/README.md).
 | [Site config](docs/config.md) | `portboard.json`: host, tailnet, repos, Proxmox and Windows readers, port rules |
 | [Dashboard](docs/dashboard.md) | rows, last-used history, service page, devices, alerts, new devices |
 | [REST API](docs/api.md) | endpoints and guards |
+| [Coding agents](docs/agents.md) | several agents on one machine: reserve, start, clean up, measure; other agent CLIs |
 | [MCP servers](docs/mcp.md) | the local stdio server: tools, resources, prompts |
 | [Remote MCP](docs/remote-mcp/README.md) | the read-only connector for claude.ai and ChatGPT |
 | [Security](docs/security.md) | who can reach and write, audit log, headers and files |
