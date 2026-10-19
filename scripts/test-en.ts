@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 export const KO_ONLY = [
   'access',
   'claude',
+  'devhealth',
   'digest',
   'mcp-resources',
   'memory',
