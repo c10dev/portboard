@@ -10,7 +10,9 @@ things, and what is recorded. The public, read-only remote MCP server (8794, Fun
 - It listens only on loopback and the Tailscale IP, so only processes on this machine and devices in the tailnet can connect.
 - `tailscale serve` publishes it as `https://devbox.example.ts.net:8443` (8443 → 127.0.0.1:8790), tailnet only. Port 443 is the public, read-only remote MCP server (Funnel → 8794); the dashboard is never on a Funnel port.
 - Requests whose `Host` header isn't one of this machine's names get 421. This blocks DNS rebinding.
-- Reads (`GET`) are open to every caller that can connect. The tailnet is the owner's devices plus anything shared into it, and the audit log and the port list are readable by all of them.
+- Reads (`GET`) are open to every caller that can connect, with one exception: the audit log (`GET /api/audit`) is the
+  owner's only (c10dev/portboard#7, [Audit log](#audit-log-c10devportboard30)). The tailnet is the owner's devices plus
+  anything shared into it, and the port list, devices and history are readable by all of them.
 
 ## Who can write (c10dev/portboard#29)
 
@@ -123,8 +125,9 @@ owner's login; that is the live check for serve itself.
 | A cross-site page in the owner's browser POSTs | blocked by `X-Portboard` | unchanged; now also recorded as `denied` |
 | Funnel reaching the dashboard by a config mistake | full write access | `Tailscale-Funnel-Request` ⇒ read-only |
 | `tailscale status` fails (tailscaled restarting) | — | owner unknown ⇒ serve writes refused until it answers; loopback unaffected |
-| A non-owner reads ports, devices, history and the audit log | yes | yes: reads stay open to the tailnet (out of scope for #29) |
-| Other Unix users on devbox | could use loopback | still can: loopback is trusted. The machine has one login user (a loopback token is the stronger fix, not done) |
+| A non-owner reads ports, devices and history | yes | yes: reads stay open to the tailnet (accepted: the dashboard is a read-only view for the tailnet by design) |
+| A non-owner reads the audit log (who changed what, from which device, when) | yes | no: `GET /api/audit` answers `403 owner only` (#7) |
+| Other Unix users on devbox | could use loopback | still can: loopback is trusted. **Open, accepted** (#7): the machine has one login user, and every local process runs as the owner who can edit the state files anyway. A loopback token is the fix if a second user ever gets a login |
 
 ## Audit log (c10dev/portboard#30)
 
@@ -137,6 +140,13 @@ allowlisted identifier fields (`port`, `ports`, `path`, `paths`, `repo`, `owner`
 `pinned`), and only the **names** of other fields (a label, a device name or a note shows as `fields: ["label"]`).
 Denied requests are logged before the body is read. Header text is cut and stripped of control characters. Serve and
 direct lines also carry the device (`device: {addr, name?, id?}`, see [Write devices](#write-devices)).
+
+**Who may read it** (c10dev/portboard#7): only the owner, decided like a write (`classify` in `src/core/access.ts`):
+a process on this machine talking to 127.0.0.1 directly, or the owner's Tailscale login through `tailscale serve`.
+Everyone else, including a direct `http://<tailnet IP>:8790` connection from the owner's own laptop, gets
+`403 {error: "owner only", reason}`, and the dashboard's 최근 기록 and the service page's 기록 say "기록은 소유자만 볼 수
+있어요" instead of the entries. The write-device allowlist doesn't apply: it limits writes, and an owner device that
+may not write can still read what was done. No `tailscale whois` runs for this read. Every other read is unchanged.
 
 Denials can't flush the log (security review v1.0, M2): they go to their own file, `audit-denied.jsonl` (+ `.1`,
 256 KB each), and identical ones (same who, source, route, reason and device address) are coalesced: the first is
@@ -153,14 +163,20 @@ writes about one line per minute per kind and never rotates `audit.jsonl`, which
   page script first.
 - **Server limits**, like the remote server: `headersTimeout` 10 s, `requestTimeout` 30 s (receiving the request, not
   answering it), `keepAliveTimeout` 5 s, and at most 256 connections per listen address.
-- **500s** never carry the error's text (it can hold paths and command output, and the audit log is readable by every
-  tailnet peer): the answer is `{error: "서버 오류가 났어요 (요청 ID 1a2b3c4d).", requestId}`, the audit line's detail has
+- **500s** never carry the error's text (it can hold paths and command output, and until #7 the audit log was readable
+  by every tailnet peer): the answer is `{error: "서버 오류가 났어요 (요청 ID 1a2b3c4d).", requestId}`, the audit line's detail has
   only the id, and the full error goes to the server log (`journalctl --user -u portboard`) under the same id.
 - **State and config files** are written 0600 in 0700 directories, through a temp file with a random name opened
   with `O_EXCL` and renamed over the target (`src/core/atomic.ts`), so a planted file or symlink at a guessable temp
   path is never followed. `deploy/portboard.service` sets `UMask=0077` and `NoNewPrivileges=yes` like the remote unit.
   `scripts/deploy.sh` does not install unit files: after this change, copy the unit to `~/.config/systemd/user/` and
   `systemctl --user daemon-reload` once. Files written before keep their old mode until their next write.
+
+## Open items
+
+- **Loopback has no token** (accepted, see the threat model): any process on this machine is the owner. Revisit if a
+  second Unix user gets a login.
+- ~~The whole tailnet can read the audit log~~: closed by #7, owner only.
 
 ## Other rules
 

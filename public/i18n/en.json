@@ -150,6 +150,7 @@
   "audit.field.pinned": "Pinned",
   "audit.field.time": "Time",
   "audit.loadFailed": "Couldn't load the activity.",
+  "audit.ownerOnly": "Only the owner can see the activity log. Open the https:// address (tailscale serve) signed in as the owner.",
   "audit.recent": "Recent activity",
   "audit.recent.empty": "No changes recorded yet.",
   "audit.recent.note": "A single port's activity is under ‘Activity’ on its service details page.",

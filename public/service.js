@@ -10,9 +10,8 @@ import { badge, deviceHref, USER_KIND, userChip, usingChip } from './lib/badge.j
 import { $, button, el, extLink } from './lib/dom.js';
 import { showProfile } from './lib/profile.js';
 import { showAccess } from './lib/access.js';
-import { tryJSON } from './lib/api.js';
 import { isSettingsHash } from './lib/settings-route.js';
-import { auditRow } from './lib/audit.js';
+import { auditRow, auditUnavailable, loadAudit } from './lib/audit.js';
 import { locale, t } from './lib/i18n.js';
 import { ago as agoText, hoursMinutes as minutes, isJustNow, when } from './lib/time.js';
 
@@ -298,11 +297,11 @@ function renderEvents() {
 // 기록 (#30): who restarted, stopped, exposed or changed this port, from where, and whether it was allowed.
 async function renderAudit() {
   const at = port;
-  const doc = await tryJSON(`/api/audit?port=${at}&limit=20`);
+  const doc = await loadAudit(`/api/audit?port=${at}&limit=20`);
   if (at !== port) return;
   const ul = $('audit');
-  if (!doc) {
-    ul.replaceChildren(el('li', 'muted', t('audit.loadFailed')));
+  if (!doc?.entries) {
+    ul.replaceChildren(auditUnavailable(doc));
     return;
   }
   if (!doc.entries.length) {

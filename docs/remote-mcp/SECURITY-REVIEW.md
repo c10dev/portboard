@@ -1,6 +1,6 @@
 # Remote MCP security review (2026-10-17)
 
-Scope: the read-only remote MCP server (`src/remote.ts`, `src/remote/*`) as it runs in production: public through Tailscale Funnel at `https://devbox.example.ts.net:8443/mcp` → `127.0.0.1:8794`. It was reviewed from an internet attacker's position, then from a tailnet peer and a local process. Issue: c10dev/portboard#3.
+Scope: the read-only remote MCP server (`src/remote.ts`, `src/remote/*`) as it runs in production: public through Tailscale Funnel at `https://devbox.example.ts.net/mcp` (port 443) → `127.0.0.1:8794`. At the time of the review the connector was on Funnel 8443; it moved to 443 on 2026-10-18 because claude.ai never connected to 8443, and the dashboard took 8443 (tailnet only, never Funnel). See [README › Going public](README.md#going-public-done-funnel-443--8794). It was reviewed from an internet attacker's position, then from a tailnet peer and a local process. Issue: c10dev/portboard#3.
 
 **Verdict:** nothing critical, and nothing that leaks data or grants access right now. Production's `remote.json` has `publicUrl` set, `allowLoopbackRedirects: false`, no clients and no tokens. The findings are availability problems, integrity problems in incident response (`revoke`) and hardening. All findings rated medium are fixed on branch `remote-security`, along with the cheap low ones.
 
@@ -8,21 +8,21 @@ Live check: one request with a forged `X-Forwarded-For: 6.6.6.6` and `Tailscale-
 
 ## Findings
 
-Severity is for this deployment (single owner, Funnel on 8443, dashboard tailnet-only).
+Severity is for this deployment (single owner, Funnel on 443, dashboard tailnet-only on 8443). Statuses as of c10dev/portboard#7 (2026-10-19), which closed the leftovers listed in [Follow-up (#7)](#follow-up-7).
 
 | ID | Severity | Finding | Status | Test |
 |---|---|---|---|---|
 | S1 | Medium | The failure limiter blocks valid credentials from shared egress addresses | Fixed | `remote-security` S1 |
 | S2 | Medium | `Tailscale-Funnel-Request` was trusted from any socket, including tailnet peers | Fixed | `remote-security` S2 |
 | S3 | Medium | Unauthenticated amplification: unlimited `/register` writes and CIMD fetches | Fixed | `remote-security` S3 (×4) |
-| S4 | Medium | Server and CLI wrote `remote.json` without a shared lock, so `revoke` could be silently undone | Fixed | `remote-security` S4 (×3) |
-| S5 | Low–medium | Anyone could burn the owner's pending approval code with 5 tries | Fixed (residual: ≥4 addresses) | `remote-http` "wrong approval codes…" |
+| S4 | Medium | Server and CLI wrote `remote.json` without a shared lock, so `revoke` could be silently undone | Fixed; stale-lock race between two waiters fixed in #7 | `remote-security` S4 (×5) |
+| S5 | Low–medium | Anyone could burn the owner's pending approval code with 5 tries | Fixed; IPv6 counted per /64 (#7). Residual (≥4 addresses or /64s can burn a code) accepted | `remote-http` "wrong approval codes…", `remote-security` S5 (×4) |
 | S6 | Low–medium | No refresh-token reuse detection | Fixed | `remote-security` S6 (×2) |
-| S7 | Low | `/token` accepted requests without `client_id` | Fixed | `remote-security` S7 |
+| S7 | Low | `/token` accepted requests without `client_id` | Fixed; the hosted clients' expected request is tested (#7), a live claude.ai/ChatGPT check is still to do | `remote-security` S7 (×2) |
 | S8 | Low | `client_id=__proto__` / `constructor` reached a crash path (500) | Fixed | `remote-security` S8 |
 | S9 | Low | `extraRedirectPrefixes` matched by raw string prefix | Fixed | `remote-security` S9 |
 | S10 | Low | Hand-edited config values: `"showAddresses": "false"` loosened redaction; a string `allowedOrigins` matched substrings | Fixed | `remote-security` S10 |
-| S11 | Low | The issuer fell back to the Host header if `remote.json` lost `publicUrl` at runtime | Fixed (issuer pinned at start) | `remote-security` S11 |
+| S11 | Low | The issuer fell back to the Host header if `remote.json` lost `publicUrl` at runtime | Fixed (issuer pinned at start); loopback-redirect default closed for Funnel in #7 | `remote-security` S11 (×2) |
 | S12 | Low | `~/.config/portboard` is 775; the temp file had a predictable name and followed links | Fixed | `remote-security` S12 |
 | S13 | Low | Attacker-sized tool names in the call log (up to 64 KB × 20 per request) | Fixed | `remote-security` S13 |
 | S14 | Low | Absolute paths outside `/home` (`/srv`, `/opt`, `/var`…) passed the text scrub | Fixed | `remote-security` S14 |
@@ -70,7 +70,9 @@ Severity is for this deployment (single owner, Funnel on 8443, dashboard tailnet
 
 **Exploit:** an attacker holding a stolen token keeps the server writing, for example with unauthenticated `/register` calls before S3, each one a read-modify-write. The owner's incident response, `revoke`, has a real chance of landing inside a write window and being undone without any visible error. The same race can drop a fresh `approve` code.
 
-**Fix:** every update takes an `O_EXCL` lock file (`remote.json.lock`) shared by both processes. A lock older than 10 s, left by a crashed writer, is broken. The tests reproduce both lost writes without the lock (checked by disabling it). **Known gap:** if two waiters both find a stale lock, the second can delete the first's fresh lock. That needs a crashed writer first, so it isn't fixed.
+**Fix:** every update takes an `O_EXCL` lock file (`remote.json.lock`) shared by both processes. A lock older than 10 s, left by a crashed writer, is broken. The tests reproduce both lost writes without the lock (checked by disabling it).
+
+**Stale-lock race (fixed in #7):** two waiters that both found the stale lock could both break it: the second one's `unlink` removed the fresh lock the first had just taken, and both wrote. Now the waiters that judged one lock file stale race for a marker named after that file (device, inode and nanosecond mtime), created with `O_EXCL`; only the winner unlinks, and only after checking the lock path still holds that same file. A marker older than 10 s (its waiter died between the two steps) is taken over through the next `O_EXCL` marker, so a crash there can't wedge the lock. A holder's release removes the lock only while it is still the file it created. The regression test delays every `stat` of the lock at random so a stale answer arrives after another waiter has re-locked; the old code ran two writers at once there, the new one never does. What remains is the assumption the stale rule always had: a writer that stalls for more than 10 s inside its update is treated as dead.
 
 ### S5 · Low–medium · Approval code burn (fixed, with a residual)
 
@@ -78,7 +80,11 @@ Severity is for this deployment (single owner, Funnel on 8443, dashboard tailnet
 
 **Exploit:** an attacker posts wrong codes every couple of minutes. Whenever the owner runs `approve`, the code dies before they can type it, which blocks onboarding.
 
-**Fix:** five wrong tries per address lock that address out of the form for 10 min. The code burns only after 20 wrong tries from all addresses together. Brute force stays at about 20 guesses against 2⁴⁰. **Residual:** an attacker with four or more addresses (IPv6 makes this cheap) can still burn codes. That costs the owner a retry, never access.
+**Fix:** five wrong tries per address lock that address out of the form for 10 min. The code burns only after 20 wrong tries from all addresses together. Brute force stays at about 20 guesses against 2⁴⁰.
+
+**#7:** the global budget is the bound, and it is kept: however many addresses guess, a code gets at most 20 wrong tries, then it is gone and the owner makes a new one (`approve` or 승인 코드 만들기), which starts a fresh budget. The per-address limit now counts an IPv6 client by its /64, so rotating addresses inside one allocation no longer buys extra tries. The burning try is logged as `approval-burned`, so the owner's next "no pending code" has an explanation in the journal. A hand-edited `failures` that isn't a number used to never reach the limit; it now counts from 0.
+
+**Residual (accepted):** an attacker with four or more IPv4 addresses or /64s can still burn a code. That costs the owner a retry, never access. Any scheme that bounds guesses globally can be exhausted by strangers; a global throttle instead of a burn would lock the owner out the same way.
 
 ### S6 · Low–medium · Refresh-token reuse (fixed)
 
@@ -88,12 +94,12 @@ Severity is for this deployment (single owner, Funnel on 8443, dashboard tailnet
 
 ### S7–S15 · Low (fixed)
 
-- **S7:** `client_id` is now required at `/token` for both grants (OAuth 2.1 §3.2.2, public clients). Public clients must send it, and the smoke script does. claude.ai and ChatGPT haven't been checked against this build yet; if a real connector fails at `/token` with `client_id is missing`, this check is the first suspect.
-- **CIMD URL shape (from S3), watch item:** a CIMD `client_id` with a query string, a bare `/` path or more than 300 characters is now refused. ChatGPT's documented ids (`https://chatgpt.com/oauth/client.json`, `https://chatgpt.com/oauth/{callback_id}/client.json`) and Claude Code's (`https://claude.ai/oauth/claude-code-client-metadata`) pass. The hosted claude.ai id isn't published. If the first real claude.ai connection fails at `/authorize` with "client metadata URL must be a plain https path", relax the `u.search` check in `fetchClientMetadata`.
+- **S7:** `client_id` is now required at `/token` for both grants (OAuth 2.1 §3.2.2, public clients). Public clients must send it, and the smoke script does. claude.ai and ChatGPT haven't been checked against this build yet; if a real connector fails at `/token` with `client_id is missing`, this check is the first suspect. **#7:** kept as it is. A test now pins the expectation: a hosted client whose `client_id` is its CIMD URL (Claude's and ChatGPT's documented ids), exchanging form-encoded with `resource`, gets tokens and can refresh; without `client_id` the answer is `invalid_grant` with the description `client_id is missing or the code was issued to another client`, which is what to look for in a failing connector. Status: accepted pending the first live connection.
+- **CIMD URL shape (from S3), watch item:** a CIMD `client_id` with a query string, a bare `/` path or more than 300 characters is now refused. ChatGPT's documented ids (`https://chatgpt.com/oauth/client.json`, `https://chatgpt.com/oauth/{callback_id}/client.json`) and Claude Code's (`https://claude.ai/oauth/claude-code-client-metadata`) pass. The hosted claude.ai id isn't published. If the first real claude.ai connection fails at `/authorize` with "client metadata URL must be a plain https path", relax the `?`/`#` check in `fetchClientMetadata`. **#7:** the shape is now stricter in one way: the id must already be in canonical URL form (`new URL(id).href === id`) and contain no `?` or `#` at all, so an empty query or fragment, dot segments, an upper-case host or a spelled-out `:443` are refused before any fetch (an empty `?` used to pass, because it leaves `u.search` empty). A test lists the refused shapes and checks that the documented ids are fetched exactly as given. Still a watch item until claude.ai's hosted id is seen.
 - **S8:** `resolveClient` used `s.clients[id]`, so `client_id=constructor` returned `Object` and crashed on `redirectUris.length`, giving a 500. It now uses `Object.hasOwn`.
 - **S9:** a prefix `https://x.example` admitted `https://x.example.evil/…`. Matching is now by origin plus whole path segments. Production's list is empty.
 - **S10:** policy flags count only when they are literally `true`. List settings that aren't arrays are ignored.
-- **S11:** `publicUrl` read at start is pinned for the issuer and token audience. This is consistent with the Host allowlist, which already needed a restart. **Residual:** with no file at all, `allowLoopbackRedirects` still defaults to `true`, as documented for local setups.
+- **S11:** `publicUrl` read at start is pinned for the issuer and token audience. This is consistent with the Host allowlist, which already needed a restart. ~~**Residual:** with no file at all, `allowLoopbackRedirects` still defaults to `true`, as documented for local setups.~~ **#7:** unset (no file, or the key left out), loopback redirects are now accepted only for requests that didn't come through Funnel. A flat `false` default would have broken the documented local flows (Claude Code against `http://127.0.0.1:8794`, `scripts/remote-smoke.ts` run before going public, which registers a loopback client before any file exists), and the risk was only ever from the internet. A literal `true` still allows them through Funnel (Claude Code on the public URL), `false` still refuses them everywhere, and anything else (`"true"`) counts as unset.
 - **S12:**
   - `ensurePrivate()` now also sets the folder to 700. **On the next production start this changes `~/.config/portboard` from 775 to 700.** Group `dev` has no other members, so the old mode wasn't exploitable today.
   - Temp files get a random name and are created with `O_EXCL`, so a link planted at the old `remote.json.<pid>.tmp` path no longer receives the state.
@@ -107,6 +113,23 @@ Severity is for this deployment (single owner, Funnel on 8443, dashboard tailnet
 - **S17, Origin:** `originAllowed` compares the Origin's host name only, so a page on `http://localhost:<any>` or on another port of the tailnet name passes. No CORS headers are sent, so such a page can't read responses. The only state-changing form, the consent form, needs the approval code.
 - **S18, local processes:** a process on the VM can still send `Tailscale-Funnel-Request` with any `X-Forwarded-For`. It runs where `remote.json` lives anyway.
 - **S19, `redirect_uri` at `/token`:** still checked when sent, not required. PKCE binds the code to the client that started the flow, and `iss` on every redirect defends against mix-up. Requiring it could break a client that omits it and adds no protection here.
+
+## Follow-up (#7)
+
+The leftovers of this review and of the v1.0 dashboard review, closed or given a status in c10dev/portboard#7.
+
+| Item | Status | What changed or why not |
+|---|---|---|
+| S4 stale-lock race between two waiters | Fixed | `O_EXCL` marker per stale lock file; release checks it still owns the lock. See S4 |
+| S5 approval-code burn from ≥4 addresses | Fixed in part; residual accepted | Global 20-try budget kept as the bound; IPv6 per /64; `approval-burned` logged. See S5 |
+| S7 `client_id` at `/token` vs. claude.ai / ChatGPT | Accepted pending a live check | Behaviour kept; expectation tested; error text documented |
+| S11 `allowLoopbackRedirects` defaulting to `true` without remote.json | Fixed | Unset means local and tailnet only, never through Funnel |
+| CIMD URL shape (watch item) | Tightened, still watched | Canonical form, no `?`/`#`; documented ids tested |
+| Funnel port in this document | Fixed | 443 (was 8443 at review time) |
+| Dashboard: the whole tailnet could read the audit log | Fixed | `GET /api/audit` is the owner's only ([security.md](../security.md#audit-log-c10devportboard30)) |
+| Dashboard: loopback has no token | Accepted | One login user on the machine; every local process already is the owner ([security.md](../security.md#open-items)) |
+
+**v1.0 dashboard review items L2, I3, I5, I6, I7 and I9:** status not recorded in the public tree. The v1.0 review document (`docs/security-review/v1.0.md`) is not in this repository, and neither the code, the tests nor the CHANGELOG name these ids. What the tree does record: M1, M2, L1, L3, L4, L5, L6, I1, I2, I4, I8 and I10 are fixed (CHANGELOG 1.x Security section, `test/security-access.test.ts`, `test/security-misc.test.ts`, and comments in `src/`). Nothing in the code can be tied to the six unrecorded ids without the review text, so no status is claimed for them here.
 
 ## Checked and found sound
 
@@ -131,6 +154,11 @@ Severity is for this deployment (single owner, Funnel on 8443, dashboard tailnet
 - `npm test`: all 146 tests pass, including 20 new ones in `test/remote-security.test.ts`.
 - `scripts/remote-smoke.ts` passed against a separate instance: `PORTBOARD_REMOTE_PORT=8796 PORTBOARD_REMOTE_HOSTS=127.0.0.1 PORTBOARD_REMOTE_CONFIG=<scratch>/remote.json`, with loopback redirects on. It covered discovery, DCR, consent, PKCE, every tool, the `stop_service` refusal, refresh rotation and revoke.
 - Production (`portboard-remote`, Funnel, `~/.config/portboard/remote.json`) was not modified. It was only read, apart from the one probe request above.
+
+### #7
+
+- `npm test` with the new tests: `remote-security` S4 (two waiters on one stale lock, a dead breaker, release ownership), S5 (/64 key, global burn and re-issue, store counting), S7 (hosted-client token exchange), S11 (loopback redirects by request path and flag), CIMD shape; `access` (audit read is the owner's only). The S4 race test fails on the previous lock code.
+- Not checked live: claude.ai and ChatGPT against `client_id` at `/token`, and claude.ai's hosted CIMD id.
 
 ## Deploying
 

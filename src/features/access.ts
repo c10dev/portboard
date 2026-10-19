@@ -4,9 +4,11 @@
 //   GET /api/whoami                  {login, source, owner, canWrite, reason?, device?}: the dashboard disables its
 //                                    write buttons and says why when canWrite is false; device ({addr, name?, id?})
 //                                    is the tailnet node a serve or direct caller came from (tailscale whois)
-//   GET /api/audit?port=&limit=      newest first (limit 1–500, default 50); with port, the entries for that port
+//   GET /api/audit?port=&limit=      newest first (limit 1–500, default 50); with port, the entries for that port.
+//                                    The owner only (#7): 403 {error: "owner only", reason} for anyone else. Every
+//                                    other read stays open to the tailnet.
 
-import { resolveCaller } from '../core/access.ts';
+import { classify, resolveCaller } from '../core/access.ts';
 import { deviceOf } from '../core/audit.ts';
 import { ok, reply } from './router.ts';
 import type { FeatureModule } from './types.ts';
@@ -27,7 +29,12 @@ export const accessFeature: FeatureModule = {
     {
       method: 'GET',
       path: '/api/audit',
-      async handler({ url }, ctx) {
+      async handler({ url, req }, ctx) {
+        // Who changed what, from which device and when is the owner's business, not every tailnet peer's. The same
+        // owner decision as writes (classify), without the device lookup: owner rights don't depend on the device, and
+        // the write-device allowlist limits writes only.
+        const c = classify(req, await ctx.owner());
+        if (!c.owner) return reply(403, { error: 'owner only', reason: c.reason ?? '' });
         const p = url.searchParams.get('port');
         const l = url.searchParams.get('limit');
         const port = p === null || p === '' ? undefined : Number(p);

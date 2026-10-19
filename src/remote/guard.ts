@@ -2,6 +2,7 @@
 // Tailscale Funnel, a failure-counting rate limiter, and the one log line per auth failure.
 
 import type { IncomingMessage } from 'node:http';
+import { isIP } from 'node:net';
 
 export function hostOf(req: IncomingMessage): string {
   const raw = (req.headers.host ?? '').toLowerCase();
@@ -46,6 +47,23 @@ export function clientAddress(req: IncomingMessage): string {
     return xff ? `funnel:${xff}` : 'funnel:unknown';
   }
   return req.socket.remoteAddress ?? 'unknown';
+}
+
+/**
+ * The rate-limit key for wrong approval codes (security review S5): an IPv6 client counts by its /64, the block one
+ * subscriber or host normally gets, so one attacker can't spread guesses over thousands of addresses from it. IPv4
+ * and anything unparsable stay as clientAddress() gave them.
+ */
+export function approvalKey(address: string): string {
+  const funnel = address.startsWith('funnel:');
+  const ip = (funnel ? address.slice('funnel:'.length) : address).toLowerCase().split('%')[0];
+  if (isIP(ip) !== 6 || /^::ffff:\d+\.\d+\.\d+\.\d+$/.test(ip)) return address;
+  const [head, tail] = ip.split('::');
+  const left = head ? head.split(':') : [];
+  const right = tail ? tail.split(':') : [];
+  const groups = tail === undefined ? left : [...left, ...Array(8 - left.length - right.length).fill('0'), ...right];
+  const prefix = groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, '')).join(':');
+  return `${funnel ? 'funnel:' : ''}${prefix}::/64`;
 }
 
 /** Counts failures per key in a sliding window; blocks the key once it reaches the limit. */

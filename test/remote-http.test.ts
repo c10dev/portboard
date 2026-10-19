@@ -227,9 +227,9 @@ test('token is bound to the resource it was issued for', async () => {
 });
 
 test('wrong approval codes are refused, logged, limited per address, and burn the code after twenty tries', async () => {
-  const reg = JSON.parse((await call('POST', '/register', { body: { redirect_uris: ['http://localhost:9/cb'] } })).body);
+  const reg = JSON.parse((await call('POST', '/register', { body: { redirect_uris: ['https://claude.ai/api/mcp/auth_callback'] } })).body);
   const { challenge } = pkce();
-  const params = { response_type: 'code', client_id: reg.client_id, redirect_uri: 'http://localhost:9/cb', code_challenge: challenge, code_challenge_method: 'S256' };
+  const params = { response_type: 'code', client_id: reg.client_id, redirect_uri: 'https://claude.ai/api/mcp/auth_callback', code_challenge: challenge, code_challenge_method: 'S256' };
   const from = (ip: string) => ({ host: `127.0.0.1:${port}`, 'content-type': 'application/x-www-form-urlencoded', 'tailscale-funnel-request': '?1', 'x-forwarded-for': ip });
   const attempt = (ip: string, approval_code: string) =>
     call('POST', '/authorize', { headers: from(ip), body: new URLSearchParams({ ...params, approval_code, decision: 'approve' }).toString() });

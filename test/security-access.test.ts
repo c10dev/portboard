@@ -360,7 +360,7 @@ test('a handler error: generic Korean message and a request id; the text only in
   }
   const [e] = await audit.query();
   assert.equal(e.result, 'error');
-  assert.ok(!JSON.stringify(e).includes('secret-path'), 'GET /api/audit is open to the tailnet: no error text there');
+  assert.ok(!JSON.stringify(e).includes('secret-path'), 'the audit line is shown on the dashboard: no error text there');
   assert.match(e.detail ?? '', /요청 ID [0-9a-f]{8}/);
 });
 

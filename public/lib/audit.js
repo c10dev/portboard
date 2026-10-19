@@ -100,3 +100,20 @@ export function auditRow(e, opts = {}) {
   li.append(el('time', null, when(e.at)), el('strong', null, actionText(e)), target ? el('span', 'audit-target', target) : '', who, res);
   return li;
 }
+
+/**
+ * GET /api/audit → {entries}, or {ownerOnly: true} when this browser isn't the owner (the log is the owner's only,
+ * #7), or null when it failed.
+ */
+export async function loadAudit(path) {
+  try {
+    const res = await fetch(path);
+    if (res.status === 403) return { ownerOnly: true };
+    return res.ok ? await res.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The <li> a list shows instead of entries: not the owner, or the load failed */
+export const auditUnavailable = (doc) => el('li', 'muted', doc?.ownerOnly ? t('audit.ownerOnly') : t('audit.loadFailed'));

@@ -92,12 +92,12 @@ The 2026-07-28 revision makes CIMD a SHOULD and deprecates DCR (kept for compati
     - `https://claude.com/api/mcp/auth_callback`
     - `https://chatgpt.com/connector_platform_oauth_redirect`
     - `https://chatgpt.com/connector/oauth/<id>`
-    - `http://127.0.0.1:*`, `http://localhost:*` (Claude Code, MCP inspector; `allowLoopbackRedirects: false` turns this off)
+    - `http://127.0.0.1:*`, `http://localhost:*` (Claude Code, MCP inspector). With `allowLoopbackRedirects` unset (no remote.json, or the key left out) only for requests from loopback or the tailnet, never through Funnel; `true` also through Funnel; `false` never (#7)
     - `extraRedirectPrefixes` from remote.json, matched by origin and whole path segments (`https://x.example/cb` admits `/cb` and `/cb/…`, not `https://x.example.evil/` or `/cbx`)
 - **Consent (`/authorize`):**
   - The page names the client and its redirect host, says what is and isn't shared, and asks for an **approval code**.
   - You make the code on the dashboard's 설정 tab (**승인 코드 만들기**, `POST /api/remote/approval-code`: owner only, audited without the code, tailnet only) or on the server with `node src/remote.ts approve`; the consent page links the tab (its https address from `tailscale serve status`, or `PORTBOARD_DASHBOARD_URL`). 8 characters of Crockford base32 (~40 bits), valid 10 minutes, single use.
-  - Only its SHA-256 is stored. Five wrong tries lock that address out of the form for 10 min; twenty wrong tries from all addresses together burn the code.
+  - Only its SHA-256 is stored. Five wrong tries lock that address out of the form for 10 min (an IPv6 client counts by its /64); twenty wrong tries from all addresses together burn the code, so no code ever gets more than twenty guesses. A burned code is logged as `approval-burned`; make a new one.
   - The page tells the owner to approve only a flow they started themselves: approving a link someone else sent hands that person's claude.ai or ChatGPT account the access.
   - Errors before the redirect URI is trusted are shown as a page and never redirected. Every redirect carries `state` and `iss`.
   - The page sends `frame-ancestors 'none'`, `X-Frame-Options: DENY` and a CSP limiting `form-action` to itself and the client's redirect origin.
@@ -107,7 +107,7 @@ The 2026-07-28 revision makes CIMD a SHOULD and deprecates DCR (kept for compati
   - Access tokens are opaque 256-bit, last 1 h, and are bound to `<base>/mcp` (a token minted for `http://127.0.0.1:8794` doesn't work on another name).
   - Refresh tokens last 30 days and rotate on every use. A rotated token is kept as `used` until it would have expired: presenting it again more than 10 s after rotation revokes every token of that authorization (reuse detection). Within 10 s it is only refused, so a client retrying a lost reply doesn't lose its grant.
   - `/token` requires `client_id` for both grants.
-  - `remote.json` holds SHA-256 hashes only and is written atomically (unpredictable temp name, `O_EXCL`) with mode 600, under a lock file (`remote.json.lock`) shared by the server and the CLI, so `revoke` can't be undone by a server write in flight. The server tightens the file to 600 and its folder to 700 at start if they were looser.
+  - `remote.json` holds SHA-256 hashes only and is written atomically (unpredictable temp name, `O_EXCL`) with mode 600, under a lock file (`remote.json.lock`) shared by the server and the CLI, so `revoke` can't be undone by a server write in flight. A lock older than 10 s (its writer crashed) is broken by exactly one waiter: they race for an `O_EXCL` marker named after that lock file, and only the winner removes it (#7). The server tightens the file to 600 and its folder to 700 at start if they were looser.
   - The issuer is read from `publicUrl` once at start and pinned; editing or deleting the file at runtime doesn't move it.
 - **Rate limit and log:**
   - Failures are counted per client address: bad or expired token, wrong approval code, bad code/PKCE/refresh, an unknown client on `/authorize`, a disallowed redirect at registration.
@@ -226,7 +226,7 @@ Rotating "everything" (there is no signing secret; tokens are opaque and stored 
 }
 ```
 
-Only the first five keys are settings; the server and CLI manage the rest. Without `publicUrl` the issuer is derived from the request's Host header (`http://127.0.0.1:8794` locally, `https://<host>` for Funnel requests). Set it before going public so the issuer never depends on a header. The server reads `publicUrl` into its Host allowlist at start, so restart after changing it.
+Only the first five keys are settings; the server and CLI manage the rest. Boolean settings count only as a literal `true`/`false`. `allowLoopbackRedirects` left out behaves as "local and tailnet only" (see the redirect list above), so a server that went public before this file was written doesn't accept loopback clients from the internet. Without `publicUrl` the issuer is derived from the request's Host header (`http://127.0.0.1:8794` locally, `https://<host>` for Funnel requests). Set it before going public so the issuer never depends on a header. The server reads `publicUrl` into its Host allowlist at start, so restart after changing it.
 
 The optional sixth setting, `"health": {"soonDays": 7, "idleDays": 7, "hideDays": 7}`, sets the thresholds for the 설정 tab's 커넥터 상태 (만료 임박, 응답 없음, and how long "n일 동안 숨기기" hides the banner). Only the dashboard reads it, on every request, so it needs no restart.
 
@@ -253,7 +253,7 @@ tailscale funnel status
 node scripts/remote-smoke.ts https://devbox.example.ts.net
 ```
 
-With `allowLoopbackRedirects: false`, a stranger can still register clients, but every redirect they can name belongs to claude.ai or chatgpt.com, so a code can only reach those services' callbacks. Claude Code connecting to the *public* URL needs a loopback redirect, so turn it back on temporarily for that. The smoke script also uses a loopback redirect: run it before step a, or with the flag on.
+With `allowLoopbackRedirects: false`, a stranger can still register clients, but every redirect they can name belongs to claude.ai or chatgpt.com, so a code can only reach those services' callbacks. Claude Code connecting to the *public* URL needs a loopback redirect, so set it to `true` temporarily for that (unset is not enough: through Funnel only `true` allows it). The smoke script also uses a loopback redirect: against `http://127.0.0.1:8794` it works while the flag is unset; against the public URL it needs `true`.
 
 If ChatGPT fails during discovery, first try removing the `/.well-known/openid-configuration` alias in `src/remote/http.ts`. It serves the RFC 8414 document, which lacks OIDC-only fields such as `jwks_uri`.
 
@@ -291,7 +291,7 @@ Do **not** use `tailscale funnel reset` or `tailscale serve reset`: they also re
 
 **Without a token today** (by design): the two `.well-known` documents, the consent page and the `401`/`405`/`421` responses. That reveals the host name and that a Portboard remote MCP exists. The internet can also register clients (capped at 50, redirects only to claude.ai/chatgpt.com, plus loopback unless turned off) and send `/authorize` requests that trigger cached fetches to claude.ai/chatgpt.com only.
 
-One nuisance: anyone who can open the consent page for a valid client (e.g. Claude's public CIMD id) can burn a pending approval code with twenty wrong tries from at least four addresses (five per address). That costs the owner a new `approve`, not access. The code exists only for the 10 minutes after the owner makes one.
+One nuisance (accepted, #7): anyone who can open the consent page for a valid client (e.g. Claude's public CIMD id) can burn a pending approval code with twenty wrong tries from at least four addresses (five per address; an IPv6 client counts by its /64). That costs the owner a new code, not access: twenty guesses in total is what bounds brute force against the code's 2⁴⁰ values, so a burn budget that a stranger can't spend can't exist. The code exists only for the 10 minutes after the owner makes one.
 
 The full review, with findings and their tests, is in [SECURITY-REVIEW.md](SECURITY-REVIEW.md).
 

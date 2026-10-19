@@ -4,7 +4,7 @@
 |---|---|---|
 | GET | `/api/health` | `{ok, profile, port}`: `profile` is `production` or `preview` |
 | GET | `/api/whoami` | `{login, source, owner, canWrite, reason?, device?}`: whether this caller may write (`source` `loopback`, `serve` or `direct`; `reason` in Korean; `device` `{addr, name?, id?}` for serve and direct, from `tailscale whois`) ([security.md](security.md)) |
-| GET | `/api/audit?port=&limit=50` | 기록, newest first: `entries[]` with `at`, `who`, `source`, `route`, `target`, `result` (`ok`/`denied`/`error`), `status`, `detail`; `port` keeps that port's entries, `limit` 1–500 |
+| GET | `/api/audit?port=&limit=50` | 기록, newest first: `entries[]` with `at`, `who`, `source`, `route`, `target`, `result` (`ok`/`denied`/`error`), `status`, `detail`; `port` keeps that port's entries, `limit` 1–500. **The owner only** (#7): anyone else gets `403 {error: "owner only", reason}` ([security.md](security.md#audit-log-c10devportboard30)) |
 | GET | `/api/ports` | Snapshot of every port (`?fresh` skips the 2 s cache, at most once per 5 s; see **Load bounds**) |
 | GET | `/api/ports/:port/logs?lines=100` | Recent logs of whatever owns the port (max 1000 lines); the owner comes from the shared 2 s snapshot |
 | GET | `/api/ports/:port/detail` | Everything for `service.html`: `entry` (the snapshot entry, null while nothing listens), `usingNow`, `lastUsed` (devices × last seen), `watch`, `uptime` (%, recent checks, 24 h and 30-day slots, outages), `events` (alerts sent); 404 when nothing is known about the port |

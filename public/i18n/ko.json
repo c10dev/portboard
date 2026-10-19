@@ -138,6 +138,7 @@
   "audit.field.pinned": "고정",
   "audit.field.time": "시각",
   "audit.loadFailed": "기록을 불러오지 못했어요.",
+  "audit.ownerOnly": "기록은 소유자만 볼 수 있어요. 소유자 계정으로 https:// 주소(tailscale serve)에서 여세요.",
   "audit.recent": "최근 기록",
   "audit.recent.empty": "아직 변경 기록이 없어요.",
   "audit.recent.note": "포트 하나의 기록은 서비스 상세 페이지의 ‘기록’에 있어요.",
