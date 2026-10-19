@@ -12,7 +12,7 @@ Everything Portboard needs to know about the machine it runs on (its name, the t
 
 Each value is resolved on its own. The first source that has it wins:
 
-1. **Environment variable.** `PORTBOARD_POOL_URL`, `PORTBOARD_REPOS_ROOT`, `PORTBOARD_DASHBOARD_URL`, `PORTBOARD_LOCALE` and `PORTBOARD_UTC_OFFSET`. The other keys have no variable.
+1. **Environment variable.** `PORTBOARD_POOL_URL`, `PORTBOARD_REPOS_ROOT`, `PORTBOARD_DASHBOARD_URL`, `PORTBOARD_LOCALE` and `PORTBOARD_UTC_OFFSET`; `portboard agent` also reads `PORTBOARD_AGENT_*` over the `agent` key. The other keys have no variable.
 2. **Runtime.** What the machine reports:
    - `tailscale status --json` gives the host name and tailnet.
    - git gives the checkout of the running code.
@@ -43,6 +43,8 @@ Every key is optional. A key of the wrong type is ignored, and the rest still ap
 | `utcOffset` | `"+HH:MM"`, `"-HH:MM"` or `"Z"` | `+09:00` | — | `PORTBOARD_UTC_OFFSET` | The fixed offset from UTC the digest time (`HH:MM`, and Monday for weekly) and the Claude adoption days are counted in. No DST: a zone that changes its clock needs the value changed with it. The default keeps the original KST behaviour. Another value is ignored and reported |
 | `pve` | object | `{"host": "pve", "user": "root", "key": "~/.ssh/portboard_ro", "node": "pve", "enabled": false}` | — | — | Defaults for the Proxmox SSH port reader ([runbooks/ssh-readonly-setup.md](runbooks/ssh-readonly-setup.md)). `pveports.json` (`PORTBOARD_PVEPORTS`) still goes on top. `node` also names the reader in labels |
 | `windows` | object | `{"host": "windows", "user": null, "key": "~/.ssh/portboard_ro", "device": "windows", "enabled": false}` | — | — | Defaults for a desktop's Windows SSH port reader (same runbook). `winports.json` (`PORTBOARD_WINPORTS`) still goes on top |
+| `agents` | array of `{name, url, token?}` | `[]` | — | — | The board: other machines' `portboard agent`s to read ([multi-host.md](multi-host.md)). Their ports go on the tailnet device of that name, ahead of compute-pool's. `name` is a host name, unique; `url` is http(s) without credentials; `token` is sent as `Authorization: Bearer`. A bad entry is ignored and reported (never its token) |
+| `agent` | object | `{"port": 8797, "allow": [], "token": null, "showAddresses": false}` | — | `PORTBOARD_AGENT_PORT`, `PORTBOARD_AGENT_ALLOW` (merged with `allow`), `PORTBOARD_AGENT_TOKEN`, `PORTBOARD_AGENT_HOSTS` (bind list) | This machine's `portboard agent`: its port, who may read it (`allow`: Tailscale node names or IDs, logins, `tag:` ACL tags), an optional shared `token`, and whether LAN addresses leave the machine. With no `allow` and no token only loopback reads ([multi-host.md](multi-host.md#who-may-read)). A field of the wrong type falls back to its default |
 
 Each value of `pve` and `windows` resolves in this order: `pveports.json`/`winports.json`, then `portboard.json`, then the default. The dedicated files stay the per-install override for those SSH targets. They are validated the same way as before; an invalid value makes that reader report a config error.
 

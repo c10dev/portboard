@@ -23,7 +23,7 @@
 | POST | `/api/worktrees/prune` | JSON `{repo}`: `git worktree prune` (records of directories already deleted); needs `X-Portboard: 1` |
 | GET | `/api/memory` | The last memory sample: memory, swap and PSI, the partition by group (Claude sessions, MCP servers, services, docker, other), sessions, the hour's history, the pressure state and thresholds, and suggestions (never actions) ([memory](memory/README.md)) |
 | GET | `/api/devhealth` | 기기 상태 알림 (#2): `at` (last check), `alertsOn`, `thresholds` (`devhealth.json`, [config.md](config.md#device-health-devhealthjson)), `conditions[]` (`key`, `kind` `failures`\|`guest`\|`load`, `name`, `active` (alerted), `since`, `facts`, `text`): alerted conditions and breaches still within their sustain; read-only ([operations.md](operations.md#device-health-alerts)) |
-| GET | `/api/devices` | Tailnet devices joined with compute-pool host status; `tree` is the network hierarchy ([dashboard](dashboard.md#network-tree-구조)). `pvePorts` and `winPorts` (the SSH port readers) carry `reason`: why there is no fresh read, in words (`pending` and its first read waiting or running, turned off, or the error and when it retries); null when ok |
+| GET | `/api/devices` | Tailnet devices joined with compute-pool host status; `tree` is the network hierarchy ([dashboard](dashboard.md#network-tree-구조)). `pvePorts` and `winPorts` (the SSH port readers) carry `reason`: why there is no fresh read, in words (`pending` and its first read waiting or running, turned off, or the error and when it retries); null when ok. A device read through its `portboard agent` has `portsSource: "agent"` and `agent` (`ok`, `error`, `checkedAt`, `lastOk`, `info` with version and load); `agents[]` lists every configured agent with the device it went to ([multi-host.md](multi-host.md)) |
 | GET | `/api/usage` | One card per device with what it uses now, `idle` services, `history` (`byPort` last use, `byDevice` last 7 days), and the same `tree` as `/api/devices` |
 | POST | `/api/clients/name` | JSON `{key, name}` names a LAN device (`clients.json`); needs `X-Portboard: 1` |
 | POST | `/api/ports/:port/expose` · `unexpose` · `restart` · `stop` | Actions; need header `X-Portboard: 1` |
@@ -110,3 +110,7 @@
 | `GET /api/claude/port-advice` | the shared 2 s snapshot (free ports come from it: no `ss` or `tailscale serve status` per request), reservations cached 2 s, the cwd's `repo@branch` cached 10 s per cwd (at most 200 cwds, one git call per cwd at a time) |
 
 **Writes.** Every `POST` needs `X-Portboard: 1` and an owner caller: a process on this machine talking to 127.0.0.1 directly, or the owner's Tailscale login through `tailscale serve` (https). A tailnet device on `http://<host>:8790`, a tagged device, another user and Funnel get `403 {error: "owner only", reason}` before the body is read. Every write, allowed or denied, goes into the audit log (`GET /api/audit`). See [security.md](security.md).
+
+## Agent API (`portboard agent`)
+
+A separate process on another machine, on :8797, read-only: `GET /agent/v1/info`, `/agent/v1/ports`, `/agent/v1/usage`. Readers are loopback, a bearer token or a Tailscale identity on `agent.allow`; every other method is 405. The routes, the auth and what is redacted: [multi-host.md](multi-host.md).

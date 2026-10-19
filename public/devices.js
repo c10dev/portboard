@@ -5,7 +5,7 @@
 
 import { done } from './lib/shell.js'; // first: the bar, sidebar and inspector are wired before anything looks them up
 import { canWatchDevice, deviceWatched, initAlerts, setDeviceAlert } from './features/alerts.js';
-import { portList, renderPortsHint, renderWinHint, sidesText } from './features/host-ports.js';
+import { agentLine, portList, renderPortsHint, renderWinHint, sidesText } from './features/host-ports.js';
 import { newBlock, renderNewDevices, renderSettings, short } from './features/known.js';
 import { findNode, loadView, nodeDetail, renderTree, saveView } from './features/nettree-view.js';
 import { initCommandPalette } from './features/palette.js';
@@ -181,6 +181,7 @@ function paintDetail(c, id) {
     ['MAC', c.mac ? (c.randomMac ? t('devices.mac.random', { mac: c.mac }) : c.mac) : null],
     [t('devices.row.vendor'), c.vendor],
     ['compute-pool', c.pool ? poolLine(c.pool) : null],
+    [t('devices.row.agent'), c.agent ? agentLine(c.agent) : null],
     [t('devices.row.poolMatch'), c.pool && c.poolMatch ? POOL_MATCH[c.poolMatch] : null],
     [t('devices.row.lanVia'), Object.entries(c.lanVia ?? {}).map(([ip, via]) => `${ip}: ${LAN_VIA[via] ?? via}`).join('\n')],
     [t('devices.row.routes'), c.routes.join(', ')],
@@ -200,6 +201,7 @@ function paintDetail(c, id) {
     if (c.ports.sides) box.append(el('p', 'muted small', t('devices.ports.sidesNote', { sides: sidesText(c.ports) })));
     box.append(el('p', 'muted small', c.portsSource === 'pve-ssh'
       ? t('devices.ports.pveNote', { node: data.pvePorts?.node ?? t('devices.pveHost') })
+      : c.portsSource === 'agent' ? t('devices.ports.agentNote')
       : t('devices.ports.poolNote')));
     body.append(box);
   } else if (c.kind !== 'self' && c.pool?.kind === 'agent' && c.pool.agent?.connected) {

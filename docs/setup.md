@@ -7,7 +7,7 @@ From npm (Node ≥ 22.18; the package has no dependencies):
 ```bash
 npx portboard start                  # run once, without installing
 npm i -g portboard                   # or install the `portboard` command
-portboard install-service [--remote] [--enable] [--dry-run]
+portboard install-service [--remote | --agent] [--enable] [--dry-run]
 portboard uninstall-service [--dry-run]
 ```
 
@@ -16,6 +16,7 @@ portboard uninstall-service [--dry-run]
 | `portboard start` | The dashboard (`src/server.ts`) on 127.0.0.1:8790 and the Tailscale IP |
 | `portboard remote [approve\|status\|revoke [id]]` | The read-only remote MCP server on :8794, or its client admin ([remote-mcp/](remote-mcp/README.md)) |
 | `portboard mcp` | The stdio MCP server, e.g. `claude mcp add portboard -- portboard mcp` |
+| `portboard agent` | This machine's read-only agent on :8797 (loopback and the Tailscale IP) for a board on another machine; `install-service --agent` writes `portboard-agent.service` alone ([multi-host.md](multi-host.md)) |
 | `portboard install-service` | Writes `~/.config/systemd/user/portboard.service` (with `--remote`, also `portboard-remote.service`) for **the node running the command** (`process.execPath`) and **this install** (the global package or the checkout), with the hardening of `deploy/portboard.service`: `UMask=0077`, `NoNewPrivileges=yes`, `Restart=always`. Then prints `systemctl --user daemon-reload && systemctl --user enable --now portboard`; `--enable` runs it instead. `--dry-run` prints the units and writes nothing |
 | `portboard uninstall-service` | `systemctl --user disable --now`, then removes the units `install-service` wrote (a hand-copied unit is left alone). Config and state stay |
 | `portboard --version`, `--help` | |

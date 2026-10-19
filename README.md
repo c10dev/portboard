@@ -153,6 +153,7 @@ Details: [docs/mac-app](docs/mac-app/README.md).
 | [Coding agents](docs/agents.md) | several agents on one machine: reserve, start, clean up, measure; other agent CLIs |
 | [MCP servers](docs/mcp.md) | the local stdio server: tools, resources, prompts |
 | [Remote MCP](docs/remote-mcp/README.md) | the read-only connector for claude.ai and ChatGPT |
+| [Multi-host](docs/multi-host.md) | `portboard agent` on other machines, one board for all of them |
 | [Security](docs/security.md) | who can reach and write, audit log, headers and files |
 | [Operations](docs/operations.md) | deploy, profiles, files, the SSH readers, runtime footprint |
 | [Runbooks](docs/runbooks/README.md) | setting up and rotating every credential Portboard holds |

@@ -71,9 +71,30 @@ export function remoteView(d, needle) {
 
 // ---- 기기 tab: "열린 포트 N" on cards and the readers' setup hints ----
 
-/** "pve에서 읽음" / "compute-pool": where a card's port list came from */
+/** "pve에서 읽음" / "agent" / "compute-pool": where a card's port list came from */
 export function portsFrom(c, data) {
+  if (c.portsSource === 'agent') return t('hostports.fromAgent');
   return c.portsSource === 'pve-ssh' ? t('hostports.readFrom', { node: data.pvePorts?.node ?? t('devices.pveHost') }) : 'compute-pool';
+}
+
+const AGENT_ERROR = { unreachable: 'hostports.err.unreachable', timeout: 'hostports.err.timeout', auth: 'hostports.agent.err.auth', http: 'hostports.agent.err.http', 'bad-answer': 'hostports.agent.err.badAnswer' };
+
+/** A device's `portboard agent` in one line: "v1.1.0 · load 0.42 · 3.1/7.8 GB free · disk 52% free", or why it isn't answering */
+export function agentLine(a) {
+  if (!a) return '';
+  if (a.pending) return t('hostports.agent.pending');
+  if (!a.ok) {
+    const lastOk = a.lastOk ? ` · ${t('hostports.lastOk', { t: ago(new Date(a.lastOk).toISOString()) })}` : '';
+    return t('hostports.agent.failed', { error: t(AGENT_ERROR[a.error] ?? 'hostports.err.other'), lastOk });
+  }
+  const l = a.info?.load;
+  const gb = (mb) => (mb / 1024).toFixed(1);
+  return [
+    a.info ? `v${a.info.version}` : null,
+    l ? t('hostports.agent.load', { load: l.load1, cores: l.cores }) : null,
+    l?.memAvailMb != null && l.memTotalMb ? t('hostports.agent.mem', { avail: gb(l.memAvailMb), total: gb(l.memTotalMb) }) : null,
+    l?.diskFreePct != null ? t('hostports.agent.disk', { pct: l.diskFreePct }) : null,
+  ].filter(Boolean).join(' · ');
 }
 
 /** card ids whose port list the user folded */
@@ -94,7 +115,7 @@ export function portsBox(c, data) {
   const where = c.ports.ports.some((p) => p.lan) ? t('hostports.sum.lan', { n: open }) : t('hostports.sum.tailnet', { n: open });
   sum.append(el('strong', null, t('hostports.sum.open', { n: c.ports.ports.length })));
   const sides = sidesText(c.ports);
-  sum.append(document.createTextNode(` · ${sides ? `${sides} · ` : ''}${where} · ${c.portsSource === 'pve-ssh' ? `${portsFrom(c, data)} · ` : ''}${checkedAgo(c.ports.at)}`));
+  sum.append(document.createTextNode(` · ${sides ? `${sides} · ` : ''}${where} · ${c.portsSource === 'pve-ssh' || c.portsSource === 'agent' ? `${portsFrom(c, data)} · ` : ''}${checkedAgo(c.ports.at)}`));
   sum.addEventListener('click', (ev) => ev.stopPropagation());
   d.append(sum, portList(c.ports.ports, c.name, { limit: 12 }));
   return d;

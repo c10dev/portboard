@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { enableCommands, main, parseArgs, systemdArg, UNIT_MARKER, unitDir, unitText, type Deps } from '../src/cli.ts';
+import { enableCommands, main, parseArgs, systemdArg, UNIT_MARKER, unitDir, unitsFor, unitText, type Deps } from '../src/cli.ts';
 import { VERSION } from '../src/version.ts';
 
 const INPUT = { node: '/home/me/.nvm/versions/node/v24.19.0/bin/node', root: '/home/me/.nvm/versions/node/v24.19.0/lib/node_modules/portboard', version: '1.2.3' };
@@ -21,8 +21,8 @@ test('parseArgs: commands, help and version', () => {
 });
 
 test('parseArgs: install-service flags, unknown ones refused', () => {
-  assert.deepEqual(parseArgs(['install-service']), { cmd: 'install-service', rest: [], remote: false, enable: false, dryRun: false });
-  assert.deepEqual(parseArgs(['install-service', '--remote', '--dry-run', '--enable']), { cmd: 'install-service', rest: [], remote: true, enable: true, dryRun: true });
+  assert.deepEqual(parseArgs(['install-service']), { cmd: 'install-service', rest: [], remote: false, agent: false, enable: false, dryRun: false });
+  assert.deepEqual(parseArgs(['install-service', '--remote', '--dry-run', '--enable']), { cmd: 'install-service', rest: [], remote: true, agent: false, enable: true, dryRun: true });
   assert.equal(parseArgs(['uninstall-service', '--dry-run']).dryRun, true);
   assert.throws(() => parseArgs(['install-service', '--force']), /unknown option "--force"/);
   assert.throws(() => parseArgs(['uninstall-service', '--remote']), /unknown option/);
@@ -48,6 +48,19 @@ test('unitText remote: remote subcommand on :8794, same hardening', () => {
   const lines = unitText('remote', INPUT).split('\n');
   assert.ok(lines.includes(`ExecStart=${INPUT.node} ${INPUT.root}/bin/portboard remote`));
   assert.ok(lines.includes('Environment=PORTBOARD_REMOTE_PORT=8794'));
+  for (const l of ['NoNewPrivileges=yes', 'UMask=0077', 'Restart=always']) assert.ok(lines.includes(l), l);
+});
+
+test('portboard agent and install-service --agent (#10): the agent unit alone, on :8797', () => {
+  assert.equal(parseArgs(['agent']).cmd, 'agent');
+  assert.equal(parseArgs(['install-service', '--agent']).agent, true);
+  assert.throws(() => parseArgs(['install-service', '--agent', '--remote']), /don't go together/);
+  assert.deepEqual(unitsFor(false, true), ['agent']);
+  assert.deepEqual(unitsFor(true), ['dashboard', 'remote']);
+  const lines = unitText('agent', INPUT).split('\n');
+  assert.ok(lines.includes(`ExecStart=${INPUT.node} ${INPUT.root}/bin/portboard agent`));
+  assert.ok(lines.some((l) => l.startsWith('Description=Portboard agent') && l.includes(':8797')));
+  assert.ok(!lines.some((l) => l.includes('PORTBOARD_REMOTE_PORT')));
   for (const l of ['NoNewPrivileges=yes', 'UMask=0077', 'Restart=always']) assert.ok(lines.includes(l), l);
 });
 

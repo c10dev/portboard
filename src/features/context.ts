@@ -14,6 +14,7 @@ import { loadPrefs, newDeviceSettings } from '../core/prefs.ts';
 import { createTracker, observationOf, withNewDevices, type Tracker } from '../core/known.ts';
 import { HistoryStore, samplesOf, withHistory, type UsageWithHistory } from '../core/history.ts';
 import { UptimeStore } from '../core/uptime.ts';
+import { agents } from '../core/agents.ts';
 import { pvePorts } from '../core/pveports.ts';
 import { winPorts } from '../core/winports.ts';
 import { createSelfWatch, type SelfWatch } from '../core/selfwatch.ts';
@@ -84,6 +85,7 @@ export async function createServerContext(paths: Paths, ts: TailscaleInfo): Prom
   const refreshHostPorts = () => {
     pvePorts().refreshLater(true);
     winPorts().refreshLater(true);
+    agents().refresh();
   };
 
   // Every computed result is also a history sample (the usage feature's 30 s job covers the time nobody is looking).

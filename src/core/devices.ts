@@ -6,6 +6,7 @@
 // pool reaches over the LAN, since Tailscale doesn't tell us a peer's LAN address.
 
 import { networkInterfaces } from 'node:os';
+import { agents as agentsCollector, agentStatus, type AgentRead, type AgentStatus } from './agents.ts';
 import { lanIdentity, loadNames, neighbors, ouiTable } from './clients.ts';
 import { run, runShared } from './exec.ts';
 import { cachedKeys, probeLater, sameMachine } from './hostkeys.ts';
@@ -49,8 +50,13 @@ export interface Device {
    * SSH from the host (pveports.ts); null when neither has them (this server: see list_ports)
    */
   ports: HostPorts | null;
-  /** Where ports came from; a compute-pool host whose Windows side is also read keeps 'compute-pool' (see ports.sides) */
-  portsSource: 'compute-pool' | 'pve-ssh' | 'windows-ssh' | null;
+  /**
+   * Where ports came from; a compute-pool or agent host whose Windows side is also read keeps its source (see
+   * ports.sides). 'agent': its `portboard agent` (agents.ts), which wins over compute-pool when both report it.
+   */
+  portsSource: 'compute-pool' | 'pve-ssh' | 'windows-ssh' | 'agent' | null;
+  /** Its `portboard agent`, when portboard.json lists one for it (#10): reachability, version and load */
+  agent?: AgentStatus | null;
 }
 
 export interface SelfVirt {
@@ -73,6 +79,8 @@ export interface Devices {
   winPorts: WinPortsStatus;
   /** The network hierarchy: routers and Proxmox hosts, their guests and LANs, the rest (nettree.ts) */
   tree: NetTree;
+  /** Every agent portboard.json lists, with the device it was put on (#10) */
+  agents?: (AgentStatus & { device: string | null })[];
 }
 
 export interface PvePortsState extends PvePortsStatus {
@@ -252,7 +260,7 @@ export function selfVirt(): Promise<SelfVirt> {
  * the online tailnet devices' so 192.168.1.201 can become pve1. Results show up on a later call.
  */
 export async function devices(opts: { lanClients?: string[] } = {}): Promise<Devices> {
-  const [ts, pool, prefs, neigh, virt, pve, pp, wp, names, oui] = await Promise.all([
+  const [ts, pool, prefs, neigh, virt, pve, pp, wp, names, oui, ag] = await Promise.all([
     runShared('tailscale', ['status', '--json']),
     poolStatus(),
     loadPrefs(),
@@ -263,10 +271,14 @@ export async function devices(opts: { lanClients?: string[] } = {}): Promise<Dev
     winPorts().get(),
     loadNames(),
     ouiTable(),
+    agentsCollector().get(),
   ]);
   const { hosts, ...poolMeta } = pool;
   const peers = ts.ok ? parsePeers(ts.stdout) : [];
   const list = mergeDevices(peers, hosts, prefs.deviceLinks ?? {});
+  // Agents before the SSH readers: a device whose agent reports its ports keeps those (attachPvePorts gives only to
+  // devices without ports; attachWinPorts merges the Windows side with them)
+  const agentDevices = attachAgents(list, ag);
   const self = list.find((d) => d.self);
   if (self) self.virt = virt;
 
@@ -314,7 +326,7 @@ export async function devices(opts: { lanClients?: string[] } = {}): Promise<Dev
     ...[...neigh].filter(([, n]) => !/^(docker|br-|veth|tailscale)/.test(n.dev ?? '')).map(([ip]) => lanHost(ip, 'neighbor')),
   ];
   const tree = buildNetTree({ devices: list, proxmox: attached.proxmox, lanHosts, selfLanIps: selfLanIps() });
-  return { at: new Date().toISOString(), pool: poolMeta, devices: list, proxmox: attached.proxmox, pvePorts: { ...pp.status, unmatched: attached.unmatched }, winPorts: wp.status, tree };
+  return { at: new Date().toISOString(), pool: poolMeta, devices: list, proxmox: attached.proxmox, pvePorts: { ...pp.status, unmatched: attached.unmatched }, winPorts: wp.status, tree, agents: ag.map((a, i) => ({ ...agentStatus(a), device: agentDevices[i] })) };
 }
 
 /** This server's own LAN addresses (as topology.ts: not loopback, Tailscale or container bridges) */
@@ -337,7 +349,7 @@ export function attachWinPorts(list: Device[], data: WinPortsData | null, device
   if (!data) return 0;
   const d = list.find((x) => x.id.toLowerCase() === deviceId.toLowerCase());
   if (!d) return 0;
-  const wsl = d.portsSource === 'compute-pool' && d.ports ? d.ports : null;
+  const wsl = (d.portsSource === 'compute-pool' || d.portsSource === 'agent') && d.ports ? d.ports : null;
   const wslPorts = new Set(wsl?.ports.map((p) => p.port) ?? []);
   const own = data.sockets.filter((s) => !(wslPorts.has(s.port) && (!s.process || WSL_FORWARD.has(s.process.toLowerCase()))));
   const win = fromListening(own, data.at, d).ports.map((p) => ({ ...p, side: 'windows' as const }));
@@ -397,4 +409,62 @@ export function attachPvePorts(list: Device[], pve: ProxmoxStatus, data: PvePort
   }
   const unmatched = Object.keys(data.cts).map(Number).filter((id) => !used.has(id)).sort((a, b) => a - b);
   return { proxmox: { ...pve, hosts }, unmatched };
+}
+
+/** A device a `portboard agent` URL points at by address: its host when that is a Tailscale IP */
+function urlTailnetIp(url: string): string | null {
+  try {
+    const h = new URL(url).hostname.replace(/^\[|\]$/g, '');
+    return /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+$/.test(h) || /^fd7a:115c:a1e0:/i.test(h) ? h : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Each agent → its tailnet device, matched by the agent's MagicDNS name, the Tailscale IP in its URL, then its name
+ * (portboard.json's, or the host name it reports) against the device's. Its ports replace compute-pool's there (this
+ * server keeps its own snapshot); an agent that matches no device gets a card of its own (id agent:<name>). An agent
+ * that is down keeps its last good ports (ports.at says how old). Mutates list; returns each agent's device id.
+ */
+export function attachAgents(list: Device[], reads: AgentRead[]): (string | null)[] {
+  return reads.map((a) => {
+    const names = [a.name, a.info?.host].filter((x): x is string => !!x).map((x) => x.toLowerCase());
+    const dns = a.info?.dnsName?.toLowerCase().replace(/\.$/, '') ?? null;
+    const ip = urlTailnetIp(a.url);
+    let d =
+      (dns ? list.find((x) => x.dnsName?.toLowerCase() === dns) : undefined) ??
+      (ip ? list.find((x) => x.tailscaleIps.includes(ip)) : undefined) ??
+      list.find((x) => !x.agent && (names.includes(x.id.toLowerCase()) || names.includes(x.name.toLowerCase())));
+    if (!d) {
+      d = {
+        id: `agent:${a.name}`,
+        name: a.name,
+        dnsName: dns,
+        os: null,
+        self: false,
+        online: a.ok,
+        lastSeen: null,
+        tailscaleIps: ip ? [ip] : [],
+        path: null,
+        lanIps: [],
+        lanVia: {},
+        routes: [],
+        standbyRoutes: [],
+        pool: null,
+        poolMatch: null,
+        ports: null,
+        portsSource: null,
+      };
+      list.push(d);
+    }
+    d.agent = agentStatus(a);
+    if (!d.self && a.ports) {
+      // links by the device's own Tailscale name, else the agent's; online as Tailscale says, else as the agent answered
+      const reach = { online: d.online || a.ok, dnsName: d.dnsName ?? dns, tailscaleIps: d.tailscaleIps };
+      d.ports = fromListening(a.ports.listening, a.ports.at, reach);
+      d.portsSource = 'agent';
+    }
+    return d.id;
+  });
 }

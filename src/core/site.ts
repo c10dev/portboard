@@ -81,7 +81,48 @@ export const SITE_DEFAULTS = {
   utcOffset: '+09:00',
   /** winports.json's defaults (a desktop's Windows side, read over SSH): off until a host is set */
   windows: { host: 'windows', user: null as string | null, key: '~/.ssh/portboard_ro', device: 'windows', enabled: false },
+  /** Other machines' `portboard agent`s the board reads (c10dev/portboard#10): none until listed */
+  agents: [] as AgentTarget[],
+  /** `portboard agent` on this machine: its port, who may read it (Tailscale identities) and an optional shared token */
+  agent: { port: 8797, allow: [] as string[], token: null as string | null, showAddresses: false },
 };
+
+/** One agent the board reads: a name (matched to a tailnet device), its base URL and, optionally, a bearer token */
+export interface AgentTarget {
+  name: string;
+  url: string;
+  token?: string;
+}
+
+const AGENT_NAME = /^[A-Za-z0-9][\w.-]{0,62}$/;
+
+/** A portboard.json `agents` entry, or why it is ignored (never echoes the token) */
+export function checkAgentTarget(raw: unknown): AgentTarget | string {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 'not an object';
+  const r = raw as Record<string, unknown>;
+  if (typeof r.name !== 'string' || !AGENT_NAME.test(r.name)) return 'name must be a host name (letters, digits, . _ -)';
+  let u: URL;
+  try {
+    u = new URL(String(r.url));
+  } catch {
+    return `${r.name}: url is not a URL`;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return `${r.name}: url must be http or https`;
+  if (u.username || u.password) return `${r.name}: url must not carry credentials (use token)`;
+  if (r.token !== undefined && (typeof r.token !== 'string' || !r.token)) return `${r.name}: token must be a non-empty string`;
+  const url = `${u.origin}${u.pathname.replace(/\/+$/, '')}`;
+  return r.token ? { name: r.name, url, token: r.token as string } : { name: r.name, url };
+}
+
+/** portboard.json `agent` over the defaults; a wrong field falls back to its default */
+export function agentServeConfig(raw: Record<string, unknown> | undefined): typeof SITE_DEFAULTS.agent {
+  const D = SITE_DEFAULTS.agent;
+  const r = raw ?? {};
+  const port = Number.isInteger(r.port) && (r.port as number) > 0 && (r.port as number) < 65536 ? (r.port as number) : D.port;
+  const allow = Array.isArray(r.allow) ? r.allow.filter((x): x is string => typeof x === 'string' && !!x.trim()).map((x) => x.trim()) : D.allow;
+  const token = typeof r.token === 'string' && r.token ? r.token : D.token;
+  return { port, allow, token, showAddresses: r.showAddresses === true };
+}
 
 /** portboard.json: every key optional. pve/windows are partial defaults; pveports.json and winports.json still win. */
 export interface SiteFile {
@@ -97,6 +138,8 @@ export interface SiteFile {
   utcOffset?: string;
   pve?: Record<string, unknown>;
   windows?: Record<string, unknown>;
+  agents?: AgentTarget[];
+  agent?: Record<string, unknown>;
 }
 
 /** What the machine said; null/undefined: not asked (SITE) or couldn't tell. */
@@ -139,6 +182,10 @@ export interface Site {
   utcOffsetMs: number;
   pve: typeof SITE_DEFAULTS.pve;
   windows: typeof SITE_DEFAULTS.windows;
+  /** the agents this board reads (portboard.json `agents`) */
+  agents: AgentTarget[];
+  /** this machine's `portboard agent` settings (portboard.json `agent`) */
+  agent: typeof SITE_DEFAULTS.agent;
   /** where each value came from */
   sources: Record<'host' | 'tailnet' | 'dnsName' | 'user' | 'checkout' | 'reposRoots' | 'poolUrl' | 'dashboardUrl' | 'publicUrl' | 'locale' | 'utcOffset', SiteSource>;
   /** the portboard.json path read (whether or not it exists) */
@@ -154,7 +201,7 @@ export interface Site {
 type Env = Record<string, string | undefined>;
 
 const STRING_KEYS = ['host', 'tailnet', 'user', 'checkout', 'poolUrl', 'dashboardUrl', 'publicUrl', 'locale', 'utcOffset'] as const;
-const OBJECT_KEYS = ['pve', 'windows'] as const;
+const OBJECT_KEYS = ['pve', 'windows', 'agent'] as const;
 
 /** Parses portboard.json. A key of the wrong type is dropped (and reported); the rest still apply. */
 export function parseSiteFile(text: string | null): { file: SiteFile; found: boolean; error: string | null } {
@@ -183,6 +230,18 @@ export function parseSiteFile(text: string | null): { file: SiteFile; found: boo
     if (r[k] === undefined) continue;
     if (r[k] && typeof r[k] === 'object' && !Array.isArray(r[k])) file[k] = r[k] as Record<string, unknown>;
     else bad.push(k);
+  }
+  if (r.agents !== undefined) {
+    if (!Array.isArray(r.agents)) bad.push('agents');
+    else {
+      const ok: AgentTarget[] = [];
+      for (const a of r.agents) {
+        const c = checkAgentTarget(a);
+        if (typeof c === 'string' || ok.some((x) => x.name.toLowerCase() === c.name.toLowerCase())) bad.push(`agents[${typeof c === 'string' ? c : `${c.name}: duplicate name`}]`);
+        else ok.push(c);
+      }
+      file.agents = ok;
+    }
   }
   return { file, found: true, error: bad.length ? `portboard.json: ignored ${bad.join(', ')} (wrong type)` : null };
 }
@@ -269,6 +328,8 @@ export function resolveSite(input: ResolveInput = {}): Site {
     // Merged here, validated by pveports.ts / winports.ts with their own files on top
     pve: { ...D.pve, ...(f.pve as Partial<typeof D.pve>) },
     windows: { ...D.windows, ...(f.windows as Partial<typeof D.windows>) },
+    agents: f.agents ?? D.agents,
+    agent: agentServeConfig(f.agent),
     sources: {
       host: hostSrc,
       tailnet: tailnetSrc,

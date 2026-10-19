@@ -232,6 +232,8 @@ export function redactDevices(d: Devices, policy: RedactPolicy = STRICT) {
         pool: pool(x.pool, policy),
         ports: hostPorts(x.ports, policy),
         portsSource: x.portsSource,
+        // Its `portboard agent` (#10): state and version only, never the URL (an address) or the load's raw numbers
+        ...(x.agent ? { agent: { ok: x.agent.ok, error: x.agent.error, checkedAt: x.agent.checkedAt, lastOk: x.agent.lastOk, version: x.agent.info?.version ?? null } } : {}),
       })),
       proxmox: {
         configured: d.proxmox.configured,
@@ -246,6 +248,9 @@ export function redactDevices(d: Devices, policy: RedactPolicy = STRICT) {
       winPorts: d.winPorts
         ? { enabled: d.winPorts.enabled, device: ids.id(d.winPorts.device), ok: d.winPorts.ok, pending: d.winPorts.pending, error: d.winPorts.error, checkedAt: d.winPorts.checkedAt, lastOk: d.winPorts.lastOk }
         : null,
+      ...(d.agents?.length
+        ? { agents: d.agents.map((a) => ({ name: a.name, device: a.device && ids.id(a.device), ok: a.ok, pending: a.pending, error: a.error, checkedAt: a.checkedAt, lastOk: a.lastOk })) }
+        : {}),
       tree: d.tree ? { roots: d.tree.roots.map((n) => netNode(n, ids, policy)) } : null,
     },
     policy,

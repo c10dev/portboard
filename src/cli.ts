@@ -4,7 +4,8 @@
 //   portboard start                          the dashboard (src/server.ts)
 //   portboard remote [approve|status|revoke] the read-only remote MCP server (src/remote.ts)
 //   portboard mcp                            the stdio MCP server (src/mcp.ts)
-//   portboard install-service [--remote] [--enable] [--dry-run]
+//   portboard agent                          this machine's read-only agent for a board elsewhere (src/agent.ts, #10)
+//   portboard install-service [--remote | --agent] [--enable] [--dry-run]
 //   portboard uninstall-service [--dry-run]
 //
 // The unit text and the argument parsing are pure (test/cli.test.ts); main() takes its paths and systemctl from deps.
@@ -23,19 +24,21 @@ Usage:
   portboard remote [approve|status|revoke [id]]
                                         run the read-only remote MCP server on :8794, or manage its clients
   portboard mcp                         run the stdio MCP server (for claude mcp add / Claude Desktop)
-  portboard install-service [--remote] [--enable] [--dry-run]
+  portboard agent                       serve this machine's ports read-only on :8797 to a board on another machine
+  portboard install-service [--remote | --agent] [--enable] [--dry-run]
                                         write systemd user units for this node and this install
-                                        (--remote also the remote MCP unit; --enable runs systemctl for you)
+                                        (--remote also the remote MCP unit; --agent only the agent unit;
+                                        --enable runs systemctl for you)
   portboard uninstall-service [--dry-run]
                                         disable and remove the units install-service wrote
   portboard --version | --help
 
 Docs: https://github.com/c10dev/portboard/blob/main/docs/setup.md`;
 
-export type Command = 'start' | 'remote' | 'mcp' | 'install-service' | 'uninstall-service' | 'version' | 'help';
-const COMMANDS: readonly string[] = ['start', 'remote', 'mcp', 'install-service', 'uninstall-service'];
+export type Command = 'start' | 'remote' | 'mcp' | 'agent' | 'install-service' | 'uninstall-service' | 'version' | 'help';
+const COMMANDS: readonly string[] = ['start', 'remote', 'mcp', 'agent', 'install-service', 'uninstall-service'];
 const FLAGS: Record<string, readonly string[]> = {
-  'install-service': ['--remote', '--enable', '--dry-run'],
+  'install-service': ['--remote', '--agent', '--enable', '--dry-run'],
   'uninstall-service': ['--dry-run'],
 };
 
@@ -44,29 +47,39 @@ export interface Parsed {
   /** what follows the command, for remote (approve, status, revoke <id>) */
   rest: string[];
   remote: boolean;
+  /** install-service --agent: the agent unit alone (a machine the board reads, with no dashboard of its own) */
+  agent: boolean;
   enable: boolean;
   dryRun: boolean;
 }
 
 /** argv after `portboard`; throws with a readable message on an unknown command or flag */
 export function parseArgs(argv: readonly string[]): Parsed {
-  const base = { rest: [], remote: false, enable: false, dryRun: false };
+  const base = { rest: [], remote: false, agent: false, enable: false, dryRun: false };
   const [first, ...rest] = argv;
   if (first === undefined || first === '--help' || first === '-h' || first === 'help') return { cmd: 'help', ...base };
   if (first === '--version' || first === '-v' || first === 'version') return { cmd: 'version', ...base };
   if (!COMMANDS.includes(first)) throw new Error(`unknown command "${first}" (portboard --help)`);
   const cmd = first as Command;
   // the servers keep their own arguments (src/remote.ts reads approve/status/revoke)
-  if (cmd === 'start' || cmd === 'remote' || cmd === 'mcp') return { ...base, cmd, rest };
+  if (cmd === 'start' || cmd === 'remote' || cmd === 'mcp' || cmd === 'agent') return { ...base, cmd, rest };
   const allowed = FLAGS[cmd] ?? [];
   for (const a of rest) if (!allowed.includes(a)) throw new Error(`${cmd}: unknown option "${a}" (allowed: ${allowed.join(' ')})`);
-  return { ...base, cmd, remote: rest.includes('--remote'), enable: rest.includes('--enable'), dryRun: rest.includes('--dry-run') };
+  const remote = rest.includes('--remote');
+  const agent = rest.includes('--agent');
+  if (remote && agent) throw new Error(`${cmd}: --remote and --agent don't go together (the agent unit is for a machine without the dashboard)`);
+  return { ...base, cmd, remote, agent, enable: rest.includes('--enable'), dryRun: rest.includes('--dry-run') };
 }
 
 // ---- systemd units ----
 
-export type UnitKind = 'dashboard' | 'remote';
-export const UNIT_NAMES: Record<UnitKind, string> = { dashboard: 'portboard', remote: 'portboard-remote' };
+export type UnitKind = 'dashboard' | 'remote' | 'agent';
+export const UNIT_NAMES: Record<UnitKind, string> = { dashboard: 'portboard', remote: 'portboard-remote', agent: 'portboard-agent' };
+const DESCRIPTIONS: Record<UnitKind, string> = {
+  dashboard: 'Description=Portboard — listening ports dashboard on :8790 (loopback + tailnet)',
+  remote: 'Description=Portboard remote MCP (read-only) on :8794 (loopback + tailnet)',
+  agent: 'Description=Portboard agent (read-only, for a board on another machine) on :8797 (loopback + tailnet)',
+};
 /** First line of every unit install-service writes; uninstall-service removes only files that start with it */
 export const UNIT_MARKER = '# Written by `portboard install-service`';
 
@@ -105,21 +118,19 @@ export function unitText(kind: UnitKind, o: UnitInput): string {
   const exec = dashboard
     ? // RSS: V8 otherwise keeps a 2 × 64 MB young generation after every worktree scan (deploy/portboard.service)
       [o.node, '--max-semi-space-size=16', bin, 'start']
-    : [o.node, bin, 'remote'];
+    : [o.node, bin, kind];
   return [
     `${UNIT_MARKER} (portboard ${o.version}). Edits here are overwritten:`,
     '# rerun it after moving node (a new nvm version) or Portboard, then `systemctl --user daemon-reload`.',
     '',
     '[Unit]',
-    dashboard
-      ? 'Description=Portboard — listening ports dashboard on :8790 (loopback + tailnet)'
-      : 'Description=Portboard remote MCP (read-only) on :8794 (loopback + tailnet)',
+    DESCRIPTIONS[kind],
     '',
     '[Service]',
     `WorkingDirectory=${systemdPath(o.root)}`,
     `ExecStart=${exec.map(systemdArg).join(' ')}`,
     envLine(`PATH=${path}`),
-    ...(dashboard ? [] : ['Environment=PORTBOARD_REMOTE_PORT=8794']),
+    ...(kind === 'remote' ? ['Environment=PORTBOARD_REMOTE_PORT=8794'] : []),
     // State and config files private to this user (0600 files, 0700 dirs): security review v1.0, L6
     'NoNewPrivileges=yes',
     'UMask=0077',
@@ -136,7 +147,7 @@ export function unitText(kind: UnitKind, o: UnitInput): string {
 export const unitDir = (home: string, env: Record<string, string | undefined> = {}) =>
   join(env.XDG_CONFIG_HOME || join(home, '.config'), 'systemd', 'user');
 
-export const unitsFor = (remote: boolean): UnitKind[] => (remote ? ['dashboard', 'remote'] : ['dashboard']);
+export const unitsFor = (remote: boolean, agent = false): UnitKind[] => (agent ? ['agent'] : remote ? ['dashboard', 'remote'] : ['dashboard']);
 
 /** The commands install-service prints (or runs with --enable) */
 export function enableCommands(kinds: readonly UnitKind[]): string[][] {
@@ -189,7 +200,7 @@ async function installService(p: Parsed, d: Deps): Promise<number> {
     return 1;
   }
   const dir = unitDir(d.home, d.env);
-  const kinds = unitsFor(p.remote);
+  const kinds = unitsFor(p.remote, p.agent);
   const input: UnitInput = { node: d.node, root: d.root, version: VERSION };
   if (d.root.split('/').includes('_npx')) {
     d.err('warning: this is an npx cache copy, which npm may delete. Install for good first: npm i -g portboard');
@@ -209,18 +220,19 @@ async function installService(p: Parsed, d: Deps): Promise<number> {
   const cmds = enableCommands(kinds);
   if (p.enable && !p.dryRun) {
     for (const c of cmds) if (!(await d.systemctl(c.slice(1)))) return 1;
-    d.out(`started: ${kinds.map((k) => UNIT_NAMES[k]).join(', ')}. Dashboard: http://127.0.0.1:8790`);
+    d.out(`started: ${kinds.map((k) => UNIT_NAMES[k]).join(', ')}. ${p.agent ? 'Agent: http://127.0.0.1:8797/agent/v1/info' : 'Dashboard: http://127.0.0.1:8790'}`);
   } else {
     d.out(`\n${p.dryRun ? 'Would write the above. Then start' : 'Start'} ${kinds.length > 1 ? 'them' : 'it'} (and at every login):\n  ${cmds.map(shown).join(' && ')}`);
   }
   d.out('Keep it running after logout: sudo loginctl enable-linger $USER');
   if (p.remote) d.out('The remote server is public only after `tailscale funnel`: docs/remote-mcp/README.md.');
+  if (p.agent) d.out('Say who may read it (agent.allow or agent.token in portboard.json), then list it in the board\'s agents: docs/multi-host.md.');
   return 0;
 }
 
 async function uninstallService(p: Parsed, d: Deps): Promise<number> {
   const dir = unitDir(d.home, d.env);
-  const ours = (['dashboard', 'remote'] as const)
+  const ours = (['dashboard', 'remote', 'agent'] as const)
     .map((k) => ({ name: UNIT_NAMES[k], file: join(dir, `${UNIT_NAMES[k]}.service`) }))
     .filter((u) => existsSync(u.file));
   const foreign = ours.filter((u) => !readFileSync(u.file, 'utf8').startsWith(UNIT_MARKER));
@@ -281,6 +293,10 @@ export async function main(argv: readonly string[], deps: Partial<Deps> = {}): P
     case 'remote':
       asEntry('src/remote.ts', p.rest);
       await import('./remote.ts');
+      return 0;
+    case 'agent':
+      asEntry('src/agent.ts', p.rest);
+      await import('./agent.ts');
       return 0;
     case 'mcp':
       asEntry('src/mcp.ts', p.rest);

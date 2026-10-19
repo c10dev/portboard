@@ -64,6 +64,8 @@ export interface DeviceCard {
   /** Its listening ports (other machines only), from compute-pool or read over SSH from the Proxmox host */
   ports: Device['ports'];
   portsSource: Device['portsSource'];
+  /** Its `portboard agent` (#10), when the board reads one for it */
+  agent?: Device['agent'];
   /** Set when the user can name this card (POST /api/clients/name) */
   nameKey: string | null;
   lanVia: Device['lanVia'];
@@ -168,6 +170,7 @@ export function buildUsage(inp: UsageInput): Usage {
       poolMatch: d.poolMatch,
       ports: d.ports,
       portsSource: d.portsSource,
+      agent: d.agent ?? null,
       nameKey: null,
       uses: [],
       connections: 0,
