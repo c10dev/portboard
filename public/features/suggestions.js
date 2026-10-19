@@ -1,5 +1,6 @@
 // Smart defaults (GET /api/suggestions, src/features/suggestions.ts): never applied by themselves.
 //   서비스 page  "🔔 알림 켜기?" (in the inspector, and on a phone's row) for a pinned / systemd / long-lived docker port with no alert: 켜기 / 무시
+//                "💤 N일째 안 씀" for a service nobody has connected to for 14 days (#3): 무시 only, stopping stays the user's call
 //   기기 page    "추천 이름 …" on a LAN device's card: 적용 / 무시, and prefill() for 이름 붙이기 (devices.js imports it)
 // Self-contained like owners.js: it decorates what the page renders and re-applies after every re-render.
 
@@ -68,19 +69,20 @@ async function accept(s) {
   }
 }
 
+/** 적용-type button (when `yes` is given) and 무시 */
 function acts(s, yes) {
-  const ok = el('button', 'sg-yes', yes);
   const no = el('button', 'sg-no', t('suggestions.dismiss'));
-  ok.dataset.write = '1';
-  no.dataset.write = '1';
-  for (const b of [ok, no]) {
+  const ok = yes ? el('button', 'sg-yes', yes) : null;
+  const buttons = ok ? [ok, no] : [no];
+  for (const b of buttons) {
     b.type = 'button';
+    b.dataset.write = '1';
     b.disabled = busy.has(s.id);
   }
-  ok.addEventListener('click', (ev) => { ev.stopPropagation(); accept(s); });
+  ok?.addEventListener('click', (ev) => { ev.stopPropagation(); accept(s); });
   no.addEventListener('click', (ev) => { ev.stopPropagation(); dismiss(s); });
   no.title = t('suggestions.dismiss.title');
-  return [ok, no];
+  return buttons;
 }
 
 function alertChip(s) {
@@ -88,6 +90,15 @@ function alertChip(s) {
   chip.dataset.suggestion = s.id;
   chip.title = `${s.text}${s.also.length ? `\n${t('suggestions.alert.also', { ports: s.also.join(', '), n: s.also.length })}` : ''}\n${t('suggestions.alert.how')}`;
   chip.append(el('span', 'sg-text', t('suggestions.alert')), ...acts(s, t('suggestions.alert.yes')));
+  return chip;
+}
+
+function idleChip(s) {
+  const chip = el('span', 'badge sg-chip sg-idle');
+  chip.dataset.suggestion = s.id;
+  chip.title = `${s.text}${s.also.length ? `\n${t('suggestions.idle.also', { ports: s.also.join(', '), n: s.also.length })}` : ''}\n${t('suggestions.idle.how')}`;
+  const label = s.idleDays !== null ? t('suggestions.idle', { days: s.idleDays }) : t('suggestions.idle.never', { days: s.days });
+  chip.append(el('span', 'sg-text', label), ...acts(s, null));
   return chip;
 }
 
@@ -102,14 +113,19 @@ function nameLine(s) {
 }
 
 function decorateRows() {
-  const byPort = new Map(doc.suggestions.filter((s) => s.kind === 'alert').map((s) => [String(s.port), s]));
+  const byPort = (kind) => new Map(doc.suggestions.filter((s) => s.kind === kind).map((s) => [String(s.port), s]));
+  const alerts = byPort('alert');
+  const idle = byPort('idle');
   // the rows, and the 서비스 inspector's head (features/port-inspector.js), which looks like a row to this
   for (const li of document.querySelectorAll('#list li.row, #inspBody .insp-port')) {
     const badges = li.querySelector('.badges');
     if (!badges) continue;
     badges.querySelectorAll('.sg-chip').forEach((b) => b.remove());
-    const s = byPort.get(li.querySelector('.port')?.textContent?.trim() ?? '');
+    const port = li.querySelector('.port')?.textContent?.trim() ?? '';
+    const s = alerts.get(port);
     if (s) badges.append(alertChip(s));
+    const i = idle.get(port);
+    if (i) badges.append(idleChip(i));
   }
 }
 

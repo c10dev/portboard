@@ -17,6 +17,12 @@
 //          A suggestion that equals the name already shown is no suggestion. A Proxmox guest is already shown under
 //          its guest name (usage.ts); that name is what 이름 붙이기 pre-fills (prefillName), and the vendor guess
 //          never replaces it.
+//   idle   a service nobody has connected to for IDLE_DAYS (14) days, from the usage history (history.ts, 30 days)
+//          → "💤 N일째 안 씀". Installed units, containers and plain processes alike (the owners cleanup only knows
+//          left-over dev servers, #3); one per unit / container like alert, with its last use and owner. Only a
+//          suggestion: nothing here or in the dashboard stops it. Left out: pinned, hidden and system ports,
+//          Portboard itself, and whatever the history can't vouch for: nothing at all until the history spans
+//          IDLE_DAYS, and a port the history never saw only when its service has been up that long (else it is new).
 //
 // Dismissed ids live in prefs.json (prefs.ts suggestions.dismissed). Everything here is pure; the feature module
 // (src/features/suggestions.ts) collects the inputs.
@@ -25,7 +31,7 @@ import { shortVendor, type NameSource } from './clients.ts';
 import { t } from './i18n.ts';
 
 /** Ids fit the router's generic `:device` segment ([A-Za-z0-9][A-Za-z0-9-]{0,62}) */
-export const SUGGESTION_ID = /^(alert-\d{1,5}|name-[a-z0-9][a-z0-9-]{0,57})$/;
+export const SUGGESTION_ID = /^((alert|idle)-\d{1,5}|name-[a-z0-9][a-z0-9-]{0,57})$/;
 
 export interface AlertSuggestion {
   id: string;
@@ -59,7 +65,26 @@ export interface NameSuggestion {
   text: string;
 }
 
-export type Suggestion = AlertSuggestion | NameSuggestion;
+export interface IdleSuggestion {
+  id: string;
+  kind: 'idle';
+  port: number;
+  name: string;
+  /** What runs it: a systemd unit, a docker container, or a plain process (its command) */
+  owner: { type: 'unit' | 'container' | 'process'; name: string };
+  /** Other ports of the same unit / container (none of them used either) */
+  also: number[];
+  /** The threshold: no connection in this many days */
+  days: number;
+  /** Last connection to any of its ports (ISO) and the device it came from; null when the history never saw one */
+  lastUsed: string | null;
+  lastDevice: string | null;
+  /** Whole days since lastUsed; null with it */
+  idleDays: number | null;
+  text: string;
+}
+
+export type Suggestion = AlertSuggestion | NameSuggestion | IdleSuggestion;
 
 export interface SuggestionsReport {
   at: string;
@@ -315,6 +340,127 @@ export function prefillName(c: Pick<NameCard, 'name' | 'nameSource'>, s: NameSug
   if (c.nameSource === 'user') return c.name;
   if (s) return s.name;
   return c.nameSource === 'proxmox' ? c.name : '';
+}
+
+// ---------- idle ----------
+
+/** No connection for this many days makes a service a cleanup suggestion (a constant: suggestions have no settings) */
+export const IDLE_DAYS = 14;
+const DAY_MS = 86400_000;
+
+/** The parts of a PortEntry (src/core/index.ts) this needs */
+export interface IdleCandidate {
+  port: number;
+  name: string;
+  kind: 'app' | 'ephemeral' | 'system';
+  listening: boolean;
+  hidden: boolean;
+  pinned: boolean;
+  container: string | null;
+  processes: { pid: number; unit: string | null; cmdline: string }[];
+}
+
+/** The parts of a usage-history entry (history.ts HistEntry) this needs: one per (device, port) */
+export interface UseRecord {
+  port: number;
+  /** The device's display name */
+  name: string;
+  lastSeen: number;
+}
+
+export interface IdleInputs {
+  /** When the usage history began (History.startedAt); null: no history yet */
+  historySince: number | null;
+  uses: UseRecord[];
+  /** When each process started (ms), by pid (/proc/<pid>/stat) */
+  started: Map<number, number>;
+  /** docker inspect, by container name */
+  containers: Map<string, ContainerInfo>;
+  /** Portboard's own units and pid */
+  selfUnits: Set<string>;
+  selfPid: number;
+  now: number;
+  days?: number;
+}
+
+/** portboard.service, portboard-remote.service… (newports.ts isSelf) */
+const PORTBOARD_UNIT = /^portboard(?:-[a-z]+)?\.service$/;
+
+/** "/usr/bin/python3 -m http.server 8000" → "python3" */
+const commandName = (cmdline: string) => cmdline.trim().split(/\s+/)[0]?.split('/').pop() || null;
+
+export function idleSuggestions(ports: IdleCandidate[], inp: IdleInputs): IdleSuggestion[] {
+  const days = inp.days ?? IDLE_DAYS;
+  const span = days * DAY_MS;
+  // A history younger than the threshold can't tell "unused" from "not watched yet".
+  if (inp.historySince === null || inp.now - inp.historySince < span) return [];
+
+  const lastUse = new Map<number, UseRecord>();
+  for (const u of inp.uses) {
+    const had = lastUse.get(u.port);
+    if (!had || u.lastSeen > had.lastSeen) lastUse.set(u.port, u);
+  }
+
+  const unitOf = (p: IdleCandidate) => p.processes.find((x) => x.unit)?.unit ?? null;
+  const byOwner = new Map<string, IdleCandidate[]>();
+  for (const p of ports) {
+    if (!p.listening) continue;
+    const unit = unitOf(p);
+    const k = p.container ? `ctr:${p.container}` : unit ? `unit:${unit}` : `port:${p.port}`;
+    byOwner.set(k, [...(byOwner.get(k) ?? []), p]);
+  }
+
+  const out: IdleSuggestion[] = [];
+  for (const group of byOwner.values()) {
+    // Pinned: the user keeps it on purpose. System: the OS looks after it.
+    if (group.some((p) => p.pinned || p.kind === 'system')) continue;
+    const shown = group.filter((p) => !p.hidden);
+    if (!shown.length) continue;
+    const procs = group.flatMap((p) => p.processes);
+    if (procs.some((x) => x.pid === inp.selfPid || (!!x.unit && (inp.selfUnits.has(x.unit) || PORTBOARD_UNIT.test(x.unit))))) continue;
+    const unit = unitOf(shown[0]);
+    const container = shown[0].container;
+
+    const last = group.map((p) => lastUse.get(p.port)).filter((u): u is UseRecord => !!u).sort((a, b) => b.lastSeen - a.lastSeen)[0] ?? null;
+    if (last && inp.now - last.lastSeen < span) continue;
+    if (!last) {
+      // Never seen in the history: unused only when it has been up for the whole threshold, else it is just new.
+      const starts = container ? [inp.containers.get(container)?.startedAt ?? null] : procs.map((x) => inp.started.get(x.pid) ?? null);
+      const known = starts.filter((s): s is number => s !== null);
+      if (!known.length || inp.now - Math.min(...known) < span) continue;
+    }
+
+    const owner: IdleSuggestion['owner'] = container
+      ? { type: 'container', name: container }
+      : unit
+        ? { type: 'unit', name: unit }
+        : { type: 'process', name: commandName(procs[0]?.cmdline ?? '') ?? shown[0].name };
+    const pick = [...shown].sort((a, b) => a.port - b.port)[0];
+    const idleDays = last ? Math.floor((inp.now - last.lastSeen) / DAY_MS) : null;
+    out.push({
+      id: `idle-${pick.port}`,
+      kind: 'idle',
+      port: pick.port,
+      name: pick.name,
+      owner,
+      also: shown.filter((p) => p !== pick).map((p) => p.port),
+      days,
+      lastUsed: last ? new Date(last.lastSeen).toISOString() : null,
+      lastDevice: last?.name ?? null,
+      idleDays,
+      text: idleText(owner, days, last?.name ?? null, idleDays),
+    });
+  }
+  return out.sort((a, b) => a.port - b.port);
+}
+
+function idleText(owner: IdleSuggestion['owner'], days: number, device: string | null, idleDays: number | null): string {
+  const who = owner.type === 'unit'
+    ? t('suggest.idle.unit', { name: owner.name })
+    : owner.type === 'container'
+      ? t('suggest.idle.container', { name: owner.name })
+      : t('suggest.idle.process', { name: owner.name });
+  return idleDays !== null ? t('suggest.idle.text', { owner: who, days: idleDays, device }) : t('suggest.idle.never', { owner: who, days });
 }
 
 // ---------- together ----------
