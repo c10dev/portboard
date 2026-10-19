@@ -1,0 +1,136 @@
+name: release
+
+# Push a tag vX.Y.Z (after `npm run changelog -- X.Y.Z` and bumping package.json to X.Y.Z) to publish the npm package
+# and create the GitHub Release with that version's CHANGELOG section (c10dev/portboard#9). Secrets: docs/setup.md
+# "Releasing". The Mac app job runs only when the Apple signing secrets are set; without them it is skipped.
+
+on:
+  push:
+    tags: ['v*']
+
+# Each job asks for what it needs (docs/security-review/v1.0.md I10)
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  npm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # the GitHub Release
+      id-token: write # npm provenance
+    steps:
+      # Actions pinned by commit SHA (the tag they were at, after #)
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - name: Tag matches package.json
+        run: |
+          v="$(node -p 'require("./package.json").version')"
+          [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "::error::tag $GITHUB_REF_NAME but package.json is $v"; exit 1; }
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - name: Release notes from CHANGELOG.md
+        run: node scripts/changelog.ts --notes "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+      # prepack builds dist/ (Node won't strip types under node_modules); the pack is checked before it goes out
+      - name: Pack and smoke-test the tarball
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          mkdir "$RUNNER_TEMP/smoke" && cd "$RUNNER_TEMP/smoke"
+          npm init -y >/dev/null
+          npm i --no-audit --no-fund "$RUNNER_TEMP"/portboard-*.tgz
+          [ "$(npx --no-install portboard --version)" = "${GITHUB_REF_NAME#v}" ]
+          npx --no-install portboard install-service --dry-run --remote >/dev/null
+      - name: npm publish
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: GitHub Release
+        run: gh release create "$GITHUB_REF_NAME" --title "Portboard ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # Job-level `if` can't read secrets: this job says whether all the Apple ones are there.
+  mac-secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        env:
+          P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          P12_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          if [ -n "$P12" ] && [ -n "$P12_PASSWORD" ] && [ -n "$IDENTITY" ] && [ -n "$APPLE_ID" ] && [ -n "$TEAM_ID" ] && [ -n "$APP_PASSWORD" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Apple signing secrets not set: the Mac app is not built (docs/setup.md, Releasing)"
+          fi
+
+  # Developer ID signed and notarized Portboard.app, attached to the release. Skeleton: not run until the secrets exist.
+  mac-app:
+    needs: [npm, mac-secrets]
+    if: needs.mac-secrets.outputs.ready == 'true'
+    runs-on: macos-14
+    timeout-minutes: 30
+    permissions:
+      contents: write # upload to the release
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0 # build.sh numbers the build by commit count
+      - name: Build (ad hoc signed)
+        run: mac-app/build.sh
+      - name: Signing keychain
+        env:
+          P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          P12_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+      - name: Sign with Developer ID (hardened runtime)
+        env:
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          codesign --force --options runtime --timestamp --sign "$IDENTITY" mac-app/build/Portboard.app
+          codesign --verify --strict --verbose=2 mac-app/build/Portboard.app
+      - name: Notarize and staple
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          ditto -c -k --keepParent mac-app/build/Portboard.app "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_PASSWORD" --wait
+          xcrun stapler staple mac-app/build/Portboard.app
+          spctl --assess --type execute --verbose mac-app/build/Portboard.app
+          ditto -c -k --keepParent mac-app/build/Portboard.app "$RUNNER_TEMP/Portboard-${GITHUB_REF_NAME#v}-mac.zip"
+      - name: Attach to the release
+        run: gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/Portboard-${GITHUB_REF_NAME#v}-mac.zip"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Remove the keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true

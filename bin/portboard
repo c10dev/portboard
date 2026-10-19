@@ -1,0 +1,10 @@
+#!/usr/bin/env node
+// The `portboard` command (c10dev/portboard#9; logic and usage: src/cli.ts). Plain JavaScript, so it runs from a
+// checkout and from an npm install alike: a checkout runs src/cli.ts directly (Node strips the types), the published
+// package runs the build in dist/ (Node won't strip types under node_modules; npm run build, run by prepack).
+import { existsSync } from 'node:fs';
+
+const src = new URL('../src/cli.ts', import.meta.url);
+const entry = existsSync(src) ? src : new URL('../dist/cli.js', import.meta.url);
+const { main } = await import(entry.href);
+process.exitCode = await main(process.argv.slice(2));

@@ -1,6 +1,54 @@
 # Setup and running
 
-### Running
+### Install
+
+From npm (Node ≥ 22.18; the package has no dependencies):
+
+```bash
+npx portboard start                  # run once, without installing
+npm i -g portboard                   # or install the `portboard` command
+portboard install-service [--remote] [--enable] [--dry-run]
+portboard uninstall-service [--dry-run]
+```
+
+| Command | What it does |
+|---|---|
+| `portboard start` | The dashboard (`src/server.ts`) on 127.0.0.1:8790 and the Tailscale IP |
+| `portboard remote [approve\|status\|revoke [id]]` | The read-only remote MCP server on :8794, or its client admin ([remote-mcp/](remote-mcp/README.md)) |
+| `portboard mcp` | The stdio MCP server, e.g. `claude mcp add portboard -- portboard mcp` |
+| `portboard install-service` | Writes `~/.config/systemd/user/portboard.service` (with `--remote`, also `portboard-remote.service`) for **the node running the command** (`process.execPath`) and **this install** (the global package or the checkout), with the hardening of `deploy/portboard.service`: `UMask=0077`, `NoNewPrivileges=yes`, `Restart=always`. Then prints `systemctl --user daemon-reload && systemctl --user enable --now portboard`; `--enable` runs it instead. `--dry-run` prints the units and writes nothing |
+| `portboard uninstall-service` | `systemctl --user disable --now`, then removes the units `install-service` wrote (a hand-copied unit is left alone). Config and state stay |
+| `portboard --version`, `--help` | |
+
+The unit names absolute paths, so run `install-service` again after upgrading node under nvm or moving the install.
+npx copies live in a cache npm may clear: `npm i -g portboard` before `install-service`. User units stop at logout
+unless lingering is on (`sudo loginctl enable-linger $USER`). `install-service` is Linux only; on a Mac, the app
+(below) is the client.
+
+The npm package carries `src/` compiled to `dist/`, because Node refuses to strip types under `node_modules`
+(`npm run build`, run by `prepack`, with `tsconfig.build.json`). A checkout runs the `.ts` files directly;
+`bin/portboard` runs `src/cli.ts` when it is there and `dist/cli.js` otherwise.
+
+#### Releasing
+
+Fold the fragments (`npm run changelog -- X.Y.Z "title"`), set `"version": "X.Y.Z"` in package.json, commit, then push a
+tag `vX.Y.Z`. `.github/workflows/release.yml` checks that the tag matches package.json, runs the typecheck and tests,
+packs the tarball and runs it once, publishes to npm with provenance, and creates the GitHub Release from that
+version's CHANGELOG section (`node scripts/changelog.ts --notes X.Y.Z`). Repository secrets:
+
+| Secret | For |
+|---|---|
+| `NPM_TOKEN` | `npm publish`: an npm automation (or granular, publish-only) token of the `portboard` package's owner |
+| `APPLE_CERTIFICATE_P12` | Mac app: the "Developer ID Application" certificate and key, exported as .p12, base64 (`base64 -i cert.p12`) |
+| `APPLE_CERTIFICATE_PASSWORD` | the .p12's password |
+| `APPLE_SIGNING_IDENTITY` | e.g. `Developer ID Application: Your Name (TEAMID)` |
+| `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD` | `notarytool`: the Apple ID, its team, and an app-specific password |
+
+Without all six Apple secrets the `mac-app` job is skipped and the release has the npm package only. With them, it
+builds `mac-app/build.sh` on a macOS runner, re-signs with the Developer ID and the hardened runtime, notarizes,
+staples, and attaches `Portboard-X.Y.Z-mac.zip` to the release.
+
+### Running from a checkout
 
 ```bash
 npm start          # node src/server.ts (Node ≥ 22.18, no external dependencies)
@@ -49,10 +97,11 @@ To clean up after a preview: stop it, then `rm -rf ~/.local/state/portboard/prev
 Register it as a systemd user service so it starts automatically:
 
 ```bash
-cp ~/projects/portboard/deploy/portboard.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now portboard
+~/projects/portboard/bin/portboard install-service --enable   # the unit runs this checkout with this node
 ```
+
+`deploy/portboard.service` and `deploy/portboard-remote.service` stay as reference units (with the production host's
+paths); `install-service` writes the same settings with yours.
 
 After a merge, deploy from the main checkout with `scripts/deploy.sh` (test → restart → live smoke checks → push, rolling back on failure); `--dry-run` checks what is running now. See [docs/operations.md § Deploy](operations.md#deploy).
 

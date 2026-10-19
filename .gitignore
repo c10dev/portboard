@@ -8,3 +8,5 @@ mac-app/.swiftpm/
 /portboard.json
 # The Mac app's build settings for this install (mac-app/build.sh)
 mac-app/build.env
+# npm run build (prepack): the published package's compiled src/
+/dist/

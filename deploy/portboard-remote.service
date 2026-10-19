@@ -1,8 +1,10 @@
 # NOT INSTALLED. Read-only remote MCP for claude.ai / ChatGPT (docs/remote-mcp/README.md).
 # Listens on 127.0.0.1:8794 and the tailnet IP; it is public only after `tailscale funnel --https=8443 …`.
 #
-#   cp deploy/portboard-remote.service ~/.config/systemd/user/
+#   portboard install-service --remote      (writes this unit with this machine's node and install)
 #   systemctl --user daemon-reload && systemctl --user enable --now portboard-remote
+#
+# or cp this reference copy (the production host's paths) to ~/.config/systemd/user/.
 
 [Unit]
 Description=Portboard remote MCP (read-only) on :8794 (loopback + tailnet)

@@ -53,9 +53,25 @@ Requirements: Linux with `ss` (iproute2), Node.js ≥ 22.18 (24 recommended), an
 for anything beyond `localhost`. systemd and docker are used when present.
 
 ```bash
+npx portboard start       # try it: dashboard + REST API on 127.0.0.1:8790 and this machine's Tailscale IP
+```
+
+To keep it running, install it and let it write a systemd user unit for the node you ran it with:
+
+```bash
+npm i -g portboard
+portboard install-service           # writes ~/.config/systemd/user/portboard.service, prints the line below
+systemctl --user daemon-reload && systemctl --user enable --now portboard
+```
+
+`portboard install-service --enable` runs those two for you; `--dry-run` only prints the unit. Or from a checkout, to
+hack on it or follow `main`:
+
+```bash
 git clone https://github.com/c10dev/portboard.git ~/projects/portboard
 cd ~/projects/portboard
-npm start                 # dashboard + REST API on 127.0.0.1:8790 and this machine's Tailscale IP
+npm start                           # same as bin/portboard start
+bin/portboard install-service       # the unit then runs this checkout
 ```
 
 Open `http://127.0.0.1:8790`. From another tailnet device, publish it over HTTPS (tailnet only):
@@ -67,13 +83,9 @@ tailscale serve --bg --https=8443 http://127.0.0.1:8790
 and open `https://<host>.<tailnet>.ts.net:8443`. Writes (stop, restart, publish, delete) work only through that HTTPS
 address and only for your own Tailscale login; plain `http://<tailscale-ip>:8790` is read-only.
 
-Run it as a systemd user service:
-
-```bash
-cp deploy/portboard.service ~/.config/systemd/user/   # check WorkingDirectory and the node path in ExecStart
-systemctl --user daemon-reload
-systemctl --user enable --now portboard
-```
+The unit names the node binary and the install it was written from: after a node upgrade (a new nvm version) or a
+move, run `portboard install-service` again. `portboard --help` lists the other commands (`remote`, `mcp`,
+`uninstall-service`); [docs/setup.md](docs/setup.md#install) has the details.
 
 Nothing has to be configured: the host name, tailnet and user come from the machine. To name a Proxmox host, a Windows
 desktop, other repo folders or a compute-pool monitor, copy [`portboard.example.json`](portboard.example.json) to

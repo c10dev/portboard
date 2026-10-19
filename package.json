@@ -1,7 +1,6 @@
 {
   "name": "portboard",
   "version": "1.1.0",
-  "private": true,
   "description": "Dashboard of the ports listening on a Linux server, its Tailscale devices and dev worktrees, with an MCP server and a Claude Code plugin",
   "keywords": [
     "ports",
@@ -27,11 +26,26 @@
   "engines": {
     "node": ">=22.18"
   },
+  "bin": {
+    "portboard": "bin/portboard"
+  },
+  "files": [
+    "bin/portboard",
+    "dist",
+    "public",
+    "portboard.example.json",
+    "CHANGELOG.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "start": "node src/server.ts",
     "mcp": "node src/mcp.ts",
     "test": "PORTBOARD_LOCALE=ko node --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "node -e \"require('node:fs').rmSync('dist', {recursive: true, force: true})\" && tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "changelog": "node scripts/changelog.ts",
     "changelog:check": "node scripts/changelog.ts --check"
   },

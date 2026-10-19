@@ -1,0 +1,290 @@
+// The `portboard` command (bin/portboard; c10dev/portboard#9): run the dashboard, the remote MCP server or the stdio
+// MCP server, and write systemd user units that run them with this node and this install.
+//
+//   portboard start                          the dashboard (src/server.ts)
+//   portboard remote [approve|status|revoke] the read-only remote MCP server (src/remote.ts)
+//   portboard mcp                            the stdio MCP server (src/mcp.ts)
+//   portboard install-service [--remote] [--enable] [--dry-run]
+//   portboard uninstall-service [--dry-run]
+//
+// The unit text and the argument parsing are pure (test/cli.test.ts); main() takes its paths and systemctl from deps.
+
+import { execFile } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { VERSION } from './version.ts';
+
+export const USAGE = `portboard ${VERSION}: dashboard of the ports listening on this Linux server
+
+Usage:
+  portboard start                       run the dashboard on :8790 (loopback + tailnet)
+  portboard remote [approve|status|revoke [id]]
+                                        run the read-only remote MCP server on :8794, or manage its clients
+  portboard mcp                         run the stdio MCP server (for claude mcp add / Claude Desktop)
+  portboard install-service [--remote] [--enable] [--dry-run]
+                                        write systemd user units for this node and this install
+                                        (--remote also the remote MCP unit; --enable runs systemctl for you)
+  portboard uninstall-service [--dry-run]
+                                        disable and remove the units install-service wrote
+  portboard --version | --help
+
+Docs: https://github.com/c10dev/portboard/blob/main/docs/setup.md`;
+
+export type Command = 'start' | 'remote' | 'mcp' | 'install-service' | 'uninstall-service' | 'version' | 'help';
+const COMMANDS: readonly string[] = ['start', 'remote', 'mcp', 'install-service', 'uninstall-service'];
+const FLAGS: Record<string, readonly string[]> = {
+  'install-service': ['--remote', '--enable', '--dry-run'],
+  'uninstall-service': ['--dry-run'],
+};
+
+export interface Parsed {
+  cmd: Command;
+  /** what follows the command, for remote (approve, status, revoke <id>) */
+  rest: string[];
+  remote: boolean;
+  enable: boolean;
+  dryRun: boolean;
+}
+
+/** argv after `portboard`; throws with a readable message on an unknown command or flag */
+export function parseArgs(argv: readonly string[]): Parsed {
+  const base = { rest: [], remote: false, enable: false, dryRun: false };
+  const [first, ...rest] = argv;
+  if (first === undefined || first === '--help' || first === '-h' || first === 'help') return { cmd: 'help', ...base };
+  if (first === '--version' || first === '-v' || first === 'version') return { cmd: 'version', ...base };
+  if (!COMMANDS.includes(first)) throw new Error(`unknown command "${first}" (portboard --help)`);
+  const cmd = first as Command;
+  // the servers keep their own arguments (src/remote.ts reads approve/status/revoke)
+  if (cmd === 'start' || cmd === 'remote' || cmd === 'mcp') return { ...base, cmd, rest };
+  const allowed = FLAGS[cmd] ?? [];
+  for (const a of rest) if (!allowed.includes(a)) throw new Error(`${cmd}: unknown option "${a}" (allowed: ${allowed.join(' ')})`);
+  return { ...base, cmd, remote: rest.includes('--remote'), enable: rest.includes('--enable'), dryRun: rest.includes('--dry-run') };
+}
+
+// ---- systemd units ----
+
+export type UnitKind = 'dashboard' | 'remote';
+export const UNIT_NAMES: Record<UnitKind, string> = { dashboard: 'portboard', remote: 'portboard-remote' };
+/** First line of every unit install-service writes; uninstall-service removes only files that start with it */
+export const UNIT_MARKER = '# Written by `portboard install-service`';
+
+export interface UnitInput {
+  /** the node binary (process.execPath when installing) */
+  node: string;
+  /** the package root: a checkout or <prefix>/lib/node_modules/portboard */
+  root: string;
+  version: string;
+}
+
+function checkPath(p: string): string {
+  if (/[\n\r\0]/.test(p)) throw new Error(`path with a newline or NUL can't go in a unit file: ${JSON.stringify(p)}`);
+  return p;
+}
+
+/** One argument of ExecStart=: % is a specifier and $ a variable to systemd, whitespace and quotes need quoting */
+export function systemdArg(arg: string): string {
+  const s = checkPath(arg).replace(/%/g, '%%').replace(/\$/g, '$$$$');
+  return /[\s"'\\;]/.test(s) ? `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : s;
+}
+
+/** A value of WorkingDirectory= or Environment= (specifiers expand there too; Environment quotes the whole assignment) */
+const systemdPath = (p: string) => checkPath(p).replace(/%/g, '%%');
+const envLine = (assignment: string) => {
+  const s = systemdPath(assignment);
+  return `Environment=${/[\s"\\]/.test(s) ? `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : s}`;
+};
+
+/** The text of portboard.service or portboard-remote.service, with the hardening of deploy/portboard.service */
+export function unitText(kind: UnitKind, o: UnitInput): string {
+  const bin = join(o.root, 'bin', 'portboard');
+  // The node binary's folder first: an nvm node isn't on the system PATH, and the dashboard starts npm dev servers.
+  const path = [dirname(o.node), '/usr/local/bin', '/usr/bin', '/bin'].filter((d, i, a) => a.indexOf(d) === i).join(':');
+  const dashboard = kind === 'dashboard';
+  const exec = dashboard
+    ? // RSS: V8 otherwise keeps a 2 × 64 MB young generation after every worktree scan (deploy/portboard.service)
+      [o.node, '--max-semi-space-size=16', bin, 'start']
+    : [o.node, bin, 'remote'];
+  return [
+    `${UNIT_MARKER} (portboard ${o.version}). Edits here are overwritten:`,
+    '# rerun it after moving node (a new nvm version) or Portboard, then `systemctl --user daemon-reload`.',
+    '',
+    '[Unit]',
+    dashboard
+      ? 'Description=Portboard — listening ports dashboard on :8790 (loopback + tailnet)'
+      : 'Description=Portboard remote MCP (read-only) on :8794 (loopback + tailnet)',
+    '',
+    '[Service]',
+    `WorkingDirectory=${systemdPath(o.root)}`,
+    `ExecStart=${exec.map(systemdArg).join(' ')}`,
+    envLine(`PATH=${path}`),
+    ...(dashboard ? [] : ['Environment=PORTBOARD_REMOTE_PORT=8794']),
+    // State and config files private to this user (0600 files, 0700 dirs): security review v1.0, L6
+    'NoNewPrivileges=yes',
+    'UMask=0077',
+    '# The Tailscale IP may not exist yet right after boot; the server exits and we retry.',
+    'Restart=always',
+    'RestartSec=10',
+    '',
+    '[Install]',
+    'WantedBy=default.target',
+    '',
+  ].join('\n');
+}
+
+export const unitDir = (home: string, env: Record<string, string | undefined> = {}) =>
+  join(env.XDG_CONFIG_HOME || join(home, '.config'), 'systemd', 'user');
+
+export const unitsFor = (remote: boolean): UnitKind[] => (remote ? ['dashboard', 'remote'] : ['dashboard']);
+
+/** The commands install-service prints (or runs with --enable) */
+export function enableCommands(kinds: readonly UnitKind[]): string[][] {
+  return [
+    ['systemctl', '--user', 'daemon-reload'],
+    ['systemctl', '--user', 'enable', '--now', ...kinds.map((k) => UNIT_NAMES[k])],
+  ];
+}
+
+// ---- main ----
+
+export interface Deps {
+  out: (s: string) => void;
+  err: (s: string) => void;
+  node: string;
+  root: string;
+  home: string;
+  env: Record<string, string | undefined>;
+  platform: NodeJS.Platform;
+  /** runs systemctl with these arguments; resolves false (after printing why) on failure */
+  systemctl: (args: string[]) => Promise<boolean>;
+}
+
+const ROOT = fileURLToPath(new URL('../', import.meta.url)).replace(/\/+$/, '');
+
+function defaultDeps(): Deps {
+  return {
+    out: (s) => process.stdout.write(`${s}\n`),
+    err: (s) => process.stderr.write(`${s}\n`),
+    node: process.execPath,
+    root: ROOT,
+    home: homedir(),
+    env: process.env,
+    platform: process.platform,
+    systemctl: (args) =>
+      new Promise((resolve) =>
+        execFile('systemctl', args, { timeout: 60_000 }, (e, _out, stderr) => {
+          if (e) process.stderr.write(`systemctl ${args.join(' ')}: ${(stderr || e.message).trim()}\n`);
+          resolve(!e);
+        }),
+      ),
+  };
+}
+
+const shown = (cmd: readonly string[]) => cmd.join(' ');
+
+async function installService(p: Parsed, d: Deps): Promise<number> {
+  if (d.platform !== 'linux') {
+    d.err('install-service writes systemd user units: Linux only. On a Mac, use the menu bar app as a client (docs/mac-app/).');
+    return 1;
+  }
+  const dir = unitDir(d.home, d.env);
+  const kinds = unitsFor(p.remote);
+  const input: UnitInput = { node: d.node, root: d.root, version: VERSION };
+  if (d.root.split('/').includes('_npx')) {
+    d.err('warning: this is an npx cache copy, which npm may delete. Install for good first: npm i -g portboard');
+  }
+  for (const k of kinds) {
+    const file = join(dir, `${UNIT_NAMES[k]}.service`);
+    const text = unitText(k, input);
+    if (p.dryRun) {
+      d.out(`# ${file}\n${text}`);
+      continue;
+    }
+    const before = existsSync(file) ? readFileSync(file, 'utf8') : null;
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(file, text, { mode: 0o644 });
+    d.out(`${before === null ? 'wrote' : before === text ? 'unchanged' : 'updated'} ${file}`);
+  }
+  const cmds = enableCommands(kinds);
+  if (p.enable && !p.dryRun) {
+    for (const c of cmds) if (!(await d.systemctl(c.slice(1)))) return 1;
+    d.out(`started: ${kinds.map((k) => UNIT_NAMES[k]).join(', ')}. Dashboard: http://127.0.0.1:8790`);
+  } else {
+    d.out(`\n${p.dryRun ? 'Would write the above. Then start' : 'Start'} ${kinds.length > 1 ? 'them' : 'it'} (and at every login):\n  ${cmds.map(shown).join(' && ')}`);
+  }
+  d.out('Keep it running after logout: sudo loginctl enable-linger $USER');
+  if (p.remote) d.out('The remote server is public only after `tailscale funnel`: docs/remote-mcp/README.md.');
+  return 0;
+}
+
+async function uninstallService(p: Parsed, d: Deps): Promise<number> {
+  const dir = unitDir(d.home, d.env);
+  const ours = (['dashboard', 'remote'] as const)
+    .map((k) => ({ name: UNIT_NAMES[k], file: join(dir, `${UNIT_NAMES[k]}.service`) }))
+    .filter((u) => existsSync(u.file));
+  const foreign = ours.filter((u) => !readFileSync(u.file, 'utf8').startsWith(UNIT_MARKER));
+  for (const u of foreign) d.err(`left alone: ${u.file} was not written by install-service (remove it by hand)`);
+  const mine = ours.filter((u) => !foreign.includes(u));
+  if (!mine.length) {
+    d.out(`nothing to remove in ${dir}`);
+    return foreign.length ? 1 : 0;
+  }
+  const disable = ['--user', 'disable', '--now', ...mine.map((u) => u.name)];
+  if (p.dryRun) {
+    d.out(`would run: systemctl ${disable.join(' ')}`);
+    for (const u of mine) d.out(`would remove ${u.file}`);
+    d.out('would run: systemctl --user daemon-reload');
+    return 0;
+  }
+  // disable before removing, so no dangling default.target.wants link is left behind
+  if (!(await d.systemctl(disable))) d.err('continuing: removing the unit files anyway');
+  for (const u of mine) {
+    rmSync(u.file);
+    d.out(`removed ${u.file}`);
+  }
+  await d.systemctl(['--user', 'daemon-reload']);
+  d.out('State and config stay in ~/.local/state/portboard and ~/.config/portboard.');
+  return foreign.length ? 1 : 0;
+}
+
+/** Runs one server module as if it were started with `node <entry> ...rest` (they read process.argv themselves) */
+function asEntry(entry: string, rest: readonly string[]) {
+  process.argv = [process.argv[0], join(ROOT, entry), ...rest];
+}
+
+export async function main(argv: readonly string[], deps: Partial<Deps> = {}): Promise<number> {
+  const d = { ...defaultDeps(), ...deps };
+  let p: Parsed;
+  try {
+    p = parseArgs(argv);
+  } catch (e) {
+    d.err(`portboard: ${(e as Error).message}`);
+    return 2;
+  }
+  switch (p.cmd) {
+    case 'help':
+      d.out(USAGE);
+      return 0;
+    case 'version':
+      d.out(VERSION);
+      return 0;
+    case 'install-service':
+      return installService(p, d);
+    case 'uninstall-service':
+      return uninstallService(p, d);
+    // The servers keep running after these imports resolve (listeners, readline); main's exit code is not used.
+    case 'start':
+      asEntry('src/server.ts', p.rest);
+      await import('./server.ts');
+      return 0;
+    case 'remote':
+      asEntry('src/remote.ts', p.rest);
+      await import('./remote.ts');
+      return 0;
+    case 'mcp':
+      asEntry('src/mcp.ts', p.rest);
+      await import('./mcp.ts');
+      return 0;
+  }
+}
