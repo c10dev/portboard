@@ -10,7 +10,10 @@
 import type { Snapshot } from '../core/index.ts';
 import type { Devices } from '../core/devices.ts';
 import type { Usage } from '../core/usage.ts';
+import type { WorktreesDoc } from '../core/worktrees.ts';
 import type { Core } from '../mcp/kit.ts';
+import type { DevServersDoc } from '../features/devservers.ts';
+import type { MemoryView } from '../features/memory.ts';
 import type { StatusExtras } from './redact.ts';
 
 /** What the remote server can reach: reads only. */
@@ -21,6 +24,12 @@ export interface RemoteCore {
   usage(): Promise<Usage>;
   /** For portboard://status: watched ports/devices that are down, and how many 새 기기 are pending */
   statusExtras?(): Promise<StatusExtras>;
+  /** list_dev_servers: running pb-dev-* units and startable worktrees (systemctl, git worktree list, package.json) */
+  devServers?(): Promise<DevServersDoc>;
+  /** list_worktrees: the last scan the dashboard server saved (null: none yet). Never starts a scan. */
+  worktrees?(): Promise<WorktreesDoc | null>;
+  /** memory_usage: the dashboard server's last sample from memory-state.json (null: none recent). Never reads /proc. */
+  memory?(): Promise<MemoryView | null>;
 }
 
 const notRemote = async (): Promise<never> => {
@@ -48,6 +57,8 @@ export function readOnlyCore(core: RemoteCore): Core {
     setClientName: notRemote,
     owners: notRemote,
     cleanup: notRemote,
+    // Not offered here: the remote list_worktrees, list_dev_servers and memory_usage read RemoteCore directly, with
+    // their own redaction. Shared tool code would print paths, commit messages and session titles.
     worktrees: notRemote,
     removeWorktrees: notRemote,
     reservations: notRemote,
@@ -74,7 +85,8 @@ export function readOnlyCore(core: RemoteCore): Core {
     // port rules are prefs (labels, notices): local only
     portRules: notRemote,
     setPortRule: notRemote,
-    // session titles, project dirs and process names: local only (portboard://status carries a numbers-only line)
+    // session titles, project dirs and process names: never through shared code (the remote memory_usage reads
+    // RemoteCore.memory and redacts; portboard://status carries a numbers-only line)
     memory: notRemote,
   };
   return ro;

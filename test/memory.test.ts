@@ -9,8 +9,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { classify, createSampler, DEFAULT_THRESHOLDS, digestLine, emptyPressure, memView, pageKbFrom, parseBtime, parseMeminfo, parsePsi, parseStat, parseState, parseThresholds, pressureMessage, projectName, pushHistory, scanTitle, sessionIdFromEnviron, statusLine, stepPressure, suggestions, type MemorySample, type PressureState, type ServiceRef, useOf, versionCmp } from '../src/core/memory.ts';
 import { memoryReport, statusReport } from '../src/mcp/status.ts';
-import { redactStatus } from '../src/remote/redact.ts';
-import { toolSummary, viewOf } from '../src/features/memory.ts';
+import { redactMemory, redactStatus } from '../src/remote/redact.ts';
+import { savedView, toolSummary, viewOf } from '../src/features/memory.ts';
 import { createFileReader, newSeen, summarize, type SessionRecord } from '../src/core/adoption.ts';
 
 const FIX = new URL('./fixtures/memory/', import.meta.url).pathname;
@@ -245,6 +245,26 @@ test('nothing from an environment (the OAuth token) or a full command line ends 
   const view = viewOf(s1, { version: 1, pressure: emptyPressure(), history: [], view: null }, DEFAULT_THRESHOLDS, null);
   const tool = JSON.stringify(toolSummary(view));
   assert.ok(!tool.includes('SECRET') && !tool.includes('/home/u'));
+});
+
+test('remote memory_usage (#8): the saved sample from memory-state.json, never a fresh one; redacted without names', async () => {
+  const { s1 } = await firstSample();
+  const { cpu: _cpu, ...view } = s1;
+  const dir = await mkdtemp(join(tmpdir(), 'pb-mem-saved-'));
+  const path = join(dir, 'memory-state.json');
+  assert.equal(await savedView(path), null, 'no file: null, and no /proc read');
+  const now = Date.parse(view.at);
+  await writeFile(path, JSON.stringify({ version: 1, pressure: emptyPressure(), history: [], view }));
+  const v = await savedView(path, now + 60_000);
+  assert.ok(v);
+  assert.equal(v.at, view.at);
+  assert.equal(await savedView(path, now + 6 * 60_000), null, 'stale (the server stopped sampling): null');
+  const out = JSON.stringify(redactMemory(v));
+  // container names (db_alpha) are kept, as in list_ports; session titles, projects and process names are not
+  for (const leak of ['Alpha work', '"alpha"', 'beta', 'SECRET', '/home/u', 'next-server', '"pid"']) assert.ok(!out.includes(leak), `${leak} leaked`);
+  const loose = JSON.stringify(redactMemory(v, 10, { showAddresses: false, showProcesses: true }));
+  assert.ok(loose.includes('Alpha work'), 'showProcesses brings the titles back');
+  assert.ok(!loose.includes('SECRET') && !loose.includes('/home/u'));
 });
 
 // ---------- pressure ----------

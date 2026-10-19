@@ -72,10 +72,11 @@ export interface Tool {
   call(args: unknown, core: Core): Promise<ToolResult>;
   /**
    * Offer this tool on the remote server too. Only read-only tools (annotations.readOnlyHint) may; the registry
-   * refuses anything else. The remote copy keeps name and schema, gets this description and read-only annotations,
-   * and answers with `call`, which must redact (src/remote/redact.ts).
+   * refuses anything else. The remote copy keeps name and schema (unless `inputSchema` narrows it: an argument the
+   * remote can't honour, such as a refresh that would start a scan), gets this description and read-only
+   * annotations, and answers with `call`, which must redact (src/remote/redact.ts).
    */
-  remote?: { description?: string; call: RemoteCall };
+  remote?: { description?: string; inputSchema?: object; call: RemoteCall };
 }
 
 /** A tool only the remote server has (listed after the shared ones). */

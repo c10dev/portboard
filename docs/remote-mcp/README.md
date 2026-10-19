@@ -135,7 +135,7 @@ Why a CLI code and not a button on the dashboard: Funnel traffic arrives on 127.
   - Bodies: `/mcp` 64 KB, OAuth endpoints 8 KB (`413`).
   - `headersTimeout` 10 s, `requestTimeout` 30 s, keep-alive 5 s.
   - 20 s per JSON-RPC message (`-32603 timed out`).
-  - Snapshot, devices and usage are cached for 2 s (on top of the dashboard's own 2 s caches, see below).
+  - Snapshot, devices, usage, dev servers and the saved worktree and memory state are cached for 2 s (snapshot, devices and usage on top of the dashboard's own 2 s caches, see below).
 
 ## Where the data comes from (#5)
 
@@ -151,6 +151,7 @@ The remote server doesn't collect on its own while the dashboard runs. `src/remo
 - **Loopback only.** Always `http://127.0.0.1:<PORTBOARD_PORT>` (default 8790, as `src/server.ts`), GET only, with a fixed `Host: 127.0.0.1:<port>`, `Accept` and `User-Agent: portboard-remote`. Nothing from a remote client (headers, cookies, arguments) is passed on: the paths are constants. GET routes need no `X-Portboard` header.
 - **Fallback and back-off.** No connection within 1.5 s (refused, or a dashboard that hangs: 15 s for the whole answer) counts as down: that read and every read for the next 10 s are computed locally, then the dashboard is tried again. One log line when it goes away and one when it answers again. An HTTP error or a malformed body from a live dashboard is read locally once, without the back-off.
 - **Not from the dashboard:** `free_port` (its own `ss -ltnH` and serve read on each call, so a port taken a moment ago counts) and the status resource's extras (local files, no commands).
+- **#8 tools:** `list_worktrees` and `memory_usage` read the files the dashboard writes (`worktrees-state.json` after every scan, `memory-state.json` every 60 s), never a scan or `/proc` of their own; `list_dev_servers` runs the same `systemctl --user` and `git worktree list` reads as `GET /api/dev-servers`.
 
 ## Tools: allowlist
 
@@ -159,14 +160,25 @@ The remote server doesn't collect on its own while the dashboard runs. `src/remo
 | `list_ports` | `src/features/ports.ts` | redacted projection of `summarize()` |
 | `list_devices` | `src/features/devices.ts` | redacted projection of `devices()` |
 | `free_port` | `src/features/free-ports.ts` | shared validation; returns port numbers only |
+| `list_worktrees` | `src/features/worktrees.ts` | `redactWorktrees()` of the last scan the dashboard server saved (`worktrees-state.json`); optional `repo`, `removable_only`. No `refresh`: this process never scans (#8) |
+| `list_dev_servers` | `src/features/devservers.ts` | `redactDevServers()` of `devServersDoc()` (`systemctl --user`, `git worktree list`, `package.json`), the same read as `GET /api/dev-servers` (#8) |
+| `memory_usage` | `src/features/memory.ts` | `redactMemory()` of the dashboard server's last sample (`memory-state.json`, at most 5 min old; `savedView()`); optional `top`. This process never reads `/proc` or transcripts (#8) |
 | `who_uses_what` | `src/features/usage.ts` (remote only) | the 기기 tab / 사용 중 data, optional `port` filter |
 
-A feature module offers a tool remotely with `remote: { description, call }` next to the local definition; the remote `call` gets a `RemoteCore` and must redact. `buildRegistry()` refuses a remote tool that isn't `readOnlyHint: true`, and `test/registry.test.ts` pins the set above.
+What the three #8 tools expose (projections in `src/remote/redact.ts`; anything not listed stays on the server):
 
-Not available remotely: `expose_port`, `unexpose_port`, `restart_service`, `stop_service`, `tail_logs` (logs can contain tokens), and label/pin/hide or device-name writes (they were never MCP tools). Three independent layers:
+| Tool | Fields | Never, with any flag |
+|---|---|---|
+| `list_worktrees` | `at`, `scanning`; `totals` {`repos`, `worktrees`, `removable`, `missing`, `removableMb`}; per repo `repo` (name), `defaultBranch`, `prsKnown`, `scanFailed` (yes/no); per worktree (main checkout left out) `branch`, `detached`, `state` (`merged` / `unmerged` / `locked` / `missing` / `unknown`), `pr` {`number`, `state`, `headMatches`}, `changed` (yes/no), `sizeMb`, `inUse` (yes/no), `removable`, `keep` (the fixed reason texts, with counts) | repo and worktree paths (absolute or `~`), the last commit's message, the commit id, the remote URL, pids inside, a scan's error text |
+| `list_dev_servers` | `running` [{`owner` (`<repo>@<branch>`, the name reservations use), `active`, `state`, `port`, `since`}]; `startable` [{`owner`, `scripts` (names only), `preferred`}] | worktree paths, unit names (made from the path), unit descriptions, script command text |
+| `memory_usage` | `at`; `memory` {`totalGb`, `usedGb`, `availableGb`, `availablePct`, `swapTotalGb`, `swapPct`, `psi` {`someAvg60`, `fullAvg60`}}; `pressure` {`active`, `reasons`, `reasonText`, `thresholds`}; `groups` [{`group`, `label`, `gb`, `processes`}]; `totals` (sessions, idle, stale CLI versions, newest version, MCP servers / instances / GB / orphans, services, dev servers, containers); per session `version`, `stale`, `helper`, `idle`, `idleMin`, `mb`, `mcpMb`, `uptimeH`; per service `name`, `ports`, `mb`, `dev`, `unused`; per container `name`, `mb`; `suggestions` [{`kind`, `mb`}]. **With `showProcesses`** also: session `title` and `project`, `mcpServers` [{`name`, …}], `other` [{`name` (process name), …}], a service's `session`, and the suggestion `text` | pids, session ids, command lines, cwd and paths (the scrub still runs over titles) |
+
+A feature module offers a tool remotely with `remote: { description, call }` next to the local definition (and `inputSchema` when the remote takes fewer arguments, as `list_worktrees` does); the remote `call` gets a `RemoteCore` and must redact. `buildRegistry()` refuses a remote tool that isn't `readOnlyHint: true`, and `test/registry.test.ts` pins the set above.
+
+Not available remotely: `expose_port`, `unexpose_port`, `restart_service`, `stop_service`, `tail_logs` (logs can contain tokens), `remove_worktrees`, `start_dev_server`, `stop_dev_server`, and label/pin/hide or device-name writes (they were never MCP tools). Three independent layers:
 1. `tools/list` returns only `REMOTE_TOOLS` (the registry's remote tools). All are annotated `readOnlyHint: true` and their descriptions are rewritten so they don't mention the hidden tools.
 2. `tools/call` refuses any name not in `REMOTE_TOOL_NAMES` **before touching the core**, with the same `-32602 unknown tool: <name>` as a tool that doesn't exist.
-3. The `Core` handed to shared code (`readOnlyCore`) has `expose / unexpose / restart / stop / logs` that throw. `src/remote.ts` imports only `snapshot`, `freePorts`, `devices`, `topology` and `usage` from the core (the first three are read from the dashboard while it runs, above), plus two readers for the status resource: the alert checker's `status()` (never started) and `loadKnown()`.
+3. The `Core` handed to shared code (`readOnlyCore`) has `expose / unexpose / restart / stop / logs` that throw, and so do `worktrees`, `devServers` and `memory`: the remote tools read those from `RemoteCore` and redact them, and shared tool code (which prints paths and titles) never gets them (`REMOTE_READS` stays `snapshot`, `devices`, `freePorts`). `src/remote.ts` imports only `snapshot`, `freePorts`, `devices`, `topology` and `usage` from the core (the first three are read from the dashboard while it runs, above), plus readers: the alert checker's `status()` (never started) and `loadKnown()` for the status resource, `loadSavedWorktrees()`, `savedView()` and `devServersDoc()` for the #8 tools. None of them writes, scans repositories or samples `/proc`.
 
 `initialize` returns its own read-only `instructions`; the stdio server's instructions point at write tools.
 
@@ -179,7 +191,7 @@ Not available remotely: `expose_port`, `unexpose_port`, `restart_service`, `stop
 | `resources/list` | `portboard://status` only |
 | `resources/templates/list` | empty: `portboard://port/{port}` and `portboard://device/{id}` are local only (they carry addresses, history and per-device detail) |
 | `resources/read` | `portboard://status`, redacted (below). Any other URI, port and device URIs included, gets `-32002 resource not found: <uri>` before the core is touched, the same as a URI that doesn't exist. |
-| `prompts/list` | `server_status_summary` (서버 상태 요약) and `port_cleanup` (포트 정리 제안), same names and titles as the stdio server, with texts that name only the four remote tools and say the connection is read-only. `port_cleanup` has no `days` argument here (the remote has no usage history). |
+| `prompts/list` | `server_status_summary` (서버 상태 요약) and `port_cleanup` (포트 정리 제안), same names and titles as the stdio server, with texts that name only remote tools (the four port and device tools) and say the connection is read-only. `port_cleanup` has no `days` argument here (the remote has no usage history). |
 | `prompts/get` | those two only; `new_dev_server`, `why_not_open` and unknown names get the same `-32602 unknown prompt: <name>` |
 
 The remote dispatcher answers `initialize`, `tools/*`, `resources/*` and `prompts/*` itself and delegates **only `ping` and notifications** to the shared one. Any other method gets `-32601` here. This matters since #16: the shared dispatcher now serves `resources/read` for ports and devices, unredacted, and must never see it from this process. `test/remote-tools.test.ts` checks that port and device URIs and the local-only prompts fail exactly like unknown ones and never reach the core.
@@ -210,10 +222,13 @@ Everything that leaves the process is built by **projection**: named fields are 
 | Proxmox API URL, host IP, guest MACs/IPs/LAN IP, `looseMode` | dropped |
 | Proxmox credentials (`tokenId`, `secret`, `fingerprint`) and alert channel settings | never in core results, never copied; `user@realm!token` / `PVEAPIToken=` in text → `[credential]` |
 | Error messages (`pool.error`, `proxmox.error`, thrown errors) | replaced by fixed text (`Proxmox API unreachable or refused the token`, `<tool> failed on the server`) |
+| Worktree and repo paths, commit messages and ids, git remote URLs, scan errors (#8) | never copied; a scan error → `scanFailed: true` |
+| Dev-server unit names and descriptions, `package.json` script commands (#8) | never copied; script names kept |
+| Claude session titles and projects, MCP server and other process names, suggestion texts (#8, `memory_usage`) | dropped; only with `showProcesses` |
 
-Two flags in `remote.json` loosen this for a private setup: `"policy": {"showAddresses": true}` (IPs, MACs, routes, endpoints) and `"showProcesses": true` (pids and client process names). Credentials, URLs of the pool/Proxmox APIs and alert settings stay out with any flag.
+Two flags in `remote.json` loosen this for a private setup: `"policy": {"showAddresses": true}` (IPs, MACs, routes, endpoints) and `"showProcesses": true` (pids and client process names; in `memory_usage` session titles and projects, MCP server and process names and the suggestion texts, never pids or paths). Credentials, URLs of the pool/Proxmox APIs, alert settings, and every worktree and dev-server path, commit message and command stay out with any flag.
 
-Tests: `test/remote-redact.test.ts` feeds live-shaped synthetic fixtures through every projection (the status resource included) and asserts there are no IPv4/IPv6/MAC/home-path/ssh/pid/cmdline/credential/URL matches, under both policy states. `test/remote-tools.test.ts` covers the tool, resource and prompt allowlists, drift and layer 3. `test/remote-http.test.ts` covers the transport, OAuth flow, Host/Origin, rate limit and on-disk secrets.
+Tests: `test/remote-redact.test.ts` feeds live-shaped synthetic fixtures through every projection (the status resource and the #8 worktree, dev-server and memory projections included) and asserts there are no IPv4/IPv6/MAC/home-path/ssh/pid/cmdline/credential/URL matches, and for #8 no paths, commit messages, unit names, commands, titles, projects or process names, under both policy states. `test/remote-tools.test.ts` covers the tool, resource and prompt allowlists, drift and layer 3. `test/remote-http.test.ts` covers the transport, OAuth flow, Host/Origin, rate limit and on-disk secrets.
 
 ## Managing tokens from the dashboard (#31)
 
@@ -296,7 +311,7 @@ Do **not** use `tailscale funnel reset` or `tailscale serve reset`: they also re
 - **claude.ai:** Customize → Connectors → Add custom connector (Team/Enterprise: Organization settings → Connectors → Add → Custom → Web).
   - Name `Portboard`, URL `https://devbox.example.ts.net/mcp`, OAuth left on automatic. Claude uses CIMD here because the metadata allows it, else DCR.
   - When the consent page opens, make a code on the dashboard's 설정 tab (승인 코드 만들기; or `node src/remote.ts approve` on devbox), type it, then press 승인.
-  - In the chat's tool menu, allow the four tools. If the connector menu offers Portboard's prompts (서버 상태 요약, 포트 정리 제안) or the `portboard://status` resource, they can be attached from there; this hasn't been tried in claude.ai yet.
+  - In the chat's tool menu, allow the seven tools (a connector added before #8 lists the three new ones after a reconnect or a tool-list refresh). If the connector menu offers Portboard's prompts (서버 상태 요약, 포트 정리 제안) or the `portboard://status` resource, they can be attached from there; this hasn't been tried in claude.ai yet.
 - **ChatGPT:** chatgpt.com → Plugins/Apps → + → Add custom MCP server (or Settings → Apps & Connectors → Advanced → Developer mode → Create).
   - URL `https://devbox.example.ts.net/mcp`, authentication OAuth, no client ID (CIMD/DCR).
   - Accept the risk notice, then the same approval-code step.
@@ -312,10 +327,12 @@ One nuisance (accepted, #7): anyone who can open the consent page for a valid cl
 The full review, with findings and their tests, is in [SECURITY-REVIEW.md](SECURITY-REVIEW.md).
 
 **If token checking were bypassed:**
-- Readable: the four read-only tools' redacted output, the status resource built from it (plus which watched ports are down and how many new devices are pending), and two prompt texts.
+- Readable: the seven read-only tools' redacted output, the status resource built from it (plus which watched ports are down and how many new devices are pending), and two prompt texts.
   - The host name `devbox` and its tailnet DNS name.
   - Every listening port with its service name and systemd unit (e.g. `webapp OpenAI Secure MCP Tunnel`, `Supabase MCP SSH Tunnel`, `Agent Harness Web UI`), container names and HTTP status.
   - Device names (`dev-mac`, `iphone`, `desktop-pc`, `gpu-box`, `pve1`, `nas`…), online/last-seen times, compute-pool load and run counts, Proxmox guest names and sizes.
   - Which device is using which service right now, with byte counts. That is an activity pattern.
-- Not readable: no IPs, MACs, paths, commands, pids, logs, credentials or alert settings.
+  - Repository names and branch names (branch names can say what is being worked on), PR numbers and states, which worktrees have uncommitted changes, and which dev servers run on which port (#8).
+  - How much memory is free and how many Claude sessions and MCP servers run, with their sizes (#8). Not their titles or projects (unless `showProcesses` is set).
+- Not readable: no IPs, MACs, paths, commands, pids, logs, credentials, alert settings, commit messages or session titles.
 - Not possible: no action. The tools that act don't exist in this process's dispatch, and the core it holds throws on them. The tailnet URLs in the output don't open from the internet.

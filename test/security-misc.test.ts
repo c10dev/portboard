@@ -442,9 +442,14 @@ test('I1 readOnlyCore: every Core method but the remote reads refuses, optional 
     devices: async () => ({}) as any,
     freePorts: async () => [3000],
     usage: async () => ({}) as any,
+    // #8: the remote reads these for its own redacted tools; shared tool code still gets a refusal for them
+    worktrees: async () => assert.fail('readOnlyCore passed worktrees through'),
+    devServers: async () => assert.fail('readOnlyCore passed devServers through'),
+    memory: async () => assert.fail('readOnlyCore passed memory through'),
   };
+  assert.deepEqual([...REMOTE_READS], ['snapshot', 'devices', 'freePorts'], 'widening this is a security review');
   const core = readOnlyCore(fake) as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>;
-  for (const k of ['setAlert', 'alerts', 'newDevices', 'collection', 'serviceDetail', 'adoption', 'setupStatus', 'digest', 'setDigest', 'suggestions']) {
+  for (const k of ['setAlert', 'alerts', 'newDevices', 'collection', 'serviceDetail', 'adoption', 'setupStatus', 'digest', 'setDigest', 'suggestions', 'worktrees', 'devServers', 'memory']) {
     assert.ok(k in core, `${k} is named`);
   }
   const keys = Object.keys(core);

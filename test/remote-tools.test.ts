@@ -4,7 +4,7 @@ import { callTool, TOOLS } from '../src/mcp/tools.ts';
 import { callRemoteTool, handleRemoteMessage, readOnlyCore, REMOTE_INSTRUCTIONS, REMOTE_PROMPTS, REMOTE_TOOL_NAMES, REMOTE_TOOLS, type RemoteCore } from '../src/remote/tools.ts';
 import { PROMPTS } from '../src/mcp/prompts.ts';
 
-const WRITE_OR_LOGS = ['expose_port', 'unexpose_port', 'restart_service', 'stop_service', 'tail_logs'];
+const WRITE_OR_LOGS = ['expose_port', 'unexpose_port', 'restart_service', 'stop_service', 'tail_logs', 'start_dev_server', 'stop_dev_server', 'remove_worktrees'];
 
 function fakeCore(): RemoteCore & { calls: string[] } {
   const calls: string[] = [];
@@ -80,6 +80,47 @@ test('allowed tools answer through the redaction layer', async () => {
   const who: any = await callRemoteTool('who_uses_what', { port: 22 }, core);
   assert.deepEqual(JSON.parse(who.content[0].text).users, []);
   assert.deepEqual(core.calls, ['snapshot', 'freePorts', 'usage']);
+});
+
+test('#8 worktrees, dev servers and memory: read from RemoteCore only, read-only listed, and fail closed', async () => {
+  for (const name of ['list_worktrees', 'list_dev_servers', 'memory_usage']) {
+    const t = REMOTE_TOOLS.find((x) => x.name === name)!;
+    assert.equal(t.annotations.readOnlyHint, true, name);
+    assert.doesNotMatch(t.description, /\b(start_dev_server|stop_dev_server|remove_worktrees|refresh)\b/, `${name}: the remote description names nothing it can't do`);
+    // A core without the method (an older remote.ts) answers an error, never the local tool through shared code.
+    const r: any = await callRemoteTool(name, {}, fakeCore());
+    assert.equal(r.isError, true, name);
+    assert.equal(r.content[0].text, `${name} is not available here`);
+  }
+  assert.deepEqual(Object.keys((REMOTE_TOOLS.find((x) => x.name === 'list_worktrees')!.inputSchema as any).properties), ['repo', 'removable_only'], 'no refresh remotely');
+
+  const calls: string[] = [];
+  const core: RemoteCore = {
+    ...fakeCore(),
+    worktrees: async () => (calls.push('worktrees'), null),
+    devServers: async () => (calls.push('devServers'), { running: [], startable: { '/home/me/projects/web': { scripts: { dev: 'vite' }, preferred: 'dev', owner: 'web@main' } } }),
+    memory: async () => (calls.push('memory'), null),
+  };
+  const wt: any = await callRemoteTool('list_worktrees', { repo: 'web' }, core);
+  assert.deepEqual(JSON.parse(wt.content[0].text).repos, [], 'no saved scan yet: an empty answer with a note, not a scan');
+  const refresh: any = await callRemoteTool('list_worktrees', { refresh: true }, core);
+  assert.equal(refresh.isError, true, 'refresh would start a scan: refused');
+  const bad: any = await callRemoteTool('list_worktrees', { repo: 3 }, core);
+  assert.equal(bad.isError, true);
+  const dev: any = await callRemoteTool('list_dev_servers', {}, core);
+  assert.deepEqual(JSON.parse(dev.content[0].text), { running: [], startable: [{ owner: 'web@main', scripts: ['dev'], preferred: 'dev' }] });
+  const mem: any = await callRemoteTool('memory_usage', { top: 5 }, core);
+  assert.equal(JSON.parse(mem.content[0].text).at, null);
+  const badTop: any = await callRemoteTool('memory_usage', { top: 99 }, core);
+  assert.equal(badTop.isError, true);
+  assert.deepEqual(calls, ['worktrees', 'devServers', 'memory']);
+
+  // The writes next to them stay refused, before touching the core.
+  for (const name of ['start_dev_server', 'stop_dev_server', 'remove_worktrees']) {
+    const r: any = await handleRemoteMessage({ jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name, arguments: { path: '/x', repo: '/x', paths: ['/x'] } } }, core);
+    assert.deepEqual(r.error, { code: -32602, message: `unknown tool: ${name}` }, name);
+  }
+  assert.deepEqual(calls, ['worktrees', 'devServers', 'memory']);
 });
 
 test('core errors come back generic (no paths or addresses)', async () => {

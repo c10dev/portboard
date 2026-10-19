@@ -29,8 +29,8 @@ test('every entry point imports on its own (no import cycle hides behind test im
 // ---- the remote surface ----
 
 test('remote: exactly these tools, resources and prompts (changing this list is a security review)', async () => {
-  assert.deepEqual(REMOTE_TOOLS.map((t) => t.name), ['list_ports', 'list_devices', 'free_port', 'who_uses_what']);
-  assert.deepEqual([...REMOTE_TOOL_NAMES], ['list_ports', 'list_devices', 'free_port', 'who_uses_what']);
+  assert.deepEqual(REMOTE_TOOLS.map((t) => t.name), ['list_ports', 'list_devices', 'free_port', 'list_worktrees', 'list_dev_servers', 'memory_usage', 'who_uses_what']);
+  assert.deepEqual([...REMOTE_TOOL_NAMES], ['list_ports', 'list_devices', 'free_port', 'list_worktrees', 'list_dev_servers', 'memory_usage', 'who_uses_what']);
   assert.deepEqual(REMOTE_RESOURCES.map((r) => r.uri), ['portboard://status']);
   assert.deepEqual(REMOTE_PROMPTS.map((p) => p.name), ['server_status_summary', 'port_cleanup']);
   const core: RemoteCore = { snapshot: async () => assert.fail(), devices: async () => assert.fail(), freePorts: async () => assert.fail(), usage: async () => assert.fail() };

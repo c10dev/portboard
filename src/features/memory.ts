@@ -3,7 +3,8 @@
 //
 //   GET /api/memory   the last sample: mem/swap/PSI, the partition (groups), sessions, MCP totals, services, docker,
 //                     other, the hour's history, the pressure state with its thresholds, and suggestions (never actions)
-//   MCP memory_usage  (local only: titles, projects and process names stay on this machine)
+//   MCP memory_usage  (also remote, redacted, from memory-state.json: titles, projects and process names stay on this
+//                     machine unless remote.json's showProcesses)
 //   job memory        every 60 s on the scheduler: one /proc read, the pressure step, memory-state.json
 //   ui  memory.js on the 기기 tab, under 이 서버
 //
@@ -48,6 +49,7 @@ import { transcriptMtime, transcriptPath, transientUnits } from '../core/owners.
 import { PATHS, type Paths } from '../core/paths.ts';
 import type { Snapshot } from '../core/index.ts';
 import { parseOptionalInt, text } from '../mcp/kit.ts';
+import { redactMemory } from '../remote/redact.ts';
 import { mcpUseForMemory } from './adoption.ts';
 import { ok } from './router.ts';
 import type { ServerContext } from './context.ts';
@@ -224,6 +226,16 @@ async function fileView(): Promise<MemoryView> {
   return viewOf(s, f, th, await mcpUse());
 }
 
+/**
+ * For the remote server: the dashboard's last sample (memory-state.json) as the view, or null when it is missing or
+ * stale. Never samples /proc itself (that would read transcripts for titles from the internet-facing process).
+ */
+export async function savedView(path = statePath(), now = Date.now()): Promise<MemoryView | null> {
+  const f = await loadState(path);
+  if (!f.view || !(now - Date.parse(f.view.at) < VIEW_STALE_MS)) return null;
+  return viewOf(f.view, f, await loadThresholds(), await mcpUse());
+}
+
 /** portboard://status's memory line, and the remote server's (numbers only); null when nothing samples */
 export async function memoryStatus(path = statePath()): Promise<MemoryStatus | null> {
   return statusLine(await loadState(path));
@@ -294,6 +306,22 @@ export const memoryFeature: FeatureModule = {
         if (!top.ok) return text(top.error, true);
         if (!core.memory) return text('memory_usage is not available here', true);
         return text(toolSummary(await core.memory(), top.value ?? 10));
+      },
+      remote: {
+        description:
+          'Where the Portboard server\'s RAM goes: total, available and swap, PSI pressure and whether a memory-pressure ' +
+          'alert is active (with its thresholds), then by group (Claude Code sessions, MCP servers, services and dev ' +
+          'servers, docker, other) with totals. Per session only numbers (CLI version, idle, MB); per service and ' +
+          'container its name and MB. From the server\'s last sample (at; every 60 s). Session titles, projects and ' +
+          'process names are left out on purpose. Read-only: it never stops anything.',
+        async call(args, core, policy) {
+          const top = parseOptionalInt(args, 'top', 1, 50);
+          if (!top.ok) return text(top.error, true);
+          if (!core.memory) return text('memory_usage is not available here', true);
+          const v = await core.memory();
+          if (!v) return text({ at: null, note: 'No recent memory sample: the Portboard server samples every 60 s.' });
+          return text(redactMemory(v, top.value ?? 10, policy));
+        },
       },
     },
   ],

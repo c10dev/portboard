@@ -3,7 +3,7 @@
 //   GET  /api/dev-servers                         running pb-dev-* units, and which known worktrees can be started
 //   POST /api/dev-servers/start {path, script?, port?}   (X-Portboard)
 //   POST /api/dev-servers/stop  {path}                   (X-Portboard)
-//   MCP  start_dev_server, stop_dev_server (local only; the list is part of list_worktrees' world: list_dev_servers)
+//   MCP  list_dev_servers (also remote, redacted: no paths, units or commands), start_dev_server, stop_dev_server (local only)
 //
 // Only worktrees/main checkouts of the repos Portboard scans, only package.json scripts (dev, start, preview, serve).
 // The port is the worktree's reservation (owner "<repo>@<branch>"), or a free one that then gets reserved.
@@ -14,6 +14,7 @@ import { devScripts, hasScript, listDevServers, planStart, startUnit, stopUnit, 
 import { loadReservations, reserve } from '../core/reservations.ts';
 import { discoverRepos, parsePorcelain } from '../core/worktrees.ts';
 import { text, type Core } from '../mcp/kit.ts';
+import { redactDevServers } from '../remote/redact.ts';
 import { ok, reply } from './router.ts';
 import type { FeatureModule, Tool } from './types.ts';
 import { t } from '../core/i18n.ts';
@@ -155,6 +156,16 @@ const listTool: Tool = {
   async call(_args, core) {
     const d = await core.devServers();
     return text({ running: d.running, startable: Object.entries(d.startable).map(([path, s]) => ({ path, owner: s.owner, scripts: Object.keys(s.scripts), preferred: s.preferred })) });
+  },
+  remote: {
+    description:
+      'Dev servers Portboard started for git worktrees on the Portboard server: for each, its worktree as ' +
+      '<repo>@<branch>, whether it is active, its port and since when; plus which worktrees have a package.json script ' +
+      'Portboard could start (script names only). Paths and commands are left out on purpose. Read-only.',
+    async call(_args, core, policy) {
+      if (!core.devServers) return text('list_dev_servers is not available here', true);
+      return text(redactDevServers(await core.devServers(), policy));
+    },
   },
 };
 

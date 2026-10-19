@@ -1,7 +1,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { githubRepo, keepReasons, parsePorcelain, pidsInside, type WorktreeInfo } from '../src/core/worktrees.ts';
 import { L } from './fixtures/locale.ts';
+import { loadSavedWorktrees } from '../src/features/worktrees.ts';
+
+test('saved scan (#8): what the remote list_worktrees reads; missing or malformed is null, never a scan', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'pb-wt-saved-'));
+  const path = join(dir, 'worktrees-state.json');
+  assert.equal(await loadSavedWorktrees(path), null);
+  await writeFile(path, '{"at": null, "repos": []}');
+  assert.equal(await loadSavedWorktrees(path), null, 'no at: not a finished scan');
+  await writeFile(path, 'not json');
+  assert.equal(await loadSavedWorktrees(path), null);
+  const doc = { at: '2026-10-17T12:30:00.000Z', scanning: true, tookMs: 5, repos: [], totals: { repos: 0, worktrees: 0, removable: 0, prunable: 0, removableKb: 0 } };
+  await writeFile(path, JSON.stringify(doc));
+  assert.deepEqual(await loadSavedWorktrees(path), { ...doc, scanning: false }, 'a saved scan is never "scanning"');
+});
 
 test('parsePorcelain reads main, branch, detached, locked and prunable worktrees', () => {
   const text = [
