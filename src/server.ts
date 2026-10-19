@@ -11,6 +11,8 @@ import { hostname } from 'node:os';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tailscaleInfo } from './core/tailscale.ts';
+import { loadAccessPolicy } from './core/access.ts';
+import { hostAllowlist, outsideAddrs } from './core/hosts.ts';
 import { describe, PATHS, seedPreview } from './core/paths.ts';
 import { REGISTRY, uiTags } from './features/registry.ts';
 import { createServerContext } from './features/context.ts';
@@ -19,12 +21,16 @@ import { startJobs } from './features/jobs.ts';
 import { noteMenubar } from './core/onboarding.ts';
 import { SITE } from './core/site.ts';
 import { expandShell } from './core/shell.ts';
+import { describePlatform } from './core/platform/index.ts';
 import { requestLocale, withLocale } from './core/i18n.ts';
 
 const PORT = Number(process.env.PORTBOARD_PORT ?? 8790);
 // A preview (any other port) gets its own config/state dir, seeded once from production's prefs and clients.
 await seedPreview();
 console.log(describe());
+// Not Linux with systemd (#11): which readers it uses and what it can't do here
+const platformLine = describePlatform();
+if (platformLine) console.log(platformLine);
 if (SITE.fileError) console.error(`[portboard] ${SITE.file}: ${SITE.fileError}`);
 const PUBLIC = fileURLToPath(new URL('../public/', import.meta.url));
 const TYPES: Record<string, string> = {
@@ -44,12 +50,23 @@ const bindHosts = (process.env.PORTBOARD_HOSTS ?? ['127.0.0.1', tsIPv4].filter(B
   .map((h) => h.trim())
   .filter(Boolean);
 
-// DNS-rebinding guard: only answer to names that actually mean this machine.
-const allowedHosts = new Set(
-  ['localhost', '127.0.0.1', hostname(), ts.hostName, ts.dnsName, ...ts.ips, ...bindHosts]
-    .filter((h): h is string => !!h)
-    .map((h) => h.toLowerCase()),
-);
+// DNS-rebinding guard: only answer to names that actually mean this machine. A wildcard bind (0.0.0.0, ::) adds this
+// machine's own interface addresses; PORTBOARD_ALLOWED_HOSTS adds names (devbox.lan) for a LAN install (#12).
+const allowedHosts = hostAllowlist({ bindHosts, ts, hostname: hostname(), extra: process.env.PORTBOARD_ALLOWED_HOSTS });
+
+// Who may write (#12): tailscale mode unless access.json or PORTBOARD_ACCESS_MODE says token. Read again on every
+// write; this is only what the log says at start.
+const policy = await loadAccessPolicy(PATHS.access, PATHS.token);
+if (policy.mode === 'token') {
+  console.log(`[portboard] access: token mode${policy.requireTokenOnLoopback ? ', token required on loopback too' : ''}; ${policy.tokenHash ? 'owner token set' : 'no owner token yet: run `portboard token`'}`);
+} else if (process.env.PORTBOARD_REQUIRE_TOKEN_ON_LOOPBACK) {
+  console.error('[portboard] PORTBOARD_REQUIRE_TOKEN_ON_LOOPBACK applies in token mode only (PORTBOARD_ACCESS_MODE=token)');
+}
+if (policy.error) console.error(`[portboard] access: ${policy.error}`);
+const outside = outsideAddrs(bindHosts);
+if (outside.length && policy.mode !== 'token') {
+  console.error(`[portboard] listening on ${outside.join(', ')} (outside loopback and the tailnet): read-only there; writes from the LAN need token mode (docs/setup.md#without-tailscale)`);
+}
 
 const ctx = await createServerContext(PATHS, ts);
 // Writes: X-Portboard, then owner only (loopback, or the owner's login through tailscale serve), all in the audit log.

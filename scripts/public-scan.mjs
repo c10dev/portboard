@@ -2,10 +2,11 @@
 // Scans a tree for what must not be published: patterns from a denylist (real names, addresses, keys), credential
 // shapes, private keys and e-mail addresses outside the example domains. Used by scripts/public-tree.sh.
 //
-//   node scripts/public-scan.mjs <dir> [--denylist FILE]
+//   node scripts/public-scan.mjs <dir> [--denylist FILE] [--allow-images DIR/,DIR/]
 //
 // Prints one line per finding (file:line: rule: excerpt) and exits 1 when there is any. Images can't be read as text:
-// they are listed and must sit under an allowed folder (public/, mac-app/Resources/, docs/images/).
+// they are listed and must sit under an allowed folder (public/, mac-app/Resources/, docs/images/, and the folders
+// --allow-images adds: scripts/demo.ts scans its static site with app/ and images/).
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -14,8 +15,10 @@ const args = process.argv.slice(2);
 const dir = args[0];
 const denyAt = args.indexOf('--denylist');
 const denyFile = denyAt >= 0 ? args[denyAt + 1] : null;
-if (!dir) {
-  console.error('usage: node scripts/public-scan.mjs <dir> [--denylist FILE]');
+const imagesAt = args.indexOf('--allow-images');
+const moreImageDirs = imagesAt >= 0 ? (args[imagesAt + 1] ?? '').split(',').filter(Boolean) : [];
+if (!dir || moreImageDirs.some((d) => !d.endsWith('/') || d.startsWith('/') || d.includes('..'))) {
+  console.error('usage: node scripts/public-scan.mjs <dir> [--denylist FILE] [--allow-images DIR/,DIR/]');
   process.exit(2);
 }
 
@@ -38,7 +41,8 @@ const EMAIL = /\b[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b/g;
 const EMAIL_OK = /@((?:[\w-]+\.)*example\.(com|org|net|ts\.net)|users\.noreply\.github\.com|github\.com|\d+\.service|claude\.ai|t|x|h)$/i;
 const PLACEHOLDER = /SECRET|EXAMPLE|FAKE|DUMMY|x{8}|0{8}/i;
 const IMAGE = /\.(png|jpe?g|gif|webp|ico|icns|pdf)$/i;
-const IMAGE_OK = /^(public\/|mac-app\/Resources\/|docs\/images\/)/;
+const IMAGE_DIRS = ['public/', 'mac-app/Resources/', 'docs/images/', ...moreImageDirs];
+const imageOk = (rel) => IMAGE_DIRS.some((d) => rel.startsWith(d));
 
 const findings = [];
 const images = [];
@@ -56,7 +60,7 @@ function scan(path) {
   const rel = relative(dir, path);
   if (IMAGE.test(rel)) {
     images.push(rel);
-    if (!IMAGE_OK.test(rel)) findings.push(`${rel}: image outside public/, mac-app/Resources/ and docs/images/ (can't be scanned, check it)`);
+    if (!imageOk(rel)) findings.push(`${rel}: image outside ${IMAGE_DIRS.join(', ')} (can't be scanned, check it)`);
     return;
   }
   if (statSync(path).size > 5_000_000) {

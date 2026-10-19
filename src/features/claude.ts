@@ -12,7 +12,8 @@
 import { homedir } from 'node:os';
 import { freePortsFrom, type Snapshot } from '../core/index.ts';
 import { run } from '../core/exec.ts';
-import { cachedValue, keyedCache } from '../core/throttle.ts';
+import { keyedCache } from '../core/cache.ts';
+import { cachedValue } from '../core/throttle.ts';
 import { cleanupReasons, ownerOf, REASON_TEXT, transientUnits } from '../core/owners.ts';
 import { devScripts, UNIT_PREFIX } from '../core/devservers.ts';
 import { loadReservations, type Reservation } from '../core/reservations.ts';
@@ -63,7 +64,7 @@ export const HERE_MAX = 200;
 
 /** hereOf, cached per cwd: a loop of port-advice requests (any cwd) costs at most one git call per cwd per HERE_TTL_MS */
 export function cachedHere(o: { run?: typeof run; now?(): number } = {}): (cwd: string | null) => Promise<Here | null> {
-  const byCwd = keyedCache((cwd: string) => hereOf(cwd, o.run), { ttlMs: HERE_TTL_MS, max: HERE_MAX, now: o.now });
+  const byCwd = keyedCache((cwd: string) => hereOf(cwd, o.run), { ttlMs: HERE_TTL_MS, maxEntries: HERE_MAX, now: o.now });
   return (cwd) => (cwd ? byCwd(cwd) : Promise.resolve(null));
 }
 

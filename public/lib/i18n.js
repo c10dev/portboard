@@ -1,3 +1,4 @@
+// @ts-check
 // The pages' text (docs/i18n/): t(key, params) from the catalog of the page's language, public/i18n/<locale>.json.
 // The same keys and format as the server's src/core/i18n.ts: dotted keys, {name} placeholders, and a value of
 // { one, other } for a count (Intl.PluralRules on params.n).

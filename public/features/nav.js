@@ -132,5 +132,7 @@ if (shell()) {
   document.addEventListener('shell:select', paint);
   // a moment first, so the page's own first fetches are shared instead of fetched twice
   setTimeout(load, 1000);
-  setInterval(load, EVERY);
+  setInterval(() => { if (!document.hidden) load(); }, EVERY);
+  // back to a tab that was hidden: catch up at once instead of on the next tick
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
 }

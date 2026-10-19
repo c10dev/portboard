@@ -224,7 +224,7 @@ export const usageFeature: FeatureModule = {
         'Which devices are connected to which services on the Portboard server right now: one card per device (tailnet ' +
         'devices, LAN devices, this server itself, and Funnel: the public internet through Tailscale Funnel, which ' +
         'includes this connector) with the ports it uses, connection counts and traffic, plus a per-port ' +
-        'list of users and how many visible services nobody is using. LAN devices without a name appear as lan-device-N. ' +
+        'list of users and how many visible services nobody is using. LAN devices without a name appear as lan-device-<id>, the same id in every call. ' +
         'Read-only.',
       inputSchema: {
         type: 'object',

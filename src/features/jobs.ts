@@ -2,7 +2,8 @@
 // One tick drives all of them, a job never overlaps itself, a failing job doesn't affect the others, and start
 // times get a little jitter so jobs with the same interval don't all spawn their subprocesses in the same second.
 // Heavy jobs (the worktree and transcript scans) take turns: a due one starts on the first tick after the other ends.
-// Jobs that own a timer (the alert checker, the self-watch) are started once, as before.
+// The alert checker and the self-watch run here too (c10dev/portboard#4); the audit log's flush timer is the one timer
+// left outside: it runs only while denials are pending, and the stdio MCP server, which has no scheduler, has one too.
 
 import type { Paths } from '../core/paths.ts';
 import type { ServerContext } from './context.ts';
@@ -48,7 +49,7 @@ export class Scheduler {
 
   add(job: IntervalJob, ctx: ServerContext): void {
     const t = this.now();
-    const delay = job.runAtStart ? 0 : job.everyMs + this.spread(job.everyMs);
+    const delay = job.runAtStart ? 0 : (job.firstAfterMs ?? job.everyMs + this.spread(job.everyMs));
     const state: JobState = { name: job.name, everyMs: job.everyMs, runs: 0, errors: 0, running: false, lastRunAt: null, lastMs: null, lastError: null, nextAt: t + delay };
     this.jobs.push({ job, state });
     this.ctx = ctx;
@@ -126,8 +127,7 @@ export function startJobs(jobs: Job[], ctx: ServerContext, sched: Scheduler = ne
   const started: string[] = [];
   for (const job of jobs) {
     if (!isEnabled(job, ctx.paths)) continue;
-    if ('start' in job) job.start(ctx);
-    else sched.add(job, ctx);
+    sched.add(job, ctx);
     started.push(job.name);
   }
   sched.start();

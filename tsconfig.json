@@ -12,5 +12,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "claude-plugin"]
+  "include": ["src", "claude-plugin", "scripts/demo.ts"]
 }

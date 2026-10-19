@@ -71,9 +71,30 @@ export function remoteView(d, needle) {
 
 // ---- 기기 tab: "열린 포트 N" on cards and the readers' setup hints ----
 
-/** "pve에서 읽음" / "compute-pool": where a card's port list came from */
+/** "pve에서 읽음" / "agent" / "compute-pool": where a card's port list came from */
 export function portsFrom(c, data) {
+  if (c.portsSource === 'agent') return t('hostports.fromAgent');
   return c.portsSource === 'pve-ssh' ? t('hostports.readFrom', { node: data.pvePorts?.node ?? t('devices.pveHost') }) : 'compute-pool';
+}
+
+const AGENT_ERROR = { unreachable: 'hostports.err.unreachable', timeout: 'hostports.err.timeout', auth: 'hostports.agent.err.auth', http: 'hostports.agent.err.http', 'bad-answer': 'hostports.agent.err.badAnswer' };
+
+/** A device's `portboard agent` in one line: "v1.1.0 · load 0.42 · 3.1/7.8 GB free · disk 52% free", or why it isn't answering */
+export function agentLine(a) {
+  if (!a) return '';
+  if (a.pending) return t('hostports.agent.pending');
+  if (!a.ok) {
+    const lastOk = a.lastOk ? ` · ${t('hostports.lastOk', { t: ago(new Date(a.lastOk).toISOString()) })}` : '';
+    return t('hostports.agent.failed', { error: t(AGENT_ERROR[a.error] ?? 'hostports.err.other'), lastOk });
+  }
+  const l = a.info?.load;
+  const gb = (mb) => (mb / 1024).toFixed(1);
+  return [
+    a.info ? `v${a.info.version}` : null,
+    l ? t('hostports.agent.load', { load: l.load1, cores: l.cores }) : null,
+    l?.memAvailMb != null && l.memTotalMb ? t('hostports.agent.mem', { avail: gb(l.memAvailMb), total: gb(l.memTotalMb) }) : null,
+    l?.diskFreePct != null ? t('hostports.agent.disk', { pct: l.diskFreePct }) : null,
+  ].filter(Boolean).join(' · ');
 }
 
 /** card ids whose port list the user folded */
@@ -94,7 +115,7 @@ export function portsBox(c, data) {
   const where = c.ports.ports.some((p) => p.lan) ? t('hostports.sum.lan', { n: open }) : t('hostports.sum.tailnet', { n: open });
   sum.append(el('strong', null, t('hostports.sum.open', { n: c.ports.ports.length })));
   const sides = sidesText(c.ports);
-  sum.append(document.createTextNode(` · ${sides ? `${sides} · ` : ''}${where} · ${c.portsSource === 'pve-ssh' ? `${portsFrom(c, data)} · ` : ''}${checkedAgo(c.ports.at)}`));
+  sum.append(document.createTextNode(` · ${sides ? `${sides} · ` : ''}${where} · ${c.portsSource === 'pve-ssh' || c.portsSource === 'agent' ? `${portsFrom(c, data)} · ` : ''}${checkedAgo(c.ports.at)}`));
   sum.addEventListener('click', (ev) => ev.stopPropagation());
   d.append(sum, portList(c.ports.ports, c.name, { limit: 12 }));
   return d;
@@ -111,11 +132,12 @@ function hint(box, text, setupUrl) {
 
 const READ_ERROR = { unreachable: 'hostports.err.unreachable', timeout: 'hostports.err.timeout' };
 
-/** The Proxmox host's SSH port reader: a setup hint until the key is installed, then only problems. */
+/** The Proxmox host's SSH port reader: why it hasn't read yet, a setup hint until the key is installed, then only problems. */
 export function renderPortsHint(box, pp) {
   const node = pp?.node ?? 'Proxmox';
   const lastOk = pp?.lastOk ? ` · ${t('hostports.lastOk', { t: ago(new Date(pp.lastOk).toISOString()) })}` : '';
-  const text = !pp || !pp.enabled || pp.pending ? ''
+  const text = !pp || !pp.enabled ? ''
+    : pp.pending ? (pp.reason ? t('hostports.pve.pending', { node, reason: pp.reason }) : '')
     : pp.error === 'not-installed' ? t('hostports.pve.notInstalled', { node })
     : pp.error === 'no-key' ? t('hostports.pve.noKey', { node })
     : pp.error === 'host-key' ? t('hostports.pve.hostKey', { node })
@@ -127,10 +149,11 @@ export function renderPortsHint(box, pp) {
   hint(box, text, text && (pp.error === 'not-installed' || pp.error === 'no-key') ? pp.setupUrl : null);
 }
 
-/** The desktop's Windows-side reader: the setup hint until the user is set and the key works, then only problems. */
+/** The desktop's Windows-side reader: why it hasn't read yet, the setup hint until the user is set and the key works, then only problems. */
 export function renderWinHint(box, wp) {
   const dev = wp?.device ?? 'Windows';
-  const text = !wp || !wp.enabled || wp.pending ? ''
+  const text = !wp || !wp.enabled ? ''
+    : wp.pending ? (wp.reason ? t('hostports.win.pending', { dev, reason: wp.reason }) : '')
     : wp.error === 'no-user' || wp.error === 'not-installed' ? t('hostports.win.notInstalled', { dev })
     : wp.error === 'no-key' ? t('hostports.win.noKey', { dev })
     : wp.error === 'host-key' ? t('hostports.win.hostKey', { dev })

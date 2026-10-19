@@ -8,3 +8,8 @@ mac-app/.swiftpm/
 /portboard.json
 # The Mac app's build settings for this install (mac-app/build.sh)
 mac-app/build.env
+# npm run build (prepack): the published package's compiled src/
+/dist/
+# The static demo site (npm run demo, docs/demo.md): built from example data, published by .github/workflows/demo.yml
+/demo/
+/demo.staging/

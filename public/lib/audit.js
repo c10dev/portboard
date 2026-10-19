@@ -1,6 +1,8 @@
+// @ts-check
 // 기록 (#30): one audit entry (GET /api/audit) as a list row — when, what, on what, who, from where, and how it went.
 // Used by service.html's 기록 section and the dashboard's 최근 기록 list (features/audit.js).
 
+import { getInit } from './api.js';
 import { badge } from './badge.js';
 import { el } from './dom.js';
 import { t } from './i18n.js';
@@ -44,7 +46,7 @@ const ACTIONS = {
   'mcp set_digest': 'audit.action.digest',
 };
 const FIELDS = { label: 'audit.field.name', pinned: 'audit.field.pinned', hidden: 'audit.field.hidden', alert: 'audit.field.alert', time: 'audit.field.time', name: 'audit.field.name', note: 'audit.field.note' };
-const SOURCES = { serve: 'tailnet', loopback: t('audit.source.loopback'), direct: t('audit.source.direct'), mcp: 'MCP' };
+const SOURCES = { serve: 'tailnet', loopback: t('audit.source.loopback'), direct: t('audit.source.direct'), mcp: 'MCP', token: t('audit.source.token') };
 const RESULTS = { ok: ['audit.result.ok', 'ok'], denied: ['audit.result.denied', 'bad'], error: ['audit.result.error', 'warn'] };
 
 const field = (k) => (FIELDS[k] ? t(FIELDS[k]) : k);
@@ -100,3 +102,21 @@ export function auditRow(e, opts = {}) {
   li.append(el('time', null, when(e.at)), el('strong', null, actionText(e)), target ? el('span', 'audit-target', target) : '', who, res);
   return li;
 }
+
+/**
+ * GET /api/audit → {entries}, or {ownerOnly: true} when this browser isn't the owner (the log is the owner's only,
+ * #7), or null when it failed.
+ */
+export async function loadAudit(path) {
+  try {
+    // the owner token (token mode, #12) makes this browser the owner here too
+    const res = await fetch(path, getInit());
+    if (res.status === 403) return { ownerOnly: true };
+    return res.ok ? await res.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The <li> a list shows instead of entries: not the owner, or the load failed */
+export const auditUnavailable = (doc) => el('li', 'muted', doc?.ownerOnly ? t('audit.ownerOnly') : t('audit.loadFailed'));

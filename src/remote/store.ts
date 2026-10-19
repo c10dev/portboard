@@ -6,6 +6,7 @@
 // shared by both processes so a `revoke` can't be overwritten by a server write that read the file before it.
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import type { BigIntStats } from 'node:fs';
 import { chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { PATHS } from '../core/paths.ts';
@@ -49,7 +50,10 @@ export interface RemoteState {
   allowedOrigins?: string[];
   /** Extra redirect URI prefixes accepted at registration, e.g. a self-hosted MCP client */
   extraRedirectPrefixes?: string[];
-  /** Accept http://127.0.0.1:*, http://localhost:* redirects (Claude Code, MCP inspector). Default true. */
+  /**
+   * Accept http://127.0.0.1:*, http://localhost:* redirects (Claude Code, MCP inspector). Only a literal true or false
+   * counts; unset, they are accepted from loopback and the tailnet but never through Funnel (http.ts redirectOpts).
+   */
   allowLoopbackRedirects?: boolean;
   /** Pending one-time approval code (hash), from `node src/remote.ts approve` */
   approval?: { hash: string; expiresAt: number; failures: number } | null;
@@ -69,7 +73,7 @@ export function sameHash(a: string, b: string): boolean {
 }
 
 const MAX_CLIENTS = 50;
-/** Wrong tries that burn a pending code, from all addresses together (the server also allows 5 per address). */
+/** Wrong tries that burn a pending code, from all addresses together (the server also allows 5 per address, IPv6 per /64). */
 export const APPROVAL_MAX_FAILURES = 20;
 /** A refresh token replayed this soon after rotation is refused without revoking (a client retrying a lost reply). */
 const REUSE_GRACE_MS = 10_000;
@@ -123,21 +127,33 @@ export class Store {
     return job;
   }
 
-  /** Cross-process lock (server and CLI): O_EXCL lock file next to remote.json, broken when older than 10 s. */
+  /**
+   * Cross-process lock (server and CLI): an O_EXCL lock file next to remote.json. One older than 10 s was left by a
+   * crashed writer and is broken, by exactly one waiter (breakStale). Release removes the file only while it is still
+   * the one this holder created.
+   */
   private async lock(): Promise<() => Promise<void>> {
     const lock = `${this.path}.lock`;
     await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
     for (let i = 0; ; i++) {
       try {
         const fh = await open(lock, 'wx', 0o600);
-        await fh.writeFile(String(process.pid));
-        await fh.close();
-        return () => unlink(lock).catch(() => {});
+        let mine: BigIntStats;
+        try {
+          await fh.writeFile(String(process.pid));
+          mine = await fh.stat({ bigint: true });
+        } finally {
+          await fh.close();
+        }
+        return async () => {
+          const cur = await stat(lock, { bigint: true }).catch(() => null);
+          if (cur && sameFile(cur, mine)) await unlink(lock).catch(() => {});
+        };
       } catch (err: any) {
         if (err?.code !== 'EEXIST') throw err;
-        const st = await stat(lock).catch(() => null);
-        if (st && Date.now() - st.mtimeMs > LOCK_STALE_MS) {
-          await unlink(lock).catch(() => {}); // its holder died mid-write
+        const st = await stat(lock, { bigint: true }).catch(() => null);
+        if (st && Date.now() - Number(st.mtimeMs) > LOCK_STALE_MS) {
+          await breakStale(lock, st); // its holder died mid-write
           continue;
         }
         if (i >= 500) throw new Error(`${lock}: still locked`);
@@ -186,8 +202,12 @@ export class Store {
     return { code, expiresAt };
   }
 
-  /** Single use. APPROVAL_MAX_FAILURES wrong tries (all addresses together) burn the pending code. */
-  consumeApprovalCode(input: string): Promise<'ok' | 'wrong' | 'none'> {
+  /**
+   * Single use. APPROVAL_MAX_FAILURES wrong tries (all addresses together) burn the pending code: 'burned' is the try
+   * that did it. However many addresses guess, a code gets at most that many guesses against its 2⁴⁰ values; the
+   * owner makes a new one (`approve`, or 승인 코드 만들기), which starts a fresh budget.
+   */
+  consumeApprovalCode(input: string): Promise<'ok' | 'wrong' | 'burned' | 'none'> {
     return this.update((s) => {
       const a = s.approval;
       if (!a || a.expiresAt <= this.now()) {
@@ -198,9 +218,11 @@ export class Store {
         s.approval = null;
         return 'ok';
       }
-      a.failures += 1;
-      if (a.failures >= APPROVAL_MAX_FAILURES) s.approval = null;
-      return 'wrong';
+      // A hand-edited file without a number here still burns (NaN would never reach the limit).
+      a.failures = (Number.isFinite(a.failures) && a.failures > 0 ? a.failures : 0) + 1;
+      if (a.failures < APPROVAL_MAX_FAILURES) return 'wrong';
+      s.approval = null;
+      return 'burned';
     });
   }
 
@@ -321,6 +343,40 @@ export class Store {
       s.approval = null;
       return n;
     });
+  }
+}
+
+/** The same lock file: same inode and the same modification time to the nanosecond (an inode number can be reused). */
+const sameFile = (a: BigIntStats, b: BigIntStats) => a.ino === b.ino && a.dev === b.dev && a.mtimeNs === b.mtimeNs;
+
+/**
+ * Removes the stale lock file `st` so that two waiters can never both do it (security review S4). Unlinking after a
+ * stat is not enough: a second waiter that also saw the stale file could delete the fresh lock the first one has
+ * just taken, and both would write. So the waiters that judged this file stale race for a marker named after it
+ * (inode and mtime), created with O_EXCL. Only the winner unlinks, and only after checking that the lock path still
+ * holds that same file; the others go back to waiting. A marker older than 10 s belongs to a waiter that died between
+ * the two steps (the same rule as the lock itself), and the next one, also O_EXCL, takes over.
+ */
+async function breakStale(lock: string, st: BigIntStats): Promise<void> {
+  const id = `${st.dev}-${st.ino}-${st.mtimeNs}`;
+  const markers: string[] = [];
+  for (let k = 0; k < 10; k++) {
+    const marker = `${lock}.break-${id}${k ? `-${k}` : ''}`;
+    markers.push(marker);
+    try {
+      await (await open(marker, 'wx', 0o600)).close();
+    } catch (err: any) {
+      if (err?.code !== 'EEXIST') throw err;
+      const m = await stat(marker).catch(() => null);
+      if (m && Date.now() - m.mtimeMs <= LOCK_STALE_MS) return; // another waiter is breaking it right now
+      continue; // a dead breaker's marker
+    }
+    const cur = await stat(lock, { bigint: true }).catch(() => null);
+    if (cur && sameFile(cur, st)) await unlink(lock).catch(() => {});
+    // Only the winner cleans up, and only once the stale file is gone: a waiter that makes one of these markers again
+    // later finds another file at the lock path, or none, and leaves it alone.
+    for (const x of markers) await unlink(x).catch(() => {});
+    return;
   }
 }
 

@@ -2,7 +2,7 @@
 // preferences (label, pin, hide, alert flag).
 //
 //   GET  /api/ports                    (?fresh skips the 2 s cache)
-//   POST /api/ports/:port/expose | unexpose                       (X-Portboard)
+//   POST /api/ports/:port/expose | unexpose                       (X-Portboard; 409 without Tailscale, #12)
 //   POST /api/ports/:port/prefs  {label?, pinned?, hidden?, alert?} (X-Portboard)
 //   MCP  list_ports (also remote, redacted), expose_port, unexpose_port
 
@@ -11,7 +11,8 @@ import { checkPatch, type PrefsPatch } from '../core/prefs.ts';
 import { PORT_ARG, parsePort, text, type Core } from '../mcp/kit.ts';
 import { parseListArgs, summarize } from '../mcp/views.ts';
 import { redactPorts } from '../remote/redact.ts';
-import { ok, reply } from './router.ts';
+import { ok, reply, tailscaleRequired } from './router.ts';
+import type { ServerContext } from './context.ts';
 import type { FeatureModule, Tool } from './types.ts';
 import { SITE } from '../core/site.ts';
 
@@ -23,7 +24,10 @@ declare module '../mcp/kit.ts' {
   }
 }
 
-async function publish(port: number, act: (port: number) => Promise<ActionResult>, ctx: { invalidate(w: 'snapshot'): void }) {
+async function publish(port: number, act: (port: number) => Promise<ActionResult>, ctx: Pick<ServerContext, 'ts' | 'invalidate'>) {
+  // tailscale serve: nothing to run without Tailscale (#12)
+  const no = tailscaleRequired(ctx);
+  if (no) return no;
   const result = await act(port);
   ctx.invalidate('snapshot');
   return reply(result.ok ? 200 : 409, result);

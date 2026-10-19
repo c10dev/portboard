@@ -19,6 +19,7 @@ import {
 import { statusReport } from '../src/mcp/resources.ts';
 import { SITE } from '../src/core/site.ts';
 import { PvePortsCollector } from '../src/core/pveports.ts';
+import { L } from './fixtures/locale.ts';
 
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
@@ -192,13 +193,13 @@ test('watcher: alerts through the fake sender once, logs it, recovers once', asy
   assert.ok(!h.sent[0].body.includes('127.0.0.1'), 'no URL in the alert');
   const st = await h.w.status();
   assert.equal(st.failing, 1);
-  assert.equal(st.summary, '1개 실패');
+  assert.equal(st.summary, L('1개 실패', '1 failing'));
   assert.equal(st.collectors[0].view, 'down');
   assert.equal(st.collectors[0].alerted, true);
   h.reg.report('pool', { ok: true });
   await h.w.tick();
   assert.deepEqual(h.sent.map((m) => m.kind), ['down', 'recovered']);
-  assert.equal((await h.w.status()).summary, '수집 정상');
+  assert.equal((await h.w.status()).summary, L('수집 정상', 'Collection OK'));
   const log = (await readFile(join(h.dir, 'alerts.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
   assert.deepEqual(log.map((l) => l.key), ['collector:pool', 'collector:pool']);
   assert.ok(!JSON.stringify(log).includes('secret-topic-123'));
@@ -369,7 +370,7 @@ test('statusReport: the collection section only when given; failing collectors a
   assert.deepEqual(out.collection?.failing.map((f) => [f.name, f.error]), [['proxmox', 'HTTP 401 (token rejected)']]);
   assert.deepEqual(out.collection?.notSetUp, ['win-ports']);
   assert.deepEqual(out.collection?.expiring, []);
-  assert.equal(out.collection?.summary, '1개 실패');
+  assert.equal(out.collection?.summary, L('1개 실패', '1 failing'));
   const missing = statusReport({ ...base, collection: null });
   assert.equal(missing.collection, null);
   assert.ok(missing.unavailable.includes('collection'));

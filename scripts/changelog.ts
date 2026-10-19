@@ -2,6 +2,7 @@
 //
 //   node scripts/changelog.ts --check
 //   node scripts/changelog.ts <version> [title]
+//   node scripts/changelog.ts --notes <version>     print that version's section (the GitHub Release body)
 
 import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -60,8 +61,24 @@ export function insertRelease(changelog: string, section: string): string {
   return `${changelog.slice(0, i)}${section}\n${changelog.slice(i)}`;
 }
 
+/** The body of one version's section (without its "## " heading), or null when CHANGELOG.md has none. */
+export function releaseNotes(changelog: string, version: string): string | null {
+  const lines = changelog.replace(/\r/g, '').split('\n');
+  const start = lines.findIndex((l) => l === `## ${version}` || l.startsWith(`## ${version} `));
+  if (start < 0) return null;
+  const end = lines.findIndex((l, i) => i > start && l.startsWith('## '));
+  return lines.slice(start + 1, end < 0 ? undefined : end).join('\n').trim();
+}
+
 function main(argv: string[]) {
   const root = fileURLToPath(new URL('..', import.meta.url));
+  if (argv[0] === '--notes') {
+    const version = (argv[1] ?? '').replace(/^v/, '');
+    const notes = releaseNotes(readFileSync(join(root, 'CHANGELOG.md'), 'utf8'), version);
+    if (notes === null) throw new Error(`CHANGELOG.md has no "## ${version}" section: run npm run changelog -- ${version || '<version>'} first`);
+    console.log(notes);
+    return;
+  }
   const dir = join(root, 'changelog.d');
   const files = readdirSync(dir).filter((f) => f.endsWith('.md') && f !== 'README.md');
   const fragments = files.map((f) => parseFragment(f.replace(/\.md$/, ''), readFileSync(join(dir, f), 'utf8')));

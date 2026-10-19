@@ -7,10 +7,12 @@ things, and what is recorded. The public, read-only remote MCP server (8794, Fun
 
 ## Who can reach it
 
-- It listens only on loopback and the Tailscale IP, so only processes on this machine and devices in the tailnet can connect.
+- It listens only on loopback and the Tailscale IP, so only processes on this machine and devices in the tailnet can connect. Without Tailscale, loopback only. `PORTBOARD_HOSTS` can add a LAN address; without [token mode](#token-mode-c10devportboard12) it is read-only there, and the server says so at start.
 - `tailscale serve` publishes it as `https://devbox.example.ts.net:8443` (8443 → 127.0.0.1:8790), tailnet only. Port 443 is the public, read-only remote MCP server (Funnel → 8794); the dashboard is never on a Funnel port.
-- Requests whose `Host` header isn't one of this machine's names get 421. This blocks DNS rebinding.
-- Reads (`GET`) are open to every caller that can connect. The tailnet is the owner's devices plus anything shared into it, and the audit log and the port list are readable by all of them.
+- Requests whose `Host` header isn't one of this machine's names get 421. This blocks DNS rebinding. The names are localhost, 127.0.0.1, the host name, the Tailscale names and IPs, the listen addresses, and `PORTBOARD_ALLOWED_HOSTS` (e.g. `devbox.lan`); a wildcard bind (`0.0.0.0`) adds this machine's interface addresses, never "any" (`src/core/hosts.ts`).
+- Reads (`GET`) are open to every caller that can connect, with one exception: the audit log (`GET /api/audit`) is the
+  owner's only (c10dev/portboard#7, [Audit log](#audit-log-c10devportboard30)). The tailnet is the owner's devices plus
+  anything shared into it, and the port list, devices and history are readable by all of them.
 
 ## Who can write (c10dev/portboard#29)
 
@@ -20,6 +22,7 @@ route that isn't declared a write, and the checks run in this order, before the 
 1. **`X-Portboard: 1`** (CSRF). A custom header forces a CORS preflight, and Portboard never answers one, so a
    cross-site page can't send it. 403 `missing X-Portboard header` otherwise.
 2. **The owner** (`src/core/access.ts`, pure function `classify`). 403 `{error: "owner only", reason}` otherwise.
+   In [token mode](#token-mode-c10devportboard12) the owner token also counts; the `X-Portboard` check stays.
 
 | Caller | How Portboard sees it | Writes |
 |---|---|---|
@@ -30,6 +33,8 @@ route that isn't declared a write, and the checks run in this order, before the 
 | Funnel (public), if it ever pointed at 8790 | `serve` with `Tailscale-Funnel-Request` | no |
 | A tailnet device on `http://<host or 100.x IP>:8790` | `direct`: any non-loopback socket | no (read-only), whatever `Tailscale-*` headers it sends |
 | The stdio MCP server (`src/mcp.ts`) | not HTTP: a child process of a local Claude session | yes (owner); recorded as `mcp` |
+
+This is the default, **tailscale mode**. Token mode adds the owner token: [below](#token-mode-c10devportboard12).
 
 The rule as code:
 
@@ -123,20 +128,86 @@ owner's login; that is the live check for serve itself.
 | A cross-site page in the owner's browser POSTs | blocked by `X-Portboard` | unchanged; now also recorded as `denied` |
 | Funnel reaching the dashboard by a config mistake | full write access | `Tailscale-Funnel-Request` ⇒ read-only |
 | `tailscale status` fails (tailscaled restarting) | — | owner unknown ⇒ serve writes refused until it answers; loopback unaffected |
-| A non-owner reads ports, devices, history and the audit log | yes | yes: reads stay open to the tailnet (out of scope for #29) |
-| Other Unix users on devbox | could use loopback | still can: loopback is trusted. The machine has one login user (a loopback token is the stronger fix, not done) |
+| A non-owner reads ports, devices and history | yes | yes: reads stay open to the tailnet (accepted: the dashboard is a read-only view for the tailnet by design) |
+| A non-owner reads the audit log (who changed what, from which device, when) | yes | no: `GET /api/audit` answers `403 owner only` (#7) |
+| Other Unix users on devbox | could use loopback | still can by default: loopback is trusted. **Accepted** (#7): the machine has one login user, and every local process runs as the owner who can edit the state files anyway. If a second user gets a login: token mode with `requireTokenOnLoopback` (#12) |
+
+## Token mode (c10dev/portboard#12)
+
+Everything above depends on Tailscale: the owner is a Tailscale login, a device is a tailnet node. Without it Portboard
+is a read-only viewer for everyone but local processes. Token mode is an opt-in second way to be the owner: a secret
+the owner holds. Turn it on with `"mode": "token"` in `access.json` or `PORTBOARD_ACCESS_MODE=token`
+([config.md](config.md#access-accessjson)); the default stays tailscale mode, where the `Authorization` header is never
+read. Setup: [setup.md](setup.md#without-tailscale).
+
+- **The token.** `portboard token` makes `pbt_` + 32 random bytes (base64url), prints it once on stdout, and writes
+  only its sha256 to `owner-token.json` (0600, atomically through `writePrivate`). The token is in no file, log or
+  audit line. Running it again replaces the hash: the old token stops working at the next request (the file is read
+  on every write and `/api/whoami`). A file that isn't 0600 or isn't that shape refuses every token (fail closed).
+- **Checking it.** `Authorization: Bearer <token>`. The presented token is hashed and compared with
+  `crypto.timingSafeEqual` against the stored 32 bytes, so the time taken says nothing about how much of it matched.
+  POSTs still need `X-Portboard: 1`: the token doesn't replace the CSRF check.
+- **In the browser.** 설정 › 화면 › 소유자 토큰 keeps it in localStorage (`pb.ownerToken`), and `public/lib/api.js`
+  sends it as the header on every `/api` request of that page. Never in a URL (history, logs, Referer). It is not a
+  `data-write` control: entering it is how a read-only browser becomes the owner. A cross-site page can't read
+  another origin's localStorage, and the custom headers force a preflight Portboard never answers.
+
+| Caller (token mode) | No `Authorization` | The right token | A wrong, malformed or uncheckable token |
+|---|---|---|---|
+| Loopback, no proxy markers | the owner (`loopback`) | the owner (`token`) | **no** |
+| … with `requireTokenOnLoopback` | **no** | the owner (`token`) | no |
+| `tailscale serve`, the owner's login | the owner (`serve`, writeDevices applies) | the owner (`token`) | **no** |
+| … with `requireTokenOnLoopback` | **no**: on loopback any local process can type serve's headers | the owner (`token`) | no |
+| `serve`, another login, a tagged node, another local proxy | no | the owner (`token`) | no |
+| **Funnel** (`Tailscale-Funnel-Request`) | no | **no** | no |
+| Direct: LAN, tailnet IP, anything not loopback | no | the owner (`token`, with the address) | no |
+| The stdio MCP server | the owner (`mcp`), unchanged | — | — |
+
+Decisions behind the table (pure, `classifyToken` in `src/core/access.ts`; every cell is in `test/access-token.test.ts`):
+
+- **Funnel never writes**, checked before the token: the dashboard is never meant to be on Funnel, and if it ends up
+  there by a config mistake, a leaked or guessed token must not make the public internet the owner. Funnel requests
+  are recognised by the header tailscaled sets (and deletes from clients), the same as in tailscale mode.
+- **A wrong token loses rights, even on loopback**, like the proxy markers: sending something can only cost rights
+  unless it is the real token. No token made yet, or a broken `owner-token.json`/`access.json`, counts as wrong.
+- **`requireTokenOnLoopback`** closes the "loopback has no token" gap for a machine with other Unix users. It also
+  drops the serve login on loopback: tailscaled's headers arrive from 127.0.0.1, and with local processes untrusted,
+  a local process could type `Tailscale-User-Login: <owner>`. The Claude plugin's hooks (which don't have the token)
+  can't write then either.
+- **The write-device allowlist** limits serve logins only. The token is its own credential; a device holding it was
+  given it by the owner.
+- **Recorded** as source `token`, who = the caller's address (`local` on loopback), with the tailnet device when the
+  address is one. The audit log is readable with the token too (it is the owner).
+
+| Threat (token mode) | Now |
+|---|---|
+| Someone on the LAN sniffs plain http and replays the token | possible: the token is a bearer secret. **Accepted**, documented: token mode over the LAN is for a network you trust, or put a TLS proxy on this machine in front (it is a proxy marker, so it is decided as `serve` + token) |
+| Guessing the token | 256 bits; denials are logged and coalesced (M2) so a flood can't flush the log |
+| Timing the comparison | hashed, then `timingSafeEqual` on 32 bytes |
+| The token in logs, URLs, the audit log or the state dir | never: only its sha256, and the audit line names the source, not the secret |
+| XSS on the dashboard reads localStorage | the token is exposed (an XSS could also send writes from the page itself). **Accepted**: the CSP is only `frame-ancestors` (L3); rotate with `portboard token` if in doubt |
+| A stolen token | `portboard token` again: the old one stops working at the next request, no restart |
+| Typo in `mode` | reported at start and on every write; counts as tailscale mode, so it never opens anything |
+| Tailscale-only actions without Tailscale | expose/unexpose and the write-device allowlist answer `409` before running anything, and the UI hides them |
 
 ## Audit log (c10dev/portboard#30)
 
 Every write through the routes — allowed, denied (no `X-Portboard`, not the owner, a handler's own 403) or failed — and
 every write tool of the stdio MCP server is one JSON line in `<state dir>/audit.jsonl` (mode 0600; production
 `~/.local/state/portboard/audit.jsonl`, a preview its own). A line holds the time, who (Tailscale login, `local`, or a
-direct caller's address), the source (`serve`, `loopback`, `direct`, `mcp`), the route pattern or tool, the target
+direct caller's address), the source (`serve`, `loopback`, `direct`, `mcp`, `token`), the route pattern or tool, the target
 identifiers, the result and status, and the answer's short message. Request bodies are never written as they are: only
 allowlisted identifier fields (`port`, `ports`, `path`, `paths`, `repo`, `owner`, `key`, `session_id`, booleans such as
 `pinned`), and only the **names** of other fields (a label, a device name or a note shows as `fields: ["label"]`).
 Denied requests are logged before the body is read. Header text is cut and stripped of control characters. Serve and
 direct lines also carry the device (`device: {addr, name?, id?}`, see [Write devices](#write-devices)).
+
+**Who may read it** (c10dev/portboard#7): only the owner, decided like a write (`classify` in `src/core/access.ts`):
+a process on this machine talking to 127.0.0.1 directly, or the owner's Tailscale login through `tailscale serve`.
+Everyone else, including a direct `http://<tailnet IP>:8790` connection from the owner's own laptop, gets
+`403 {error: "owner only", reason}`, and the dashboard's 최근 기록 and the service page's 기록 say "기록은 소유자만 볼 수
+있어요" instead of the entries. The write-device allowlist doesn't apply: it limits writes, and an owner device that
+may not write can still read what was done. No `tailscale whois` runs for this read. Every other read is unchanged.
 
 Denials can't flush the log (security review v1.0, M2): they go to their own file, `audit-denied.jsonl` (+ `.1`,
 256 KB each), and identical ones (same who, source, route, reason and device address) are coalesced: the first is
@@ -153,14 +224,20 @@ writes about one line per minute per kind and never rotates `audit.jsonl`, which
   page script first.
 - **Server limits**, like the remote server: `headersTimeout` 10 s, `requestTimeout` 30 s (receiving the request, not
   answering it), `keepAliveTimeout` 5 s, and at most 256 connections per listen address.
-- **500s** never carry the error's text (it can hold paths and command output, and the audit log is readable by every
-  tailnet peer): the answer is `{error: "서버 오류가 났어요 (요청 ID 1a2b3c4d).", requestId}`, the audit line's detail has
+- **500s** never carry the error's text (it can hold paths and command output, and until #7 the audit log was readable
+  by every tailnet peer): the answer is `{error: "서버 오류가 났어요 (요청 ID 1a2b3c4d).", requestId}`, the audit line's detail has
   only the id, and the full error goes to the server log (`journalctl --user -u portboard`) under the same id.
 - **State and config files** are written 0600 in 0700 directories, through a temp file with a random name opened
   with `O_EXCL` and renamed over the target (`src/core/atomic.ts`), so a planted file or symlink at a guessable temp
   path is never followed. `deploy/portboard.service` sets `UMask=0077` and `NoNewPrivileges=yes` like the remote unit.
   `scripts/deploy.sh` does not install unit files: after this change, copy the unit to `~/.config/systemd/user/` and
   `systemctl --user daemon-reload` once. Files written before keep their old mode until their next write.
+
+## Open items
+
+- ~~**Loopback has no token**~~: opt-in since #12, token mode with `requireTokenOnLoopback`. The default is unchanged
+  (any process on this machine is the owner), accepted for a one-user machine.
+- ~~The whole tailnet can read the audit log~~: closed by #7, owner only.
 
 ## Other rules
 

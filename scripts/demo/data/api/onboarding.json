@@ -1,0 +1,129 @@
+{
+ "items": [
+  {
+   "key": "alerts",
+   "title": "Alert channel",
+   "status": "ok",
+   "detail": "ntfy is set up: down alerts and digests go out",
+   "action": null,
+   "links": [
+    {
+     "href": "https://github.com/c10dev/portboard/blob/main/docs/runbooks/ntfy-topic.md",
+     "label": "Rotating the ntfy topic"
+    }
+   ]
+  },
+  {
+   "key": "proxmox",
+   "title": "Proxmox API token",
+   "status": "ok",
+   "detail": "pve1's VMs and CTs are shown; the token expires in 74 days",
+   "action": null,
+   "links": [
+    {
+     "href": "https://github.com/c10dev/portboard/blob/main/docs/runbooks/proxmox-token.md",
+     "label": "Rotating the token"
+    }
+   ]
+  },
+  {
+   "key": "pve-ports",
+   "title": "pve1·CT read key",
+   "status": "ok",
+   "detail": "Reads the ports of pve1 and its containers",
+   "action": null,
+   "links": [
+    {
+     "href": "https://github.com/c10dev/portboard/blob/main/docs/runbooks/ssh-readonly-keys.md",
+     "label": "Rotating the key"
+    }
+   ]
+  },
+  {
+   "key": "win-ports",
+   "title": "Windows read key",
+   "status": "ok",
+   "detail": "Reads desktop-pc's Windows ports",
+   "action": null,
+   "links": [
+    {
+     "href": "https://github.com/c10dev/portboard/blob/main/docs/runbooks/ssh-readonly-keys.md",
+     "label": "Rotating the key"
+    }
+   ]
+  },
+  {
+   "key": "mac-agent",
+   "title": "Mac agent",
+   "status": "ok",
+   "detail": "dev-mac reports to compute-pool",
+   "action": null,
+   "links": []
+  },
+  {
+   "key": "menubar",
+   "title": "Mac menu bar",
+   "status": "ok",
+   "detail": "The Mac app last asked 1 minute ago",
+   "action": null,
+   "links": []
+  },
+  {
+   "key": "remote",
+   "title": "claude.ai connector",
+   "status": "missing",
+   "detail": "Not connected to claude.ai or ChatGPT yet",
+   "action": {
+    "kind": "link",
+    "href": "https://github.com/c10dev/portboard/blob/main/docs/remote-mcp/README.md",
+    "label": "How to connect"
+   },
+   "links": [
+    {
+     "href": "settings.html#remote",
+     "label": "Approval codes and tokens (Settings)"
+    }
+   ]
+  },
+  {
+   "key": "claude-code",
+   "title": "Claude Code MCP",
+   "status": "ok",
+   "detail": "The portboard plugin is installed",
+   "action": null,
+   "links": []
+  },
+  {
+   "key": "write-devices",
+   "title": "Write-enabled devices",
+   "status": "warn",
+   "detail": "Write access isn't limited — every device logged in as the owner can stop and expose services from the https address. List only the devices that should make changes in access.json's writeDevices",
+   "action": {
+    "kind": "command",
+    "text": "umask 077; printf '%s\\n' '{\"writeDevices\":[\"dev-mac\",\"iphone\"]}' > ~/.config/portboard/access.json",
+    "label": "Choose the devices"
+   },
+   "links": [
+    {
+     "href": "settings.html#write-devices",
+     "label": "Choose in Settings"
+    },
+    {
+     "href": "https://github.com/c10dev/portboard/blob/main/docs/security.md#write-devices",
+     "label": "About write-enabled devices"
+    }
+   ]
+  },
+  {
+   "key": "usage",
+   "title": "Start using it",
+   "status": "ok",
+   "detail": "1 pin, 1 name and 2 alerts",
+   "action": null,
+   "links": []
+  }
+ ],
+ "ok": 8,
+ "total": 10,
+ "summary": "Setup 8/10"
+}

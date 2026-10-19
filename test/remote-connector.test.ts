@@ -12,6 +12,7 @@ import { sha256, Store, TOUCH_EVERY_MS } from '../src/remote/store.ts';
 import type { RemoteCore } from '../src/remote/tools.ts';
 import { createRouter } from '../src/features/router.ts';
 import { FEATURES, REGISTRY } from '../src/features/registry.ts';
+import { L } from './fixtures/locale.ts';
 
 const core: RemoteCore = {
   snapshot: async () => ({ at: 'now', host: { hostname: 'box', user: 'me' }, tailscale: { available: false } as any, ports: [] }) as any,
@@ -254,7 +255,7 @@ test('GET /api/remote/clients on an unreadable remote.json says so without the f
   try {
     const r = await dash('GET', '/api/remote/clients');
     assert.equal(r.status, 500);
-    assert.match(r.body.error, /remote\.json을 읽을 수 없어요/);
+    assert.match(r.body.error, L(/remote\.json을 읽을 수 없어요/, /Can't read remote\.json/));
     assert.ok(!JSON.stringify(r.body).includes('deadbeef'));
   } finally {
     file = saved;

@@ -9,6 +9,7 @@ import { networkInterfaces } from 'node:os';
 import { parseEstablished, type Connection } from './conn.ts';
 import { SELF_UNIT } from './control.ts';
 import { run, runShared } from './exec.ts';
+import { platform } from './platform/index.ts';
 import { snapshot, type PortEntry, type PortGroup, type PortKind, type Snapshot } from './index.ts';
 import { classify, type BindScope } from './ss.ts';
 import { parsePeers } from './devices.ts';
@@ -92,7 +93,8 @@ export async function topology(snap?: Snapshot): Promise<Topology> {
   const [s, ts, est] = await Promise.all([
     snap ?? snapshot(),
     runShared('tailscale', ['status', '--json']),
-    run('ss', ['-tnpiH', 'state', 'established']),
+    // established connections come from ss only (#11): with lsof the map has no client lines yet
+    platform().portReader === 'ss' ? run('ss', ['-tnpiH', 'state', 'established']) : Promise.resolve({ ok: false, stdout: '', stderr: 'ss not used here' }),
   ]);
   const conns = parseEstablished(est.stdout);
   const portboards = await otherPortboards(conns);

@@ -1,0 +1,67 @@
+{
+ "entries": [
+  {
+   "at": "2026-10-17T11:52:24.356Z",
+   "who": "dev@example.com",
+   "source": "serve",
+   "route": "POST /api/ports/:port/prefs",
+   "target": {
+    "port": 3000,
+    "pinned": true
+   },
+   "result": "ok",
+   "status": 200,
+   "device": {
+    "addr": "100.64.10.3",
+    "name": "dev-mac"
+   }
+  },
+  {
+   "at": "2026-10-17T10:32:24.356Z",
+   "who": "dev@example.com",
+   "source": "serve",
+   "route": "POST /api/ports/:port/restart",
+   "target": {
+    "port": 7720
+   },
+   "result": "ok",
+   "status": 200,
+   "detail": "restarted compute-pool-monitor.service",
+   "device": {
+    "addr": "100.64.10.3",
+    "name": "dev-mac"
+   }
+  },
+  {
+   "at": "2026-10-17T07:32:24.356Z",
+   "who": "guest@example.com",
+   "source": "serve",
+   "route": "POST /api/ports/:port/stop",
+   "target": {
+    "port": 3000
+   },
+   "result": "denied",
+   "status": 403,
+   "detail": "owner only",
+   "device": {
+    "addr": "100.64.10.9",
+    "name": "guest-laptop"
+   }
+  },
+  {
+   "at": "2026-10-16T10:32:24.356Z",
+   "who": "dev@example.com",
+   "source": "serve",
+   "route": "POST /api/ports/:port/expose",
+   "target": {
+    "port": 8790
+   },
+   "result": "ok",
+   "status": 200,
+   "device": {
+    "addr": "100.64.10.7",
+    "name": "iphone"
+   }
+  }
+ ]
+}

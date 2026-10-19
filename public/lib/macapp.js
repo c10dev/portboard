@@ -1,3 +1,4 @@
+// @ts-check
 // The Mac app (mac-app/, docs/mac-app/): its window has no title bar, so the page header is the window's one bar.
 // The web view's User-Agent carries portboard-mac/<version>; then the page gets <html data-app="mac"> and shell.css
 // keeps 78 px clear for the traffic lights. The shell's ← → (lib/shell.js) are the app's back and forward; a page
@@ -30,6 +31,10 @@ export function barReport(header, doc = header.ownerDocument) {
   return { type: 'bar', bar: box(header.getBoundingClientRect()), noDrag };
 }
 
+/**
+ * @param {Document} doc
+ * @param {any} win the window; WKWebView adds webkit.messageHandlers.portboard in the Mac app
+ */
 export function setupMacApp(doc = document, win = window) {
   doc.documentElement.dataset.app = 'mac';
   const header = doc.querySelector('header.top');

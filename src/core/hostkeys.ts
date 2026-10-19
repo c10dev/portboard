@@ -2,6 +2,7 @@
 // (192.168.1.201 and pve1's 100.64.10.8). Keys come from `ssh-keyscan` in the background — a request never
 // waits for a probe; it reads whatever the cache has, and the next refresh shows new matches.
 
+import { TtlMap } from './cache.ts';
 import { run } from './exec.ts';
 import { reportHealth } from './health.ts';
 
@@ -38,21 +39,22 @@ export function sameMachine(lanIps: string[], peers: KeyedPeer[], keysOf: (ip: s
 
 const TTL = 60 * 60_000;
 const FAILED_TTL = 10 * 60_000;
-/** ip → keys ([] when nothing answered), when, and the LAN MAC it was probed under (re-probe when it changes) */
-const cache = new Map<string, { keys: string[]; at: number; tag: string }>();
+/**
+ * ip → keys ([] when nothing answered, fresh for FAILED_TTL) and the LAN MAC it was probed under (re-probe when it
+ * changes). Stale keys are still shown until the re-probe; at most 1024 addresses are kept.
+ */
+const cache = new TtlMap<string, { keys: string[]; tag: string }>({ ttlMs: TTL, maxEntries: 1024 });
 const wanted: { ip: string; tag: string }[] = [];
 let running = false;
 
 export function cachedKeys(ip: string): string[] | undefined {
-  return cache.get(ip)?.keys;
+  return cache.peek(ip)?.keys;
 }
 
 /** Queue IPs whose keys are missing, stale or probed under another MAC; returns at once. */
 export function probeLater(targets: { ip: string; tag?: string }[]) {
-  const now = Date.now();
   for (const { ip, tag = '' } of targets) {
-    const c = cache.get(ip);
-    const fresh = c && c.tag === tag && now - c.at < (c.keys.length ? TTL : FAILED_TTL);
+    const fresh = cache.get(ip)?.tag === tag;
     if (fresh || wanted.some((w) => w.ip === ip)) continue;
     wanted.push({ ip, tag });
   }
@@ -68,7 +70,8 @@ async function drain() {
       // A host that doesn't answer is normal (offline, no sshd); ssh-keyscan itself missing is not.
       const broken = !r.ok && /ENOENT|EACCES/.test(r.stderr);
       reportHealth('hostkeys', { ok: !broken, error: broken ? 'ssh-keyscan cannot run' : null });
-      cache.set(ip, { keys: parseKeyscan(r.stdout).get(ip) ?? [], at: Date.now(), tag });
+      const keys = parseKeyscan(r.stdout).get(ip) ?? [];
+      cache.set(ip, { keys, tag }, keys.length ? TTL : FAILED_TTL);
     }
   } finally {
     running = false;

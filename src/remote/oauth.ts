@@ -84,8 +84,8 @@ async function readCapped(res: Response, limit: number): Promise<string | null> 
 }
 
 /**
- * Fetches and checks a client metadata document. Only https URLs on CIMD_HOSTS with a path and no query, port,
- * credentials or fragment; no redirects; 16 KB read at most; 5 s.
+ * Fetches and checks a client metadata document. Only canonical https URLs on CIMD_HOSTS with a path and no query,
+ * port, credentials or fragment; no redirects; 16 KB read at most; 5 s.
  */
 export async function fetchClientMetadata(clientId: string, fetchImpl: typeof fetch = fetch): Promise<ClientInfo | string> {
   let u: URL;
@@ -95,7 +95,9 @@ export async function fetchClientMetadata(clientId: string, fetchImpl: typeof fe
     return 'client_id is not a URL';
   }
   if (u.protocol !== 'https:' || !CIMD_HOSTS.has(u.hostname) || u.port || u.username || u.password) return `client metadata host not allowed: ${u.hostname}`;
-  if (u.hash || u.search || u.pathname === '/' || clientId.length > 300) return 'client metadata URL must be a plain https path';
+  // No "?" or "#" at all (an empty one leaves u.search and u.hash empty), and u.href === clientId: the id is already in
+  // canonical form, so dot segments, an upper-case host or an explicit :443 (which the parser rewrites) never get fetched.
+  if (/[?#]/.test(clientId) || u.pathname === '/' || clientId.length > 300 || u.href !== clientId) return 'client metadata URL must be a plain https path';
   let res: Response;
   try {
     res = await fetchImpl(u, { redirect: 'error', signal: AbortSignal.timeout(5000), headers: { accept: 'application/json' } });

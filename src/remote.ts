@@ -10,6 +10,7 @@
 import { createServer } from 'node:http';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
+import { ttlCache } from './core/cache.ts';
 import { freePorts, snapshot, type Snapshot } from './core/index.ts';
 import { devices } from './core/devices.ts';
 import { defaultChecker } from './core/alerts.ts';
@@ -19,6 +20,10 @@ import { serveStatus, tailscaleInfo } from './core/tailscale.ts';
 import { resolveDashboardUrl, SITE } from './core/site.ts';
 import { topology } from './core/topology.ts';
 import { usage, type Usage } from './core/usage.ts';
+import { dashboardReader, dashboardSources } from './remote/dashboard.ts';
+import { devServersDoc } from './features/devservers.ts';
+import { savedView } from './features/memory.ts';
+import { loadSavedWorktrees } from './features/worktrees.ts';
 import { createRemoteHandler } from './remote/http.ts';
 import { settingsPageUrl } from './remote/oauth.ts';
 import { Store } from './remote/store.ts';
@@ -103,18 +108,17 @@ const hosts = new Set(
 );
 
 // Same 2 s caching as the dashboard: a burst of tool calls shares one `ss` + probe run.
-const cached = <T>(fn: () => Promise<T>, ttl = 2_000) => {
-  let hit: { at: number; value: Promise<T> } | null = null;
-  return () => {
-    if (hit && Date.now() - hit.at < ttl) return hit.value;
-    const value = fn();
-    hit = { at: Date.now(), value };
-    value.catch(() => (hit = null));
-    return value;
-  };
-};
-const getSnapshot = cached<Snapshot>(snapshot);
-const getUsage = cached<Usage>(async () => usage(await topology(await getSnapshot())));
+const cached = <T>(fn: () => Promise<T>, ttlMs = 2_000) => ttlCache(() => fn(), { ttlMs });
+// Snapshot, devices and usage are the dashboard's (its 2 s caches, over loopback: src/remote/dashboard.ts, #5); only
+// while it is down does this process run `ss`, the probes and the rest itself.
+const DASHBOARD_PORT = Number(process.env.PORTBOARD_PORT ?? PRODUCTION_PORT);
+const fromDashboard = dashboardSources(dashboardReader({ port: DASHBOARD_PORT }), {
+  snapshot,
+  devices: () => devices(),
+  usage: async () => usage(await topology(await getSnapshot())),
+});
+const getSnapshot = cached<Snapshot>(fromDashboard.snapshot);
+const getUsage = cached<Usage>(fromDashboard.usage);
 // portboard://status only: down state of watched ports/devices (alerts-state.json, prefs.json), the number of
 // pending 새 기기 (known-devices.json), and memory pressure as numbers (memory-state.json). The checker is never
 // started; the alert channel it can read is never copied.
@@ -123,12 +127,24 @@ const statusExtras = cached(async () => {
   const memory = await loadMemoryState(join(PATHS.stateDir, MEMORY_STATE)).then((f) => statusLine(f), () => null);
   return { watching: st?.watching ?? null, newDevices: known ? pendingView(known).length : null, memory };
 });
-const core: RemoteCore = { snapshot: getSnapshot, devices: cached(() => devices()), freePorts, usage: getUsage, statusExtras };
+// list_worktrees and memory_usage read what the dashboard server saved (worktrees-state.json, memory-state.json): this
+// process never scans repositories or reads /proc and transcripts. list_dev_servers asks systemctl and git worktree
+// list, like the dashboard's GET /api/dev-servers.
+const core: RemoteCore = {
+  snapshot: getSnapshot,
+  devices: cached(fromDashboard.devices),
+  freePorts,
+  usage: getUsage,
+  statusExtras,
+  devServers: cached(devServersDoc),
+  worktrees: cached(() => loadSavedWorktrees()),
+  memory: cached(() => savedView()),
+};
 
 // The consent page links the dashboard's 설정 tab, where the owner makes the approval code: the https address
 // tailscale serve publishes the dashboard on (8443), or PORTBOARD_DASHBOARD_URL, or portboard.json's dashboardUrl. Tailnet only, which is fine: the
 // owner opens it from one of their own devices.
-const dashboard = resolveDashboardUrl(ts.dnsName, await serveStatus().catch(() => []), Number(process.env.PORTBOARD_PORT ?? PRODUCTION_PORT));
+const dashboard = resolveDashboardUrl(ts.dnsName, await serveStatus().catch(() => []), DASHBOARD_PORT);
 const settingsUrl = settingsPageUrl(dashboard);
 const handler = createRemoteHandler({ core, store, hosts, publicUrl: state.publicUrl, settingsUrl });
 const servers = bindHosts.map(() => {

@@ -1,0 +1,24 @@
+{
+ "title": "Portboard daily digest · Sat 10/17",
+ "body": "🟢 All 2 watched services up · 1 outage (compute-pool, 6 min)\n🖥 7 devices online · dev-mac used webapp :3000 for 3 h 10 min\n🧠 Memory available 22.1 GB/49.0 GB (45%) · swap 3%",
+ "empty": false,
+ "lines": [
+  {
+   "problem": false,
+   "text": "🟢 All 2 watched services up · 1 outage (compute-pool, 6 min)"
+  },
+  {
+   "problem": false,
+   "text": "🖥 7 devices online · dev-mac used webapp :3000 for 3 h 10 min"
+  },
+  {
+   "problem": false,
+   "text": "🧠 Memory available 22.1 GB/49.0 GB (45%) · swap 3%"
+  }
+ ],
+ "period": {
+  "mode": "daily",
+  "from": "2026-10-16T12:32:24.356Z",
+  "to": "2026-10-17T12:32:24.356Z"
+ }
+}

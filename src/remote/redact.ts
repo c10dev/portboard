@@ -3,11 +3,14 @@
 // local until someone lists it here. A regex scrub over the final text is the second net.
 //
 // Always dropped: cmdlines, cwd paths, SSH commands, pids, MACs, LAN / Tailscale / public IPs, subnet routes,
-// the compute-pool and Proxmox URLs, Proxmox credentials and alert settings (never copied, never in the core types).
+// the compute-pool and Proxmox URLs, Proxmox credentials and alert settings (never copied, never in the core types),
+// worktree and dev-server paths, commit messages, package.json script commands and systemd unit descriptions.
 // Kept: device and service names, ports, states, load numbers and the URLs that only open inside the tailnet.
 // Two flags in remote.json loosen this for a private setup: showAddresses (IPs, MACs, routes, endpoints) and
-// showProcesses (pids and client process names). Both default to false.
+// showProcesses (pids, client process names, and memory_usage's session titles, projects and process names).
+// Both default to false.
 
+import { createHmac, randomBytes } from 'node:crypto';
 import type { MemoryStatus } from '../core/memory.ts';
 import type { Snapshot } from '../core/index.ts';
 import type { Devices, Device } from '../core/devices.ts';
@@ -15,6 +18,9 @@ import type { NetNode } from '../core/nettree.ts';
 import type { PoolHost } from '../core/pool.ts';
 import type { PveHost } from '../core/proxmox.ts';
 import type { DeviceCard, Usage, UseRow } from '../core/usage.ts';
+import type { WorktreeInfo, WorktreesDoc } from '../core/worktrees.ts';
+import type { DevServersDoc } from '../features/devservers.ts';
+import type { MemoryView } from '../features/memory.ts';
 import { summarize, type ListArgs } from '../mcp/views.ts';
 import { statusReport } from '../mcp/status.ts';
 
@@ -69,22 +75,26 @@ export function scrubDeep<T>(value: T, policy: RedactPolicy = STRICT): T {
   return value;
 }
 
-// ---- ids that are addresses (lan:192.168.1.108) get a stable alias within one response ----
+// ---- ids that are addresses (lan:192.168.1.108) get a stable alias ----
+
+// A keyed hash, so the same address gets the same alias in every response of this process (a client that joins
+// list_devices with who_uses_what sees one device, not two), while the alias can't be turned back into the
+// address: the key is random per process and never leaves it. A restart changes the aliases.
+const ALIAS_KEY = randomBytes(32);
+
+/** `lan:<address>` → `lan-device-<6 hex>`, the same for the same id for as long as this process runs */
+export function lanAlias(id: string): string {
+  return `lan-device-${createHmac('sha256', ALIAS_KEY).update(id).digest('hex').slice(0, 6)}`;
+}
 
 class Aliases {
-  private map = new Map<string, string>();
   private policy: RedactPolicy;
   constructor(policy: RedactPolicy) {
     this.policy = policy;
   }
   id(id: string): string {
     if (this.policy.showAddresses || !/^lan:/.test(id)) return id;
-    let alias = this.map.get(id);
-    if (!alias) {
-      alias = `lan-device-${this.map.size + 1}`;
-      this.map.set(id, alias);
-    }
-    return alias;
+    return lanAlias(id);
   }
 }
 
@@ -222,6 +232,8 @@ export function redactDevices(d: Devices, policy: RedactPolicy = STRICT) {
         pool: pool(x.pool, policy),
         ports: hostPorts(x.ports, policy),
         portsSource: x.portsSource,
+        // Its `portboard agent` (#10): state and version only, never the URL (an address) or the load's raw numbers
+        ...(x.agent ? { agent: { ok: x.agent.ok, error: x.agent.error, checkedAt: x.agent.checkedAt, lastOk: x.agent.lastOk, version: x.agent.info?.version ?? null } } : {}),
       })),
       proxmox: {
         configured: d.proxmox.configured,
@@ -236,6 +248,9 @@ export function redactDevices(d: Devices, policy: RedactPolicy = STRICT) {
       winPorts: d.winPorts
         ? { enabled: d.winPorts.enabled, device: ids.id(d.winPorts.device), ok: d.winPorts.ok, pending: d.winPorts.pending, error: d.winPorts.error, checkedAt: d.winPorts.checkedAt, lastOk: d.winPorts.lastOk }
         : null,
+      ...(d.agents?.length
+        ? { agents: d.agents.map((a) => ({ name: a.name, device: a.device && ids.id(a.device), ok: a.ok, pending: a.pending, error: a.error, checkedAt: a.checkedAt, lastOk: a.lastOk })) }
+        : {}),
       tree: d.tree ? { roots: d.tree.roots.map((n) => netNode(n, ids, policy)) } : null,
     },
     policy,
@@ -341,6 +356,145 @@ export function redactUsage(u: Usage, policy: RedactPolicy = STRICT) {
         ]),
       ),
       idleServices: u.idleServices,
+    },
+    policy,
+  );
+}
+
+// ---- list_worktrees (features/worktrees.ts, from the last scan the server saved) ----
+
+/** merged (by ancestry, or a merged PR containing its HEAD), unmerged, missing (the directory is gone), locked, unknown */
+function worktreeState(w: WorktreeInfo): 'merged' | 'unmerged' | 'missing' | 'locked' | 'unknown' {
+  if (w.prunable) return 'missing';
+  if (w.locked) return 'locked';
+  if (w.mergedByAncestry === true || (w.pr?.state === 'MERGED' && w.pr.headMatches)) return 'merged';
+  if (w.mergedByAncestry === false || w.pr) return 'unmerged';
+  return 'unknown';
+}
+
+/**
+ * Repo names, branches, states, PR numbers and states, changed yes/no, sizes and why a worktree has to stay (fixed
+ * reason texts with counts). Never a path (repo, worktree or ~-short), the last commit's message, the remote URL, the
+ * pids inside or a scan's error text; no flag adds them. The main checkout is left out, as in the local tool.
+ */
+export function redactWorktrees(doc: WorktreesDoc, args: { repo?: string; removableOnly?: boolean } = {}, policy: RedactPolicy = STRICT) {
+  return scrubDeep(
+    {
+      at: doc.at,
+      scanning: doc.scanning,
+      totals: {
+        repos: doc.totals.repos,
+        worktrees: doc.totals.worktrees,
+        removable: doc.totals.removable,
+        missing: doc.totals.prunable,
+        removableMb: Math.round(doc.totals.removableKb / 1024),
+      },
+      repos: doc.repos
+        .filter((r) => args.repo === undefined || r.name === args.repo)
+        .map((r) => ({
+          repo: r.name,
+          defaultBranch: r.defaultBranch,
+          prsKnown: r.prsKnown,
+          scanFailed: r.error !== null,
+          worktrees: r.worktrees
+            .filter((w) => !w.main && (args.removableOnly ? w.removable : true))
+            .map((w) => ({
+              branch: w.branch,
+              detached: w.detached,
+              state: worktreeState(w),
+              pr: w.pr ? { number: w.pr.number, state: w.pr.state, headMatches: w.pr.headMatches } : null,
+              changed: w.changes === null ? null : w.changes > 0,
+              sizeMb: w.sizeKb === null ? null : Math.round(w.sizeKb / 1024),
+              inUse: w.inUse.length > 0,
+              removable: w.removable,
+              keep: [...w.keep],
+            })),
+        })),
+    },
+    policy,
+  );
+}
+
+// ---- list_dev_servers (features/devservers.ts) ----
+
+/**
+ * Which worktree (its "<repo>@<branch>" owner, the name reservations use), state, port and since when; which worktrees
+ * could be started, with which script names. Never the worktree path, the unit name (made from the path), its
+ * description or the scripts' command text; no flag adds them.
+ */
+export function redactDevServers(doc: DevServersDoc, policy: RedactPolicy = STRICT) {
+  return scrubDeep(
+    {
+      running: doc.running.map((r) => ({ owner: r.owner, active: r.active, state: r.state, port: r.port, since: r.since })),
+      startable: Object.values(doc.startable)
+        .map((s) => ({ owner: s.owner, scripts: Object.keys(s.scripts), preferred: s.preferred }))
+        .sort((a, b) => a.owner.localeCompare(b.owner)),
+    },
+    policy,
+  );
+}
+
+// ---- memory_usage (features/memory.ts, from memory-state.json) ----
+
+const gb = (mb: number) => Math.round(mb / 102.4) / 10;
+
+/**
+ * Memory, swap, PSI, the pressure state with its thresholds, the groups and totals, and per row only numbers, versions
+ * and the service and container names list_ports shows anyway. Session titles and projects, MCP server and other
+ * process names, the session a service runs under and the suggestion texts (they name them) only with showProcesses.
+ */
+export function redactMemory(v: MemoryView, top = 10, policy: RedactPolicy = STRICT) {
+  const names = policy.showProcesses;
+  const th = v.pressure.thresholds;
+  return scrubDeep(
+    {
+      at: v.at,
+      memory: {
+        totalGb: gb(v.mem.totalMb),
+        usedGb: gb(v.mem.usedMb),
+        availableGb: gb(v.mem.availableMb),
+        availablePct: v.mem.availablePct,
+        swapTotalGb: gb(v.mem.swapTotalMb),
+        swapPct: v.mem.swapPct,
+        psi: v.psi ? { someAvg60: v.psi.some.avg60, fullAvg60: v.psi.full?.avg60 ?? null } : null,
+      },
+      pressure: {
+        active: v.pressure.active,
+        reasons: [...v.pressure.reasons],
+        reasonText: [...v.pressure.reasonText],
+        thresholds: { availablePct: th.availablePct, psiSome60: th.psiSome60, swapPct: th.swapPct, sustainMin: th.sustainMin },
+      },
+      groups: v.groups.map((g) => ({ group: g.key, label: g.label, gb: gb(g.mb), processes: g.procs })),
+      totals: {
+        rssGb: gb(v.rssMb),
+        sessions: v.sessions.length,
+        idleSessions: v.sessions.filter((x) => x.idle).length,
+        staleVersion: v.sessions.filter((x) => x.stale).length,
+        newestVersion: v.newestVersion,
+        mcpServers: v.mcp.length,
+        mcpInstances: v.mcp.reduce((a, m) => a + m.instances, 0),
+        mcpGb: gb(v.mcp.reduce((a, m) => a + m.mb, 0)),
+        mcpOrphans: v.mcp.reduce((a, m) => a + m.orphans, 0),
+        services: v.services.length,
+        devServers: v.services.filter((x) => x.dev).length,
+        docker: v.docker.length,
+      },
+      sessions: v.sessions.slice(0, top).map((x) => ({
+        ...(names ? { title: x.title, project: x.project } : {}),
+        version: x.version,
+        stale: x.stale,
+        helper: x.helper,
+        idle: x.idle,
+        idleMin: x.idleMin,
+        mb: x.mb,
+        mcpMb: x.breakdown.mcp,
+        uptimeH: Math.round(x.uptimeSec / 360) / 10,
+      })),
+      ...(names ? { mcpServers: v.mcp.slice(0, top).map((m) => ({ name: m.label, instances: m.instances, gb: gb(m.mb), sessions: m.sessions, orphans: m.orphans })) } : {}),
+      services: v.services.slice(0, top).map((x) => ({ name: x.name, ports: [...x.ports], mb: x.mb, dev: x.dev, unused: x.unused, ...(names ? { session: x.session } : {}) })),
+      docker: v.docker.slice(0, top).map((d) => ({ name: d.name, mb: d.mb })),
+      ...(names ? { other: v.other.slice(0, top).map((o) => ({ name: o.name, count: o.count, mb: o.mb })) } : {}),
+      suggestions: v.suggestions.map((x) => ({ kind: x.kind, mb: x.mb, ...(names ? { text: x.text } : {}) })),
     },
     policy,
   );

@@ -5,6 +5,8 @@
 //                  like any other call). invalidate() (after a write) always makes the next call compute again.
 //   gate()         at most one forced run per minMs: answers whether a forced refresh may start now, is already running
 //                  or was asked for too soon after the last one (the caller then answers with what it has, plus a note).
+//
+// The plain TTL caches (one value, per key, bounded) are in cache.ts.
 
 export interface CachedValue<T> {
   get(fresh?: boolean): Promise<T>;
@@ -80,27 +82,5 @@ export function gate(o: { minMs: number; now?(): number }): Gate {
       }
       return null;
     },
-  };
-}
-
-/**
- * A small per-key cache: a result is reused for ttlMs, callers for a key being computed share it, and at most `max`
- * keys are kept (the oldest goes first), so varying the key can't grow memory.
- */
-export function keyedCache<K, T>(compute: (key: K) => Promise<T>, o: { ttlMs: number; max: number; now?(): number }): (key: K) => Promise<T> {
-  const now = o.now ?? Date.now;
-  const map = new Map<K, { at: number; value: Promise<T> }>();
-  return (key) => {
-    const t = now();
-    const hit = map.get(key);
-    if (hit && t - hit.at < o.ttlMs) return hit.value;
-    map.delete(key);
-    while (map.size >= o.max) map.delete(map.keys().next().value as K);
-    const entry = { at: t, value: compute(key) };
-    map.set(key, entry);
-    entry.value.catch(() => {
-      if (map.get(key) === entry) map.delete(key);
-    });
-    return entry.value;
   };
 }

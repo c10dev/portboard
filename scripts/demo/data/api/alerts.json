@@ -1,0 +1,54 @@
+{
+ "channel": {
+  "configured": true,
+  "kinds": [
+   "ntfy"
+  ]
+ },
+ "checkEverySec": 30,
+ "lastCheck": "2026-10-17T12:32:12.356Z",
+ "watching": [
+  {
+   "key": "port:7720",
+   "kind": "port",
+   "port": 7720,
+   "name": "compute-pool",
+   "down": false,
+   "since": null,
+   "alerted": false,
+   "quietUntil": null
+  },
+  {
+   "key": "port:8790",
+   "kind": "port",
+   "port": 8790,
+   "name": "Portboard",
+   "down": false,
+   "since": null,
+   "alerted": false,
+   "quietUntil": null
+  },
+  {
+   "key": "device:nas",
+   "kind": "device",
+   "id": "nas",
+   "name": "nas",
+   "down": false,
+   "since": null,
+   "alerted": false,
+   "quietUntil": null
+  }
+ ],
+ "recent": [
+  {
+   "t": "2026-10-16T09:51:24.356Z",
+   "title": "portboard: compute-pool is back (down 6m)",
+   "ok": true
+  },
+  {
+   "t": "2026-10-16T09:45:24.356Z",
+   "title": "portboard: compute-pool is down",
+   "ok": false
+  }
+ ]
+}

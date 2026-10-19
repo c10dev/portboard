@@ -9,6 +9,7 @@ import type { Usage } from '../src/core/usage.ts';
 import { callTool, type Core } from '../src/mcp/tools.ts';
 import { usageReport } from '../src/features/usage.ts';
 import { summarize } from '../src/mcp/views.ts';
+import { L } from './fixtures/locale.ts';
 
 function g(over: Partial<Groupable> & { port: number }): Groupable {
   return { listening: true, owned: true, container: null, processes: [], detectedName: `svc ${over.port}`, probe: null, ...over };
@@ -42,7 +43,7 @@ test('assignGroups: same unit, compose project, process or tailscaled; lone port
   assert.equal(by(7721).role, 'TCP');
   assert.deepEqual(by(8384).group?.ports, [8384, 22000]);
   assert.equal(by(8384).group?.name, 'Syncthing');
-  assert.equal(by(8384).role, '웹 (HTTP)'); // title equals the group name, so it says what kind of port it is
+  assert.equal(by(8384).role, L('웹 (HTTP)', 'Web (HTTP)')); // title equals the group name, so it says what kind of port it is
   assert.equal(by(54321).group?.name, 'supabase (webapp)');
   assert.deepEqual([by(54321).role, by(54322).role], ['kong', 'db']);
   // The next.js dev server's folder is also called webapp; it must not join the compose group
@@ -82,7 +83,7 @@ test('wellKnown names root-owned ports; tailscaled listeners come from tailscale
   const serve = [{ httpsPort: 443, upstream: 'http://127.0.0.1:8790', upstreamPort: 8790 }];
   assert.deepEqual(wellKnown(22, 'all', ts, serve), { name: 'SSH (sshd)', owner: 'sshd' });
   assert.equal(wellKnown(53, 'loopback', ts, serve)?.owner, 'systemd-resolved');
-  assert.equal(wellKnown(631, 'all', ts, serve)?.name, 'CUPS 프린터 (cupsd)');
+  assert.equal(wellKnown(631, 'all', ts, serve)?.name, L('CUPS 프린터 (cupsd)', 'CUPS printer (cupsd)'));
   assert.equal(wellKnown(443, 'tailnet', ts, serve)?.name, 'tailscale serve HTTPS (tailscaled)');
   assert.equal(wellKnown(63055, 'tailnet', ts, serve)?.name, 'Tailscale PeerAPI (tailscaled)');
   assert.equal(wellKnown(33809, 'loopback', ts, serve), null); // unverified owner: stays unknown

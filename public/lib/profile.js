@@ -1,3 +1,4 @@
+// @ts-check
 // A preview instance (any port but 8790, see src/core/paths.ts) says so in the header and the tab title,
 // so it isn't mistaken for production. GET /api/health → {profile, port}. Shared by every page.
 

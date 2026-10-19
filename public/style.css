@@ -331,6 +331,7 @@ a.name:hover { text-decoration: underline; text-underline-offset: 2px; }
 .sg-chip button, .sg-name button { padding: 0 7px; font-size: 11px; line-height: 18px; border-radius: 999px; }
 .sg-chip .sg-yes, .sg-name .sg-yes { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, var(--line)); }
 .sg-chip .sg-no, .sg-name .sg-no { color: var(--muted); }
+.sg-chip.sg-idle { background: var(--neutral-bg); color: var(--muted); }
 /* 읽기 전용 (lib/access.js, #29): not the owner — write controls look disabled and a line under the header says why */
 .readonly-note { margin: 8px auto 0; width: calc(100% - 32px); max-width: 1068px; box-sizing: border-box; padding: 7px 12px; border-radius: 8px; font-size: 13px; background: var(--warn-bg); color: var(--warn); }
 html[data-readonly] [data-write] { opacity: .45; pointer-events: none; cursor: not-allowed; }

@@ -1,8 +1,0 @@
-### Fixed
-- Memory: RSS no longer jumps from ~170 MB to ~290 MB after every 15-minute worktree scan. The scan allocates fast, and on a host with lots of RAM V8 grows the young generation to 2 × 64 MB and keeps it until the process goes idle. `deploy/portboard.service` now starts node with `--max-semi-space-size=16`, with no extra scan time. A preview under dashboard load stayed at 182–194 MB through a scan, against 294–306 MB for the old code. Copy the unit to `~/.config/systemd/user/` and run `systemctl --user daemon-reload` before the next restart.
-- Memory: the transcript scan (채택 지표) reads each file through one reused buffer and decodes only the lines it counts, not every tool_result. Over 1 GB of transcripts, peak RSS drops from 317 MB to 121 MB, and the scan is 3× faster. Without this, a cold scan (first start, or once a day) left ~150 MB of malloc heap behind for good.
-- Memory: the worktree scan cache (#44) keeps each worktree's tracked paths as one buffer instead of ~150 k strings (off the JS heap, about half the size). The signature joins paths one batch at a time instead of all at once. The worktree and transcript scans now take turns instead of both running at startup.
-- 채택 지표: a tool call whose transcript line contains U+2028 or U+2029 (valid unescaped in JSON) is counted again. readline split the line there, and the broken halves were skipped.
-
-### Added
-- `/api/health?detail` runtime: `heapUsedMb`, `heapTotalMb`, `externalMb` and `arrayBuffersMb` next to `rssMb`. RSS stays high for minutes after a scan's garbage is collected; `heapUsedMb` is what is actually live.

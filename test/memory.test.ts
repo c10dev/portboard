@@ -7,36 +7,10 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  classify,
-  createSampler,
-  DEFAULT_THRESHOLDS,
-  digestLine,
-  emptyPressure,
-  memView,
-  parseBtime,
-  parseMeminfo,
-  parsePsi,
-  parseStat,
-  parseState,
-  parseThresholds,
-  projectName,
-  pressureMessage,
-  pushHistory,
-  scanTitle,
-  sessionIdFromEnviron,
-  statusLine,
-  stepPressure,
-  suggestions,
-  useOf,
-  versionCmp,
-  type MemorySample,
-  type PressureState,
-  type ServiceRef,
-} from '../src/core/memory.ts';
+import { classify, createSampler, DEFAULT_THRESHOLDS, digestLine, emptyPressure, memView, pageKbFrom, parseBtime, parseMeminfo, parsePsi, parseStat, parseState, parseThresholds, pressureMessage, projectName, pushHistory, scanTitle, sessionIdFromEnviron, statusLine, stepPressure, suggestions, type MemorySample, type PressureState, type ServiceRef, useOf, versionCmp } from '../src/core/memory.ts';
 import { memoryReport, statusReport } from '../src/mcp/status.ts';
-import { redactStatus } from '../src/remote/redact.ts';
-import { toolSummary, viewOf } from '../src/features/memory.ts';
+import { redactMemory, redactStatus } from '../src/remote/redact.ts';
+import { savedView, toolSummary, viewOf } from '../src/features/memory.ts';
 import { createFileReader, newSeen, summarize, type SessionRecord } from '../src/core/adoption.ts';
 
 const FIX = new URL('./fixtures/memory/', import.meta.url).pathname;
@@ -158,6 +132,10 @@ test('classify: Claude CLIs, known MCP servers with their wrappers, other *mcp* 
   assert.deepEqual(classify(['node', '/x/node_modules/@playwright/mcp/cli.js']), { kind: 'mcp', name: 'playwright' });
   assert.deepEqual(classify(['node', '/home/u/projects/portboard/src/mcp.ts']), { kind: 'mcp', name: 'portboard' });
   assert.deepEqual(classify(['node', '/home/u/.claude/plugins/cache/p/claude-plugin/bin/mcp.ts']), { kind: 'mcp', name: 'portboard' });
+  // the portboard command (#9)
+  assert.deepEqual(classify(['node', '/home/u/.nvm/versions/node/v24.19.0/bin/portboard', 'mcp']), { kind: 'mcp', name: 'portboard' });
+  assert.deepEqual(classify(['npm', 'exec', 'portboard', 'mcp']), { kind: 'mcp', name: 'portboard' });
+  assert.deepEqual(classify(['node', '/usr/lib/node_modules/portboard/bin/portboard', 'start']), { kind: 'proc' });
   assert.deepEqual(classify(['node', '/y/node_modules/some-mcp-server/dist/index.js']), { kind: 'proc' });
   assert.deepEqual(classify(['node', '/y/node_modules/some-mcp-server/dist/index.js'], true), { kind: 'mcp', name: 'some-mcp-server' });
   assert.deepEqual(classify(['npx', '-y', '@modelcontextprotocol/server-filesystem', '/tmp'], true), { kind: 'mcp', name: '@modelcontextprotocol/server-filesystem' });
@@ -267,6 +245,26 @@ test('nothing from an environment (the OAuth token) or a full command line ends 
   const view = viewOf(s1, { version: 1, pressure: emptyPressure(), history: [], view: null }, DEFAULT_THRESHOLDS, null);
   const tool = JSON.stringify(toolSummary(view));
   assert.ok(!tool.includes('SECRET') && !tool.includes('/home/u'));
+});
+
+test('remote memory_usage (#8): the saved sample from memory-state.json, never a fresh one; redacted without names', async () => {
+  const { s1 } = await firstSample();
+  const { cpu: _cpu, ...view } = s1;
+  const dir = await mkdtemp(join(tmpdir(), 'pb-mem-saved-'));
+  const path = join(dir, 'memory-state.json');
+  assert.equal(await savedView(path), null, 'no file: null, and no /proc read');
+  const now = Date.parse(view.at);
+  await writeFile(path, JSON.stringify({ version: 1, pressure: emptyPressure(), history: [], view }));
+  const v = await savedView(path, now + 60_000);
+  assert.ok(v);
+  assert.equal(v.at, view.at);
+  assert.equal(await savedView(path, now + 6 * 60_000), null, 'stale (the server stopped sampling): null');
+  const out = JSON.stringify(redactMemory(v));
+  // container names (db_alpha) are kept, as in list_ports; session titles, projects and process names are not
+  for (const leak of ['Alpha work', '"alpha"', 'beta', 'SECRET', '/home/u', 'next-server', '"pid"']) assert.ok(!out.includes(leak), `${leak} leaked`);
+  const loose = JSON.stringify(redactMemory(v, 10, { showAddresses: false, showProcesses: true }));
+  assert.ok(loose.includes('Alpha work'), 'showProcesses brings the titles back');
+  assert.ok(!loose.includes('SECRET') && !loose.includes('/home/u'));
 });
 
 // ---------- pressure ----------
@@ -412,4 +410,12 @@ test('adoption counts tool calls per MCP server, and says so only for scans that
   // a scan from before the count (days without mcpServers): null, not "never used"
   const old: SessionRecord = { ...session, days: { '2026-10-18': { ...session.days['2026-10-18'], mcpServers: undefined } } };
   assert.equal(summarize([old], '2026-10-01', '2026-10-31').mcpServers, null);
+});
+
+test('pageKbFrom: the page size that explains RSS in kB over RSS in pages', () => {
+  assert.equal(pageKbFrom(40_000, 10_000), 4);
+  assert.equal(pageKbFrom(160_016, 10_000), 16, 'the two reads are a moment apart');
+  assert.equal(pageKbFrom(640_000, 10_000), 64);
+  assert.equal(pageKbFrom(0, 0), 4);
+  assert.equal(pageKbFrom(NaN, 10), 4);
 });

@@ -1,0 +1,186 @@
+{
+ "at": "2026-10-17T12:28:24.356Z",
+ "scanning": false,
+ "tookMs": 182,
+ "repos": [
+  {
+   "name": "shop-web",
+   "path": "/home/dev/projects/shop-web",
+   "short": "~/projects/shop-web",
+   "remote": "git@github.com:example/shop-web.git",
+   "defaultBranch": "main",
+   "prsKnown": true,
+   "error": null,
+   "worktrees": [
+    {
+     "path": "/home/dev/projects/shop-web",
+     "short": "~/projects/shop-web",
+     "head": "3f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39",
+     "branch": "main",
+     "detached": false,
+     "main": true,
+     "locked": false,
+     "prunable": false,
+     "changes": 0,
+     "lastCommit": "2026-10-17T07:32:24.356Z",
+     "sizeKb": 412000,
+     "mergedByAncestry": null,
+     "pr": null,
+     "inUse": [],
+     "keep": [
+      "main worktree"
+     ],
+     "removable": false
+    },
+    {
+     "path": "/home/dev/projects/shop-web/.worktrees/redesign",
+     "short": "~/projects/shop-web/.worktrees/redesign",
+     "head": "3f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39",
+     "branch": "redesign",
+     "detached": false,
+     "main": false,
+     "locked": false,
+     "prunable": false,
+     "changes": 3,
+     "lastCommit": "2026-10-17T11:32:24.356Z",
+     "sizeKb": 388000,
+     "mergedByAncestry": false,
+     "pr": {
+      "number": 42,
+      "state": "OPEN",
+      "headMatches": true
+     },
+     "inUse": [
+      831911
+     ],
+     "keep": [
+      "uncommitted changes",
+      "in use (dev server on 5281)"
+     ],
+     "removable": false
+    },
+    {
+     "path": "/home/dev/projects/shop-web/.worktrees/checkout-fix",
+     "short": "~/projects/shop-web/.worktrees/checkout-fix",
+     "head": "3f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39",
+     "branch": "fix/checkout-total",
+     "detached": false,
+     "main": false,
+     "locked": false,
+     "prunable": false,
+     "changes": 0,
+     "lastCommit": "2026-10-14T14:32:24.356Z",
+     "sizeKb": 301000,
+     "mergedByAncestry": true,
+     "pr": {
+      "number": 39,
+      "state": "MERGED",
+      "headMatches": true
+     },
+     "inUse": [],
+     "keep": [],
+     "removable": true
+    }
+   ]
+  },
+  {
+   "name": "webapp",
+   "path": "/home/dev/projects/webapp",
+   "short": "~/projects/webapp",
+   "remote": "git@github.com:example/webapp.git",
+   "defaultBranch": "main",
+   "prsKnown": true,
+   "error": null,
+   "worktrees": [
+    {
+     "path": "/home/dev/projects/webapp",
+     "short": "~/projects/webapp",
+     "head": "3f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39",
+     "branch": "main",
+     "detached": false,
+     "main": true,
+     "locked": false,
+     "prunable": false,
+     "changes": 1,
+     "lastCommit": "2026-10-17T09:32:24.356Z",
+     "sizeKb": 655000,
+     "mergedByAncestry": null,
+     "pr": null,
+     "inUse": [
+      2408824
+     ],
+     "keep": [
+      "main worktree"
+     ],
+     "removable": false
+    },
+    {
+     "path": "/home/dev/projects/webapp/.worktrees/auth-refactor",
+     "short": "~/projects/webapp/.worktrees/auth-refactor",
+     "head": "3f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39",
+     "branch": "auth-refactor",
+     "detached": false,
+     "main": false,
+     "locked": false,
+     "prunable": false,
+     "changes": 0,
+     "lastCommit": "2026-10-16T10:32:24.356Z",
+     "sizeKb": 590000,
+     "mergedByAncestry": false,
+     "pr": null,
+     "inUse": [],
+     "keep": [
+      "not merged"
+     ],
+     "removable": false
+    }
+   ]
+  },
+  {
+   "name": "portboard",
+   "path": "/home/dev/projects/portboard",
+   "short": "~/projects/portboard",
+   "remote": "git@github.com:c10dev/portboard.git",
+   "defaultBranch": "main",
+   "prsKnown": true,
+   "error": null,
+   "worktrees": [
+    {
+     "path": "/home/dev/projects/portboard",
+     "short": "~/projects/portboard",
+     "head": "3f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39",
+     "branch": "main",
+     "detached": false,
+     "main": true,
+     "locked": false,
+     "prunable": false,
+     "changes": 0,
+     "lastCommit": "2026-10-16T16:32:24.356Z",
+     "sizeKb": 9800,
+     "mergedByAncestry": null,
+     "pr": null,
+     "inUse": [
+      3690402
+     ],
+     "keep": [
+      "main worktree"
+     ],
+     "removable": false
+    }
+   ]
+  }
+ ],
+ "totals": {
+  "repos": 3,
+  "worktrees": 6,
+  "removable": 1,
+  "prunable": 0,
+  "removableKb": 301000
+ },
+ "scan": {
+  "mode": "incremental",
+  "spawns": {
+   "git": 9
+  }
+ }
+}

@@ -1,0 +1,11 @@
+{
+ "rules": [],
+ "exact": [],
+ "problems": [],
+ "onNew": [
+  "notify",
+  "openBrowserOnce",
+  "silent",
+  "ignore"
+ ]
+}

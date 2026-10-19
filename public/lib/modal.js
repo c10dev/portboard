@@ -1,3 +1,4 @@
+// @ts-check
 // A modal over the page (docs/settings/, after the Claude app's settings modal): a <dialog> shown with showModal(), so
 // the page behind is inert and stays as it was. One copy for every modal the dashboard has:
 //   - Esc, the close button and a click on the backdrop ask to close (onRequestClose decides: the 설정 modal goes back
@@ -32,6 +33,7 @@ export function wrapTarget(list, active, back) {
 /**
  * createModal({ id, className, label | labelledBy, onRequestClose, doc })
  * → { el, open(), close(), requestClose(), isOpen }
+ * @param {{ id?: string, className?: string, label?: string, labelledBy?: string, onRequestClose?: (modal: any) => void, doc?: Document }} [opts]
  */
 export function createModal({ id, className = '', label, labelledBy, onRequestClose, doc = globalThis.document } = {}) {
   const d = doc.createElement('dialog');

@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { classify, decodeHeader, localOnly, ownerFromStatus, ownerLogin, MCP_CALLER, type Caller, type Device, type WriteDevices } from '../src/core/access.ts';
+import { classify, decodeHeader, localOnly, ownerFromStatus, ownerLogin, MCP_CALLER, TAILSCALE_POLICY, type AccessPolicy, type Caller, type Device, type WriteDevices } from '../src/core/access.ts';
 import { AuditLog, clean, targetOf, whoOf, type AuditEntry } from '../src/core/audit.ts';
 import { appRouter } from '../src/features/router.ts';
 import { REGISTRY, FEATURES } from '../src/features/registry.ts';
@@ -165,10 +165,10 @@ const DEVICES: Record<string, Device> = {
   '100.64.0.9': { addr: '100.64.0.9', name: 'docker-vm', id: 'nDockerStbl1CNTRL' },
 };
 
-function context(dir = tmp(), allow: WriteDevices | null = null) {
+function context(dir = tmp(), allow: WriteDevices | null = null, policy: AccessPolicy = TAILSCALE_POLICY, tailscale = true) {
   const audit = new AuditLog(join(dir, 'audit.jsonl'));
-  // Anything but owner/device/writeDevices/audit throws: a denied write never reaches its handler.
-  const fake = { owner: async () => OWNER, device: async (addr: string) => DEVICES[addr] ?? { addr }, writeDevices: async () => allow, audit };
+  // Anything but owner/device/writeDevices/policy/ts/audit throws: a denied write never reaches its handler.
+  const fake = { owner: async () => OWNER, device: async (addr: string) => DEVICES[addr] ?? { addr }, writeDevices: async () => allow, policy: async () => policy, ts: { available: tailscale }, audit };
   const ctx = new Proxy(fake as Record<string, unknown>, {
     get: (t, k) => (k in t ? t[k as string] : assert.fail(`handler touched ctx.${String(k)}`)),
   }) as unknown as ServerContext;
@@ -253,11 +253,58 @@ test('appRouter: GET /api/audit checks its query and filters by port', async () 
   await audit.append(entry(1, 3000));
   await audit.append(entry(2, 4000));
   const route = appRouter(REGISTRY.routes, ctx);
-  const at = async (qs: string) => route(request('GET', '100.64.0.9'), new URL(`http://x/api/audit${qs}`), ctx);
+  const at = async (qs: string) => route(request('GET', '127.0.0.1'), new URL(`http://x/api/audit${qs}`), ctx);
   assert.equal(((await at(''))?.body as { entries: unknown[] }).entries.length, 2);
   assert.deepEqual(((await at('?port=3000'))?.body as { entries: AuditEntry[] }).entries.map((e) => e.target.port), [3000]);
   assert.equal((await at('?port=0'))?.status, 400);
   assert.equal((await at('?limit=9999'))?.status, 400);
+});
+
+test('appRouter: GET /api/audit is the owner\'s only (#7); other reads stay open to the tailnet', async () => {
+  const { ctx, audit } = context();
+  await audit.append(entry(1, 3000));
+  const route = appRouter(REGISTRY.routes, ctx);
+  const get = (path: string, q: ReturnType<typeof request>) => route(q, new URL(`http://x${path}`), ctx);
+  const callers: [string, ReturnType<typeof request>, boolean][] = [
+    ['loopback (a local process)', request('GET', '127.0.0.1'), true],
+    ['serve, the owner', request('GET', '127.0.0.1', { ...SERVE, 'tailscale-user-login': OWNER }), true],
+    ['serve, another user', request('GET', '127.0.0.1', { ...SERVE, 'tailscale-user-login': 'guest@example.com' }), false],
+    ['serve, a tagged node', request('GET', '127.0.0.1', SERVE), false],
+    ['funnel', request('GET', '127.0.0.1', { ...SERVE, 'tailscale-funnel-request': '?1', 'tailscale-user-login': OWNER }), false],
+    ['direct tailnet IP', request('GET', '100.64.0.9'), false],
+    ['direct, spoofed owner login', request('GET', '100.64.0.9', { ...SERVE, 'tailscale-user-login': OWNER }), false],
+  ];
+  for (const [name, q, owner] of callers) {
+    const r = await get('/api/audit?port=3000', q);
+    if (owner) {
+      assert.equal(r?.status, 200, name);
+      assert.equal((r?.body as { entries: unknown[] }).entries.length, 1, name);
+    } else {
+      assert.equal(r?.status, 403, name);
+      const body = r?.body as { error: string; reason: string; entries?: unknown };
+      assert.equal(body.error, 'owner only', name);
+      assert.match(body.reason, /[가-힣]/, `${name}: a Korean reason`);
+      assert.equal(body.entries, undefined, `${name}: no entries`);
+    }
+  }
+  // A non-owner still reads whoami (to learn it can't write); the audit route's owner check is its own.
+  const who = await get('/api/whoami', request('GET', '100.64.0.9'));
+  assert.equal(who?.status, 200);
+  assert.equal((who?.body as { canWrite: boolean }).canWrite, false);
+});
+
+test('dashboard: the 기록 lists say "owner only" on a 403 instead of a load failure, in both locales', () => {
+  const lib = readFileSync(`${ROOT}public/lib/audit.js`, 'utf8');
+  assert.match(lib, /res\.status === 403\) return \{ ownerOnly: true \}/);
+  for (const page of ['public/features/audit.js', 'public/service.js']) {
+    const src = readFileSync(`${ROOT}${page}`, 'utf8');
+    assert.match(src, /loadAudit\(`\/api\/audit\?/, page);
+    assert.doesNotMatch(src, /tryJSON\(`\/api\/audit/, page);
+  }
+  for (const loc of ['en', 'ko']) {
+    const msgs = JSON.parse(readFileSync(`${ROOT}public/i18n/${loc}.json`, 'utf8'));
+    assert.equal(typeof msgs['audit.ownerOnly'], 'string', loc);
+  }
 });
 
 test('server.ts routes through appRouter (the owner check and the audit log), never the bare router', () => {

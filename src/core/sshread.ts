@@ -13,6 +13,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { run, type RunResult } from './exec.ts';
 import { reportHealth } from './health.ts';
+import { t } from './i18n.ts';
 
 export type SshReadError =
   | 'bad-config' // the config file is unreadable or invalid
@@ -49,6 +50,8 @@ export interface SshReadStatus {
   /** ms of the next scheduled attempt */
   nextAt: number | null;
   setupUrl: string;
+  /** why there is no fresh read, in words (current(): pending, turned off, waiting to retry); null when ok */
+  reason?: string | null;
 }
 
 export const HOST = /^[A-Za-z0-9][A-Za-z0-9.:-]*$/;
@@ -104,6 +107,18 @@ export function nextDelay(failures: number, error: SshReadError | null): number 
 /** Last good data is shown at most this long after it was read */
 export const STALE_AFTER = 15 * 60_000;
 
+/**
+ * Why a reader has no fresh read (c10dev/portboard#2: a reader sat in `pending` and nothing said why): its first
+ * attempt is running (`readingSince`, ms) or hasn't started, it is turned off, or it failed and waits for nextAt.
+ */
+export function readerReason(s: SshReadStatus, readingSince: number | null, now: number): string | null {
+  const sec = (ms: number) => Math.max(0, Math.round(ms / 1000));
+  if (s.pending) return readingSince !== null ? t('sshread.reason.reading', { sec: sec(now - readingSince) }) : t('sshread.reason.waiting');
+  if (!s.enabled) return t('sshread.reason.disabled');
+  if (s.error) return s.nextAt !== null ? t('sshread.reason.retry', { error: s.error, sec: sec(s.nextAt - now) }) : s.error;
+  return null;
+}
+
 // ---- reader ----
 
 export type Runner = (cmd: string, args: string[], timeoutMs: number) => Promise<RunResult>;
@@ -129,6 +144,8 @@ export abstract class SshReader<C extends SshTarget, D extends { at: number }, S
   protected runner: Runner;
   protected readonly now: () => number;
   private inflight: Promise<void> | null = null;
+  /** ms the running attempt started */
+  private startedAt: number | null = null;
   private logged: string | null = null;
   private readonly log: (line: string) => void;
   private readonly fakeCmd: string[] | null;
@@ -158,7 +175,7 @@ export abstract class SshReader<C extends SshTarget, D extends { at: number }, S
   /** Current status and the last good data (null once older than STALE_AFTER). */
   current(): { status: S; data: D | null } {
     const data = this.data && this.now() - this.data.at < STALE_AFTER ? this.data : null;
-    return { status: { ...this.status }, data };
+    return { status: { ...this.status, reason: readerReason(this.status, this.inflight ? this.startedAt : null, this.now()) }, data };
   }
 
   /** Start an attempt when one is due (or forced, at most every 20 s); never waits. */
@@ -188,6 +205,7 @@ export abstract class SshReader<C extends SshTarget, D extends { at: number }, S
   }
 
   refresh(): Promise<void> {
+    if (!this.inflight) this.startedAt = this.now();
     this.inflight ??= this.attempt().finally(() => {
       this.inflight = null;
     });

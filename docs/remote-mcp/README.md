@@ -18,6 +18,7 @@ node scripts/remote-smoke.ts [url] # end-to-end check (discovery → OAuth → e
 | `src/remote/oauth.ts` | metadata documents, redirect allowlist, CIMD fetch, PKCE, consent page |
 | `src/remote/tools.ts` | the remote JSON-RPC surface: lists and dispatches what the feature modules mark remote (`src/features/*`), wrapping `src/mcp/rpc.ts` |
 | `src/remote/core.ts` | `RemoteCore` (what the remote may read) and `readOnlyCore()` (writes and logs throw) |
+| `src/remote/dashboard.ts` | where snapshot, devices and usage come from: the dashboard over loopback, local reads only while it is down (#5) |
 | `src/remote/redact.ts` | what may leave the tailnet (projection + scrub) |
 | `src/remote/store.ts` | `~/.config/portboard/remote.json` (mode 600, hashes only); records an access token's last use at most once a minute |
 | `src/remote/admin.ts` | the dashboard's view of that file (derived `c-…`/`g-…` ids, no secrets) and its revokes (#31); served by `src/features/remote-connector.ts` on the dashboard only |
@@ -92,12 +93,12 @@ The 2026-07-28 revision makes CIMD a SHOULD and deprecates DCR (kept for compati
     - `https://claude.com/api/mcp/auth_callback`
     - `https://chatgpt.com/connector_platform_oauth_redirect`
     - `https://chatgpt.com/connector/oauth/<id>`
-    - `http://127.0.0.1:*`, `http://localhost:*` (Claude Code, MCP inspector; `allowLoopbackRedirects: false` turns this off)
+    - `http://127.0.0.1:*`, `http://localhost:*` (Claude Code, MCP inspector). With `allowLoopbackRedirects` unset (no remote.json, or the key left out) only for requests from loopback or the tailnet, never through Funnel; `true` also through Funnel; `false` never (#7)
     - `extraRedirectPrefixes` from remote.json, matched by origin and whole path segments (`https://x.example/cb` admits `/cb` and `/cb/…`, not `https://x.example.evil/` or `/cbx`)
 - **Consent (`/authorize`):**
   - The page names the client and its redirect host, says what is and isn't shared, and asks for an **approval code**.
   - You make the code on the dashboard's 설정 tab (**승인 코드 만들기**, `POST /api/remote/approval-code`: owner only, audited without the code, tailnet only) or on the server with `node src/remote.ts approve`; the consent page links the tab (its https address from `tailscale serve status`, or `PORTBOARD_DASHBOARD_URL`). 8 characters of Crockford base32 (~40 bits), valid 10 minutes, single use.
-  - Only its SHA-256 is stored. Five wrong tries lock that address out of the form for 10 min; twenty wrong tries from all addresses together burn the code.
+  - Only its SHA-256 is stored. Five wrong tries lock that address out of the form for 10 min (an IPv6 client counts by its /64); twenty wrong tries from all addresses together burn the code, so no code ever gets more than twenty guesses. A burned code is logged as `approval-burned`; make a new one.
   - The page tells the owner to approve only a flow they started themselves: approving a link someone else sent hands that person's claude.ai or ChatGPT account the access.
   - Errors before the redirect URI is trusted are shown as a page and never redirected. Every redirect carries `state` and `iss`.
   - The page sends `frame-ancestors 'none'`, `X-Frame-Options: DENY` and a CSP limiting `form-action` to itself and the client's redirect origin.
@@ -107,7 +108,7 @@ The 2026-07-28 revision makes CIMD a SHOULD and deprecates DCR (kept for compati
   - Access tokens are opaque 256-bit, last 1 h, and are bound to `<base>/mcp` (a token minted for `http://127.0.0.1:8794` doesn't work on another name).
   - Refresh tokens last 30 days and rotate on every use. A rotated token is kept as `used` until it would have expired: presenting it again more than 10 s after rotation revokes every token of that authorization (reuse detection). Within 10 s it is only refused, so a client retrying a lost reply doesn't lose its grant.
   - `/token` requires `client_id` for both grants.
-  - `remote.json` holds SHA-256 hashes only and is written atomically (unpredictable temp name, `O_EXCL`) with mode 600, under a lock file (`remote.json.lock`) shared by the server and the CLI, so `revoke` can't be undone by a server write in flight. The server tightens the file to 600 and its folder to 700 at start if they were looser.
+  - `remote.json` holds SHA-256 hashes only and is written atomically (unpredictable temp name, `O_EXCL`) with mode 600, under a lock file (`remote.json.lock`) shared by the server and the CLI, so `revoke` can't be undone by a server write in flight. A lock older than 10 s (its writer crashed) is broken by exactly one waiter: they race for an `O_EXCL` marker named after that lock file, and only the winner removes it (#7). The server tightens the file to 600 and its folder to 700 at start if they were looser.
   - The issuer is read from `publicUrl` once at start and pinned; editing or deleting the file at runtime doesn't move it.
 - **Rate limit and log:**
   - Failures are counted per client address: bad or expired token, wrong approval code, bad code/PKCE/refresh, an unknown client on `/authorize`, a disallowed redirect at registration.
@@ -134,7 +135,23 @@ Why a CLI code and not a button on the dashboard: Funnel traffic arrives on 127.
   - Bodies: `/mcp` 64 KB, OAuth endpoints 8 KB (`413`).
   - `headersTimeout` 10 s, `requestTimeout` 30 s, keep-alive 5 s.
   - 20 s per JSON-RPC message (`-32603 timed out`).
-  - Snapshot, devices and usage are cached for 2 s.
+  - Snapshot, devices, usage, dev servers and the saved worktree and memory state are cached for 2 s (snapshot, devices and usage on top of the dashboard's own 2 s caches, see below).
+
+## Where the data comes from (#5)
+
+The remote server doesn't collect on its own while the dashboard runs. `src/remote/dashboard.ts` reads the dashboard's answers over loopback, so `ss -ltnpH`, `docker ps`, `tailscale status`, `tailscale serve status` and the HTTP probes run once per 2 s on the machine, in the dashboard, not once in each process:
+
+| RemoteCore read | Dashboard route | Falls back to |
+|---|---|---|
+| `snapshot()` | `GET /api/ports` (`ctx.snapshot()`) | `snapshot()` |
+| `devices()` | `GET /api/devices` (`devices()` with the LAN clients the 기기 tab shows) | `devices()` |
+| `usage()` | `GET /api/usage` (`ctx.usage()`) | `usage(topology(snapshot()))` |
+
+- **Same objects, same redaction.** The routes answer the core objects as JSON (plain data, times as ISO strings), so `src/remote/redact.ts` projects exactly what it projected before. `/api/usage` adds history and 새 기기 fields; the projection never copies them. A body that isn't JSON or lacks the fields the redaction walks is read locally instead.
+- **Loopback only.** Always `http://127.0.0.1:<PORTBOARD_PORT>` (default 8790, as `src/server.ts`), GET only, with a fixed `Host: 127.0.0.1:<port>`, `Accept` and `User-Agent: portboard-remote`. Nothing from a remote client (headers, cookies, arguments) is passed on: the paths are constants. GET routes need no `X-Portboard` header.
+- **Fallback and back-off.** No connection within 1.5 s (refused, or a dashboard that hangs: 15 s for the whole answer) counts as down: that read and every read for the next 10 s are computed locally, then the dashboard is tried again. One log line when it goes away and one when it answers again. An HTTP error or a malformed body from a live dashboard is read locally once, without the back-off.
+- **Not from the dashboard:** `free_port` (its own `ss -ltnH` and serve read on each call, so a port taken a moment ago counts) and the status resource's extras (local files, no commands).
+- **#8 tools:** `list_worktrees` and `memory_usage` read the files the dashboard writes (`worktrees-state.json` after every scan, `memory-state.json` every 60 s), never a scan or `/proc` of their own; `list_dev_servers` runs the same `systemctl --user` and `git worktree list` reads as `GET /api/dev-servers`.
 
 ## Tools: allowlist
 
@@ -143,14 +160,25 @@ Why a CLI code and not a button on the dashboard: Funnel traffic arrives on 127.
 | `list_ports` | `src/features/ports.ts` | redacted projection of `summarize()` |
 | `list_devices` | `src/features/devices.ts` | redacted projection of `devices()` |
 | `free_port` | `src/features/free-ports.ts` | shared validation; returns port numbers only |
+| `list_worktrees` | `src/features/worktrees.ts` | `redactWorktrees()` of the last scan the dashboard server saved (`worktrees-state.json`); optional `repo`, `removable_only`. No `refresh`: this process never scans (#8) |
+| `list_dev_servers` | `src/features/devservers.ts` | `redactDevServers()` of `devServersDoc()` (`systemctl --user`, `git worktree list`, `package.json`), the same read as `GET /api/dev-servers` (#8) |
+| `memory_usage` | `src/features/memory.ts` | `redactMemory()` of the dashboard server's last sample (`memory-state.json`, at most 5 min old; `savedView()`); optional `top`. This process never reads `/proc` or transcripts (#8) |
 | `who_uses_what` | `src/features/usage.ts` (remote only) | the 기기 tab / 사용 중 data, optional `port` filter |
 
-A feature module offers a tool remotely with `remote: { description, call }` next to the local definition; the remote `call` gets a `RemoteCore` and must redact. `buildRegistry()` refuses a remote tool that isn't `readOnlyHint: true`, and `test/registry.test.ts` pins the set above.
+What the three #8 tools expose (projections in `src/remote/redact.ts`; anything not listed stays on the server):
 
-Not available remotely: `expose_port`, `unexpose_port`, `restart_service`, `stop_service`, `tail_logs` (logs can contain tokens), and label/pin/hide or device-name writes (they were never MCP tools). Three independent layers:
+| Tool | Fields | Never, with any flag |
+|---|---|---|
+| `list_worktrees` | `at`, `scanning`; `totals` {`repos`, `worktrees`, `removable`, `missing`, `removableMb`}; per repo `repo` (name), `defaultBranch`, `prsKnown`, `scanFailed` (yes/no); per worktree (main checkout left out) `branch`, `detached`, `state` (`merged` / `unmerged` / `locked` / `missing` / `unknown`), `pr` {`number`, `state`, `headMatches`}, `changed` (yes/no), `sizeMb`, `inUse` (yes/no), `removable`, `keep` (the fixed reason texts, with counts) | repo and worktree paths (absolute or `~`), the last commit's message, the commit id, the remote URL, pids inside, a scan's error text |
+| `list_dev_servers` | `running` [{`owner` (`<repo>@<branch>`, the name reservations use), `active`, `state`, `port`, `since`}]; `startable` [{`owner`, `scripts` (names only), `preferred`}] | worktree paths, unit names (made from the path), unit descriptions, script command text |
+| `memory_usage` | `at`; `memory` {`totalGb`, `usedGb`, `availableGb`, `availablePct`, `swapTotalGb`, `swapPct`, `psi` {`someAvg60`, `fullAvg60`}}; `pressure` {`active`, `reasons`, `reasonText`, `thresholds`}; `groups` [{`group`, `label`, `gb`, `processes`}]; `totals` (sessions, idle, stale CLI versions, newest version, MCP servers / instances / GB / orphans, services, dev servers, containers); per session `version`, `stale`, `helper`, `idle`, `idleMin`, `mb`, `mcpMb`, `uptimeH`; per service `name`, `ports`, `mb`, `dev`, `unused`; per container `name`, `mb`; `suggestions` [{`kind`, `mb`}]. **With `showProcesses`** also: session `title` and `project`, `mcpServers` [{`name`, …}], `other` [{`name` (process name), …}], a service's `session`, and the suggestion `text` | pids, session ids, command lines, cwd and paths (the scrub still runs over titles) |
+
+A feature module offers a tool remotely with `remote: { description, call }` next to the local definition (and `inputSchema` when the remote takes fewer arguments, as `list_worktrees` does); the remote `call` gets a `RemoteCore` and must redact. `buildRegistry()` refuses a remote tool that isn't `readOnlyHint: true`, and `test/registry.test.ts` pins the set above.
+
+Not available remotely: `expose_port`, `unexpose_port`, `restart_service`, `stop_service`, `tail_logs` (logs can contain tokens), `remove_worktrees`, `start_dev_server`, `stop_dev_server`, and label/pin/hide or device-name writes (they were never MCP tools). Three independent layers:
 1. `tools/list` returns only `REMOTE_TOOLS` (the registry's remote tools). All are annotated `readOnlyHint: true` and their descriptions are rewritten so they don't mention the hidden tools.
 2. `tools/call` refuses any name not in `REMOTE_TOOL_NAMES` **before touching the core**, with the same `-32602 unknown tool: <name>` as a tool that doesn't exist.
-3. The `Core` handed to shared code (`readOnlyCore`) has `expose / unexpose / restart / stop / logs` that throw. `src/remote.ts` imports only `snapshot`, `freePorts`, `devices`, `topology` and `usage` from the core, plus two readers for the status resource: the alert checker's `status()` (never started) and `loadKnown()`.
+3. The `Core` handed to shared code (`readOnlyCore`) has `expose / unexpose / restart / stop / logs` that throw, and so do `worktrees`, `devServers` and `memory`: the remote tools read those from `RemoteCore` and redact them, and shared tool code (which prints paths and titles) never gets them (`REMOTE_READS` stays `snapshot`, `devices`, `freePorts`). `src/remote.ts` imports only `snapshot`, `freePorts`, `devices`, `topology` and `usage` from the core (the first three are read from the dashboard while it runs, above), plus readers: the alert checker's `status()` (never started) and `loadKnown()` for the status resource, `loadSavedWorktrees()`, `savedView()` and `devServersDoc()` for the #8 tools. None of them writes, scans repositories or samples `/proc`.
 
 `initialize` returns its own read-only `instructions`; the stdio server's instructions point at write tools.
 
@@ -163,12 +191,12 @@ Not available remotely: `expose_port`, `unexpose_port`, `restart_service`, `stop
 | `resources/list` | `portboard://status` only |
 | `resources/templates/list` | empty: `portboard://port/{port}` and `portboard://device/{id}` are local only (they carry addresses, history and per-device detail) |
 | `resources/read` | `portboard://status`, redacted (below). Any other URI, port and device URIs included, gets `-32002 resource not found: <uri>` before the core is touched, the same as a URI that doesn't exist. |
-| `prompts/list` | `server_status_summary` (서버 상태 요약) and `port_cleanup` (포트 정리 제안), same names and titles as the stdio server, with texts that name only the four remote tools and say the connection is read-only. `port_cleanup` has no `days` argument here (the remote has no usage history). |
+| `prompts/list` | `server_status_summary` (서버 상태 요약) and `port_cleanup` (포트 정리 제안), same names and titles as the stdio server, with texts that name only remote tools (the four port and device tools) and say the connection is read-only. `port_cleanup` has no `days` argument here (the remote has no usage history). |
 | `prompts/get` | those two only; `new_dev_server`, `why_not_open` and unknown names get the same `-32602 unknown prompt: <name>` |
 
 The remote dispatcher answers `initialize`, `tools/*`, `resources/*` and `prompts/*` itself and delegates **only `ping` and notifications** to the shared one. Any other method gets `-32601` here. This matters since #16: the shared dispatcher now serves `resources/read` for ports and devices, unredacted, and must never see it from this process. `test/remote-tools.test.ts` checks that port and device URIs and the local-only prompts fail exactly like unknown ones and never reach the core.
 
-**The status resource** is built by `redactStatus()` in `src/remote/redact.ts` from the redacted projections of `list_ports`, `list_devices` and `who_uses_what` (never from core objects), passed through the shared `statusReport()` and scrubbed again. So device names, `lan-device-N` aliases and service names are exactly what the tools show. It adds two things the tools don't have, read by `src/remote.ts` from local files (cached 2 s):
+**The status resource** is built by `redactStatus()` in `src/remote/redact.ts` from the redacted projections of `list_ports`, `list_devices` and `who_uses_what` (never from core objects), passed through the shared `statusReport()` and scrubbed again. So device names, `lan-device-<id>` aliases and service names are exactly what the tools show. It adds two things the tools don't have, read by `src/remote.ts` from local files (cached 2 s):
 - watched (🔔) ports and devices that are **down**: kind, port, name, since (from `alerts-state.json` and `prefs.json`; the alert checker is never started and the channel settings it can read are never copied)
 - how many 새 기기 are pending, **a count only** (from `known-devices.json`; their names can be a MAC vendor or an address)
 
@@ -187,17 +215,20 @@ Everything that leaves the process is built by **projection**: named fields are 
 | `ssh -N -L …` commands, `user@host` | never copied; in text → `[ssh command]` |
 | pids, `curl (3790306)` | dropped; process names without pids kept |
 | LAN, Tailscale, public IPs; subnet routes; direct-path endpoints | dropped, `routes` → `routesSubnets: true/false`; in text → `[lan-ip]`, `[tailnet-ip]`, `[loopback]`, `[ip]` |
-| Device ids that are addresses (`lan:192.168.1.108`) | `lan-device-N`, consistent between `cards` and `byPort` within one response |
+| Device ids that are addresses (`lan:192.168.1.108`) | `lan-device-<6 hex>`: a keyed hash of the address (random key per process), so the same device has the same alias in every response and tool until the remote server restarts |
 | Names that are just the address (`nameSource: ip`) | `LAN device` / `unnamed device` |
 | MACs, vendor, `nameKey` | dropped; in text → `[mac]` |
 | compute-pool URL and host addresses, `detail` text | dropped |
 | Proxmox API URL, host IP, guest MACs/IPs/LAN IP, `looseMode` | dropped |
 | Proxmox credentials (`tokenId`, `secret`, `fingerprint`) and alert channel settings | never in core results, never copied; `user@realm!token` / `PVEAPIToken=` in text → `[credential]` |
 | Error messages (`pool.error`, `proxmox.error`, thrown errors) | replaced by fixed text (`Proxmox API unreachable or refused the token`, `<tool> failed on the server`) |
+| Worktree and repo paths, commit messages and ids, git remote URLs, scan errors (#8) | never copied; a scan error → `scanFailed: true` |
+| Dev-server unit names and descriptions, `package.json` script commands (#8) | never copied; script names kept |
+| Claude session titles and projects, MCP server and other process names, suggestion texts (#8, `memory_usage`) | dropped; only with `showProcesses` |
 
-Two flags in `remote.json` loosen this for a private setup: `"policy": {"showAddresses": true}` (IPs, MACs, routes, endpoints) and `"showProcesses": true` (pids and client process names). Credentials, URLs of the pool/Proxmox APIs and alert settings stay out with any flag.
+Two flags in `remote.json` loosen this for a private setup: `"policy": {"showAddresses": true}` (IPs, MACs, routes, endpoints) and `"showProcesses": true` (pids and client process names; in `memory_usage` session titles and projects, MCP server and process names and the suggestion texts, never pids or paths). Credentials, URLs of the pool/Proxmox APIs, alert settings, and every worktree and dev-server path, commit message and command stay out with any flag.
 
-Tests: `test/remote-redact.test.ts` feeds live-shaped synthetic fixtures through every projection (the status resource included) and asserts there are no IPv4/IPv6/MAC/home-path/ssh/pid/cmdline/credential/URL matches, under both policy states. `test/remote-tools.test.ts` covers the tool, resource and prompt allowlists, drift and layer 3. `test/remote-http.test.ts` covers the transport, OAuth flow, Host/Origin, rate limit and on-disk secrets.
+Tests: `test/remote-redact.test.ts` feeds live-shaped synthetic fixtures through every projection (the status resource and the #8 worktree, dev-server and memory projections included) and asserts there are no IPv4/IPv6/MAC/home-path/ssh/pid/cmdline/credential/URL matches, and for #8 no paths, commit messages, unit names, commands, titles, projects or process names, under both policy states. `test/remote-tools.test.ts` covers the tool, resource and prompt allowlists, drift and layer 3. `test/remote-http.test.ts` covers the transport, OAuth flow, Host/Origin, rate limit and on-disk secrets.
 
 ## Managing tokens from the dashboard (#31)
 
@@ -226,7 +257,7 @@ Rotating "everything" (there is no signing secret; tokens are opaque and stored 
 }
 ```
 
-Only the first five keys are settings; the server and CLI manage the rest. Without `publicUrl` the issuer is derived from the request's Host header (`http://127.0.0.1:8794` locally, `https://<host>` for Funnel requests). Set it before going public so the issuer never depends on a header. The server reads `publicUrl` into its Host allowlist at start, so restart after changing it.
+Only the first five keys are settings; the server and CLI manage the rest. Boolean settings count only as a literal `true`/`false`. `allowLoopbackRedirects` left out behaves as "local and tailnet only" (see the redirect list above), so a server that went public before this file was written doesn't accept loopback clients from the internet. Without `publicUrl` the issuer is derived from the request's Host header (`http://127.0.0.1:8794` locally, `https://<host>` for Funnel requests). Set it before going public so the issuer never depends on a header. The server reads `publicUrl` into its Host allowlist at start, so restart after changing it.
 
 The optional sixth setting, `"health": {"soonDays": 7, "idleDays": 7, "hideDays": 7}`, sets the thresholds for the 설정 tab's 커넥터 상태 (만료 임박, 응답 없음, and how long "n일 동안 숨기기" hides the banner). Only the dashboard reads it, on every request, so it needs no restart.
 
@@ -253,7 +284,7 @@ tailscale funnel status
 node scripts/remote-smoke.ts https://devbox.example.ts.net
 ```
 
-With `allowLoopbackRedirects: false`, a stranger can still register clients, but every redirect they can name belongs to claude.ai or chatgpt.com, so a code can only reach those services' callbacks. Claude Code connecting to the *public* URL needs a loopback redirect, so turn it back on temporarily for that. The smoke script also uses a loopback redirect: run it before step a, or with the flag on.
+With `allowLoopbackRedirects: false`, a stranger can still register clients, but every redirect they can name belongs to claude.ai or chatgpt.com, so a code can only reach those services' callbacks. Claude Code connecting to the *public* URL needs a loopback redirect, so set it to `true` temporarily for that (unset is not enough: through Funnel only `true` allows it). The smoke script also uses a loopback redirect: against `http://127.0.0.1:8794` it works while the flag is unset; against the public URL it needs `true`.
 
 If ChatGPT fails during discovery, first try removing the `/.well-known/openid-configuration` alias in `src/remote/http.ts`. It serves the RFC 8414 document, which lacks OIDC-only fields such as `jwks_uri`.
 
@@ -280,7 +311,7 @@ Do **not** use `tailscale funnel reset` or `tailscale serve reset`: they also re
 - **claude.ai:** Customize → Connectors → Add custom connector (Team/Enterprise: Organization settings → Connectors → Add → Custom → Web).
   - Name `Portboard`, URL `https://devbox.example.ts.net/mcp`, OAuth left on automatic. Claude uses CIMD here because the metadata allows it, else DCR.
   - When the consent page opens, make a code on the dashboard's 설정 tab (승인 코드 만들기; or `node src/remote.ts approve` on devbox), type it, then press 승인.
-  - In the chat's tool menu, allow the four tools. If the connector menu offers Portboard's prompts (서버 상태 요약, 포트 정리 제안) or the `portboard://status` resource, they can be attached from there; this hasn't been tried in claude.ai yet.
+  - In the chat's tool menu, allow the seven tools (a connector added before #8 lists the three new ones after a reconnect or a tool-list refresh). If the connector menu offers Portboard's prompts (서버 상태 요약, 포트 정리 제안) or the `portboard://status` resource, they can be attached from there; this hasn't been tried in claude.ai yet.
 - **ChatGPT:** chatgpt.com → Plugins/Apps → + → Add custom MCP server (or Settings → Apps & Connectors → Advanced → Developer mode → Create).
   - URL `https://devbox.example.ts.net/mcp`, authentication OAuth, no client ID (CIMD/DCR).
   - Accept the risk notice, then the same approval-code step.
@@ -291,15 +322,17 @@ Do **not** use `tailscale funnel reset` or `tailscale serve reset`: they also re
 
 **Without a token today** (by design): the two `.well-known` documents, the consent page and the `401`/`405`/`421` responses. That reveals the host name and that a Portboard remote MCP exists. The internet can also register clients (capped at 50, redirects only to claude.ai/chatgpt.com, plus loopback unless turned off) and send `/authorize` requests that trigger cached fetches to claude.ai/chatgpt.com only.
 
-One nuisance: anyone who can open the consent page for a valid client (e.g. Claude's public CIMD id) can burn a pending approval code with twenty wrong tries from at least four addresses (five per address). That costs the owner a new `approve`, not access. The code exists only for the 10 minutes after the owner makes one.
+One nuisance (accepted, #7): anyone who can open the consent page for a valid client (e.g. Claude's public CIMD id) can burn a pending approval code with twenty wrong tries from at least four addresses (five per address; an IPv6 client counts by its /64). That costs the owner a new code, not access: twenty guesses in total is what bounds brute force against the code's 2⁴⁰ values, so a burn budget that a stranger can't spend can't exist. The code exists only for the 10 minutes after the owner makes one.
 
 The full review, with findings and their tests, is in [SECURITY-REVIEW.md](SECURITY-REVIEW.md).
 
 **If token checking were bypassed:**
-- Readable: the four read-only tools' redacted output, the status resource built from it (plus which watched ports are down and how many new devices are pending), and two prompt texts.
+- Readable: the seven read-only tools' redacted output, the status resource built from it (plus which watched ports are down and how many new devices are pending), and two prompt texts.
   - The host name `devbox` and its tailnet DNS name.
   - Every listening port with its service name and systemd unit (e.g. `webapp OpenAI Secure MCP Tunnel`, `Supabase MCP SSH Tunnel`, `Agent Harness Web UI`), container names and HTTP status.
   - Device names (`dev-mac`, `iphone`, `desktop-pc`, `gpu-box`, `pve1`, `nas`…), online/last-seen times, compute-pool load and run counts, Proxmox guest names and sizes.
   - Which device is using which service right now, with byte counts. That is an activity pattern.
-- Not readable: no IPs, MACs, paths, commands, pids, logs, credentials or alert settings.
+  - Repository names and branch names (branch names can say what is being worked on), PR numbers and states, which worktrees have uncommitted changes, and which dev servers run on which port (#8).
+  - How much memory is free and how many Claude sessions and MCP servers run, with their sizes (#8). Not their titles or projects (unless `showProcesses` is set).
+- Not readable: no IPs, MACs, paths, commands, pids, logs, credentials, alert settings, commit messages or session titles.
 - Not possible: no action. The tools that act don't exist in this process's dispatch, and the core it holds throws on them. The tailnet URLs in the output don't open from the internet.

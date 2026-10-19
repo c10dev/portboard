@@ -83,6 +83,7 @@ Production paths. A preview has its own copy of every file Portboard writes (see
 | `~/.config/portboard/remote.json` | remote MCP: public URL, clients, token hashes (mode 600) | `portboard-remote` |
 | `~/.local/state/portboard/usage-history.json` | last-used history, 30-day retention | `portboard` (throttled) |
 | `~/.local/state/portboard/alerts-state.json` | alert state (only once something is watched) | `portboard` |
+| `~/.local/state/portboard/devhealth-state.json` | device health alerts: each condition's state (read by the digest) | `portboard` (every minute) |
 | `~/.local/state/portboard/selfwatch.json` | self-watch: each collector's down/up state, expiry warnings sent, the last view (read by the MCP server) | `portboard` (on change, else every 10 min) |
 | `~/.local/state/portboard/known-devices.json` | known devices and 새 기기 state; seeded on first run | `portboard` (on change) |
 | `~/.local/state/portboard/uptime.json` | uptime of watched ports, run-length segments, 30-day retention | `portboard` (at most once a minute) |
@@ -99,6 +100,16 @@ Every background collector reports each attempt (`src/core/health.ts`): `usage` 
 - **Expiry (hourly, and at start):** the Proxmox token (`/access/users/{user}/token/{id}`, else `/access/users?full=1`, which PVEAuditor may read; the user's own `expire` counts too) and remote MCP clients' newest refresh token (`remote.json`, read only, no hashes). One warning per credential and date at 7 days or past. The SSH key and the ntfy topic show "no expiry"; anything unreadable shows "unknown", never a guess.
 - **Where:** `GET /api/health` stays `{"ok": true}`; `GET /api/health?detail` adds `collectors`, `failing`, `summary` and `expiry`. The header chip (수집 정상 / N개 실패) opens the details. MCP `portboard://status` (local) has a `collection` section. `PORTBOARD_ALERTS=off` keeps tracking but sends nothing.
 - **compute-pool watching Portboard:** with compute-pool's `watch` support, `config.json` → `"watch": [{"name": "portboard", "url": "http://127.0.0.1:8790/api/health"}]` makes `cpool monitor` alert when Portboard itself stops answering for 3 min.
+
+## Device health alerts
+
+`src/core/devhealth.ts`, `src/features/devhealth.ts` (#2). Every 60 s the server reads the devices data (the same as `GET /api/devices`) and checks three conditions on the other machines, each with its own state:
+
+- **Job failures:** a compute-pool host whose jobs failed `failPct` % or more of at least `failMinRuns` runs in the last 24 h (`pool.last24h`). The data is already a 24 h window, so it alerts on the first check that shows it.
+- **Running but off the tailnet:** a Proxmox guest with status `running` whose matched tailnet device has been offline for `offlineMin` minutes (from its `lastSeen` when Tailscale knows it).
+- **High load:** a pool host with load1 / cores at `loadPerCore` or more for `loadMin` minutes. Not for a host compute-pool has lost (`host-down`, `agent-away`): its numbers are stale.
+
+One alert when a condition starts, a reminder every `reminderHours` while it lasts, one recovery once it has been clear (with a margin) for `recoverMin`. A host leaving compute-pool's rotation is not alerted here: `cpool monitor` does that. Thresholds: `devhealth.json` ([config.md](config.md#device-health-devhealthjson)). The state is `~/.local/state/portboard/devhealth-state.json`, so a restart doesn't re-alert. Alerts go through compute-pool's channel only where alerts may be sent (production, or a preview with `PORTBOARD_PREVIEW_ALERTS=1`; `PORTBOARD_ALERTS=off` stops them); the state is tracked either way. `GET /api/devhealth` shows the conditions now, and the daily/weekly digest has one line while a condition is alerted.
 
 ## Proxmox ports over SSH (read-only)
 

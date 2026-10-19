@@ -19,25 +19,41 @@
 // address (serve: X-Forwarded-For, which tailscaled sets; direct: the socket). The device goes into the audit line and
 // /api/whoami, and an optional allowlist (writeDevices in access.json, PORTBOARD_WRITE_DEVICES) limits serve writes
 // to the listed node names or stable node IDs.
+//
+// Token mode (c10dev/portboard#12), opt-in (`"mode": "token"` in access.json or PORTBOARD_ACCESS_MODE=token), for an
+// install without Tailscale or one that wants writes from the LAN: a request that carries `Authorization: Bearer
+// <owner token>` writes, from any address, recorded as source `token`. The token is 32 random bytes made by
+// `portboard token`; only its sha256 is kept (owner-token.json, 0600). On top of the table above:
+//   - Funnel never writes, token or not: checked first.
+//   - A token that is sent but wrong (or can't be checked: no token made yet, a broken file) takes write rights away,
+//     even from loopback: sending something can lose rights, never gain them without the real token.
+//   - requireTokenOnLoopback: a local process needs the token too, and so does serve. On loopback tailscaled's
+//     headers can be typed by any local process, so a serve login can't stand in for the token any more.
+//   - Without a token, everything else is decided as in tailscale mode (serve with the owner's login still writes).
 
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { readFile, stat } from 'node:fs/promises';
+import { keyedCache } from './cache.ts';
 import { run, runShared, type RunResult } from './exec.ts';
 import { writePrivate } from './atomic.ts';
 import { t } from './i18n.ts';
 
-export type Source = 'loopback' | 'serve' | 'direct' | 'mcp';
+export type Source = 'loopback' | 'serve' | 'direct' | 'mcp' | 'token';
 
 export interface Caller {
   source: Source;
   /** Tailscale login through serve; null for loopback, direct and tagged devices */
   login: string | null;
-  /** The owner: loopback, mcp, or serve with the owner's login */
+  /** The owner: loopback, mcp, serve with the owner's login, or the owner token (token mode) */
   owner: boolean;
   canWrite: boolean;
   /** Why not, in Korean for the dashboard (set when canWrite is false; the UI puts "읽기 전용" in front) */
   reason?: string;
-  /** direct: the socket address; serve: the X-Forwarded-For address tailscaled set (when it is one IP) */
+  /**
+   * direct, and token from another machine: the socket address; serve, and token through a proxy: the X-Forwarded-For
+   * address (when it is one IP)
+   */
   addr?: string;
   /** serve and direct: the tailnet node at `addr`, as far as `tailscale whois` knows it (resolveCaller) */
   device?: Device;
@@ -109,8 +125,59 @@ export function decodeHeader(v: string): string {
   }
 }
 
-/** Who is calling and whether they may write. `owner` is the owner's login, or null when it isn't known. */
-export function classify(req: ReqLike, owner: string | null): Caller {
+/**
+ * Who is calling and whether they may write. `owner` is the owner's login, or null when it isn't known. `policy`:
+ * token mode's settings (loadAccessPolicy); without one, or in tailscale mode, the Authorization header is never read.
+ */
+export function classify(req: ReqLike, owner: string | null, policy: AccessPolicy = TAILSCALE_POLICY): Caller {
+  return policy.mode === 'token' ? classifyToken(req, owner, policy) : classifyTailscale(req, owner);
+}
+
+/** Token mode: the rules in the header comment, on top of tailscale mode's decision. */
+function classifyToken(req: ReqLike, owner: string | null, policy: AccessPolicy): Caller {
+  const base = classifyTailscale(req, owner);
+  const sock = req.socket?.remoteAddress ?? '';
+  const loopback = LOOPBACK.has(sock);
+  // With the token required on loopback, a serve login there is only text any local process could have typed: not
+  // recorded as who it was
+  const forgeable = policy.requireTokenOnLoopback && loopback;
+  const deny = (reason: string): Caller => ({ ...base, ...(forgeable ? { login: null } : {}), owner: false, canWrite: false, reason });
+  // Funnel is the public internet: never a write, whatever it sends (a leaked token must not open the dashboard to it)
+  if (loopback && req.headers['tailscale-funnel-request'] !== undefined) return deny(t('access.reason.funnel'));
+  const sent = bearerToken(req);
+  if (sent !== undefined) {
+    const why = tokenProblem(sent, policy);
+    if (why) return deny(why);
+    // where it came from, for the audit line: the socket, or the address a proxy in front of us gave
+    const addr = !loopback ? sock || 'unknown' : localOnly(req) ? null : forwardedAddr(req);
+    return { source: 'token', login: null, owner: true, canWrite: true, ...(addr ? { addr } : {}) };
+  }
+  // serve's login comes over loopback too, and any local process can type it: with the token required there, only
+  // the token counts
+  if (forgeable) return deny(t('access.reason.tokenRequired'));
+  if (base.source === 'direct') return deny(t('access.reason.directToken'));
+  return base;
+}
+
+/**
+ * The token in `Authorization: Bearer <token>`: undefined without an Authorization header, '' when there is one but it
+ * isn't a bearer token of a sane shape (that counts as a wrong token).
+ */
+export function bearerToken(req: ReqLike): string | undefined {
+  const v = one(req.headers.authorization);
+  if (v === undefined) return undefined;
+  const m = /^Bearer[ \t]+([A-Za-z0-9._~+/=-]{1,256})[ \t]*$/i.exec(v);
+  return m ? m[1] : '';
+}
+
+/** Why `token` doesn't make the caller the owner (a reason for the dashboard), or null when it is the owner token. */
+export function tokenProblem(token: string, policy: AccessPolicy): string | null {
+  if (policy.error) return t('access.reason.tokenFile', { error: policy.error });
+  if (!policy.tokenHash) return t('access.reason.noToken');
+  return tokenMatches(token, policy.tokenHash) ? null : t('access.reason.badToken');
+}
+
+function classifyTailscale(req: ReqLike, owner: string | null): Caller {
   const addr = req.socket?.remoteAddress ?? '';
   if (!LOOPBACK.has(addr)) {
     return { source: 'direct', login: null, owner: false, canWrite: false, addr: addr || 'unknown', reason: t('access.reason.direct') };
@@ -196,36 +263,12 @@ export function deviceResolver(opts: ResolverOptions = {}): (addr: string) => Pr
   const ttl = opts.ttlMs ?? 180_000;
   const miss = opts.missMs ?? 60_000;
   const max = opts.max ?? 512;
-  const now = opts.now ?? Date.now;
-  const cache = new Map<string, { until: number; value: Promise<Device> }>();
-  return (addr: string) => {
-    if (!isTailnetAddr(addr)) return Promise.resolve({ addr });
-    const t = now();
-    const hit = cache.get(addr);
-    if (hit && t < hit.until) return hit.value;
-    cache.delete(addr);
-    if (cache.size >= max) {
-      for (const [k, v] of cache) if (t >= v.until) cache.delete(k);
-      for (const k of cache.keys()) {
-        if (cache.size < max) break;
-        cache.delete(k);
-      }
-    }
-    const entry: { until: number; value: Promise<Device> } = { until: t + ttl, value: Promise.resolve({ addr }) };
-    entry.value = exec(['whois', '--json', addr]).then(
-      (r) => {
-        const d = r.ok ? parseWhois(r.stdout, addr) : { addr };
-        if (!d.name && !d.id) entry.until = now() + miss;
-        return d;
-      },
-      () => {
-        entry.until = now() + miss;
-        return { addr };
-      },
-    );
-    cache.set(addr, entry);
-    return entry.value;
-  };
+  const cache = keyedCache(
+    (addr: string): Promise<Device> => exec(['whois', '--json', addr]).then((r) => (r.ok ? parseWhois(r.stdout, addr) : { addr }), () => ({ addr })),
+    // a lookup that found nobody (or failed) is asked again sooner, counted from when it answered
+    { ttlMs: ttl, maxEntries: max, shortMs: (d) => (!d.name && !d.id ? miss : null), now: opts.now },
+  );
+  return (addr: string) => (isTailnetAddr(addr) ? cache(addr) : Promise.resolve({ addr }));
 }
 
 // ---------- the write-device allowlist (M1) ----------
@@ -344,16 +387,116 @@ export interface CallerDeps {
   device(addr: string): Promise<Device>;
   /** the allowlist (loadWriteDevices), null when it isn't set */
   writeDevices(): Promise<WriteDevices | null>;
+  /** token mode's settings (loadAccessPolicy); without it, tailscale mode */
+  policy?(): Promise<AccessPolicy>;
 }
 
-/** classify, plus the device behind a serve or direct caller and the write-device allowlist. For writes and /api/whoami. */
+/**
+ * classify, plus the device behind a serve, direct or token caller and the write-device allowlist. For writes and
+ * /api/whoami. The allowlist limits serve logins only: the owner token is its own credential.
+ */
 export async function resolveCaller(req: ReqLike, deps: CallerDeps): Promise<Caller> {
-  let c = classify(req, await deps.owner());
+  let c = classify(req, await deps.owner(), deps.policy ? await deps.policy() : TAILSCALE_POLICY);
   const addr = c.addr;
-  if ((c.source === 'serve' || c.source === 'direct') && addr && isIP(addr)) {
+  if ((c.source === 'serve' || c.source === 'direct' || c.source === 'token') && addr && isIP(addr)) {
     c = { ...c, device: await deps.device(addr).catch((): Device => ({ addr })) };
   }
   return c.source === 'serve' && c.canWrite ? restrictToDevices(c, await deps.writeDevices()) : c;
+}
+
+// ---------- token mode (#12) ----------
+
+export type AccessMode = 'tailscale' | 'token';
+
+/** How writes are decided: access.json's mode and requireTokenOnLoopback (and their env overrides), and the token hash. */
+export interface AccessPolicy {
+  mode: AccessMode;
+  /** token mode only: loopback, and so serve, needs the token too */
+  requireTokenOnLoopback: boolean;
+  /** sha256 of the owner token, hex; null when `portboard token` hasn't made one */
+  tokenHash: string | null;
+  /** the mode settings or owner-token.json can't be used: token writes are refused until it's fixed */
+  error?: string;
+}
+
+/** The default: no token, the Authorization header is never read. */
+export const TAILSCALE_POLICY: AccessPolicy = { mode: 'tailscale', requireTokenOnLoopback: false, tokenHash: null };
+
+/** Owner tokens: `pbt_` and 32 random bytes, base64url (47 characters). */
+export const TOKEN_PREFIX = 'pbt_';
+
+export const hashToken = (token: string): string => createHash('sha256').update(token, 'utf8').digest('hex');
+
+/** A new owner token and the hash to keep. The token itself is printed once and never stored. */
+export function generateToken(): { token: string; hash: string } {
+  const token = `${TOKEN_PREFIX}${randomBytes(32).toString('base64url')}`;
+  return { token, hash: hashToken(token) };
+}
+
+/** Constant time: the token is hashed to 32 bytes first, so neither its length nor its content shows in the timing. */
+export function tokenMatches(token: string, hash: string): boolean {
+  if (!token || !/^[0-9a-f]{64}$/.test(hash)) return false;
+  return timingSafeEqual(createHash('sha256').update(token, 'utf8').digest(), Buffer.from(hash, 'hex'));
+}
+
+/** Write owner-token.json ({sha256, created}; 0600, atomically). Rotation: the old token stops working at once. */
+export async function saveTokenHash(path: string, hash: string, now = new Date()): Promise<void> {
+  await writePrivate(path, `${JSON.stringify({ sha256: hash, created: now.toISOString() })}\n`);
+}
+
+/** owner-token.json → its hash; null when there is none; error when it can't be used (not 0600, not its shape). */
+export async function loadTokenHash(path: string): Promise<{ hash: string | null; created?: string; error?: string }> {
+  let text: string;
+  try {
+    const st = await stat(path);
+    if ((st.mode & 0o077) !== 0) return { hash: null, error: t('access.file.mode') };
+    text = await readFile(path, 'utf8');
+  } catch (err: any) {
+    return err?.code === 'ENOENT' ? { hash: null } : { hash: null, error: t('access.file.unreadable') };
+  }
+  try {
+    const v = JSON.parse(text);
+    if (v && typeof v.sha256 === 'string' && /^[0-9a-f]{64}$/.test(v.sha256)) {
+      return { hash: v.sha256, ...(typeof v.created === 'string' ? { created: v.created.slice(0, 40) } : {}) };
+    }
+  } catch {}
+  return { hash: null, error: t('access.token.badFile') };
+}
+
+const truthy = (v: string | undefined) => /^(1|true|yes|on)$/i.test((v ?? '').trim());
+
+/**
+ * The access policy: access.json's `mode` ("tailscale", the default, or "token") and `requireTokenOnLoopback`, then
+ * PORTBOARD_ACCESS_MODE (replaces mode) and PORTBOARD_REQUIRE_TOKEN_ON_LOOPBACK=1 (can only turn it on), then the
+ * token hash (token mode only). Read on every call, like the write-device allowlist, so an edit or a new token applies
+ * at once. A mode that is neither is an error and counts as tailscale mode: a typo never opens anything.
+ */
+export async function loadAccessPolicy(accessPath: string, tokenPath: string, env: Record<string, string | undefined> = process.env): Promise<AccessPolicy> {
+  const errors: string[] = [];
+  let fileMode: unknown;
+  let fileLoopback: unknown;
+  try {
+    const st = await stat(accessPath);
+    if ((st.mode & 0o077) !== 0) errors.push(`access.json: ${t('access.file.mode')}`);
+    else {
+      const v: unknown = JSON.parse(await readFile(accessPath, 'utf8'));
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        fileMode = (v as Record<string, unknown>).mode;
+        fileLoopback = (v as Record<string, unknown>).requireTokenOnLoopback;
+      } else errors.push(`access.json: ${t('access.file.notObject')}`);
+    }
+  } catch (err: any) {
+    if (err?.code !== 'ENOENT') errors.push(`access.json: ${err instanceof SyntaxError ? t('access.file.notJson') : t('access.file.unreadable')}`);
+  }
+  const raw = env.PORTBOARD_ACCESS_MODE?.trim() || fileMode;
+  let mode: AccessMode = 'tailscale';
+  if (raw === 'token' || raw === 'tailscale') mode = raw;
+  else if (raw !== undefined) errors.push(t('access.token.badMode', { mode: String(raw).slice(0, 40) }));
+  if (fileLoopback !== undefined && typeof fileLoopback !== 'boolean') errors.push(t('access.token.badLoopback'));
+  const requireTokenOnLoopback = mode === 'token' && (fileLoopback === true || truthy(env.PORTBOARD_REQUIRE_TOKEN_ON_LOOPBACK));
+  const tok = mode === 'token' ? await loadTokenHash(tokenPath) : { hash: null };
+  if (tok.error) errors.push(`owner-token.json: ${tok.error}`);
+  return { mode, requireTokenOnLoopback, tokenHash: tok.hash, ...(errors.length ? { error: errors.join('; ') } : {}) };
 }
 
 /** The stdio MCP server: a child of a local Claude session, so the owner. */

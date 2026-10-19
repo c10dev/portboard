@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { run } from './exec.ts';
+import { services } from './platform/services.ts';
 import { t } from './i18n.ts';
 
 export const UNIT_PREFIX = 'pb-dev-';
@@ -113,10 +113,13 @@ export function startArgs(o: { unit: string; dir: string; script: string; fw: Fr
 }
 
 export async function listDevServers(): Promise<DevServer[]> {
-  const r = await run('systemctl', ['--user', 'list-units', `${UNIT_PREFIX}*`, '--all', '--no-legend', '--plain'], 5_000);
+  const sm = services();
+  // no systemd (#11): Portboard can't have started any
+  if (sm.unavailable) return [];
+  const r = await sm.list(`${UNIT_PREFIX}*`);
   const units = r.stdout.split('\n').map((l) => l.trim().split(/\s+/)[0]).filter((u) => u?.startsWith(UNIT_PREFIX));
   if (!units.length) return [];
-  const show = await run('systemctl', ['--user', 'show', '-p', 'Id,WorkingDirectory,ActiveState,SubState,Description,ActiveEnterTimestamp', ...units], 5_000);
+  const show = await sm.show(units, 'Id,WorkingDirectory,ActiveState,SubState,Description,ActiveEnterTimestamp', 5_000);
   const out: DevServer[] = [];
   for (const block of show.stdout.split('\n\n')) {
     const get = (k: string) => new RegExp(`^${k}=(.*)$`, 'm').exec(block)?.[1] ?? '';
@@ -149,12 +152,12 @@ export function planStart(o: { dir: string; label: string; script: string; comma
 }
 
 export async function startUnit(plan: StartPlan): Promise<{ ok: boolean; message: string }> {
-  const r = await run('systemd-run', plan.args, 15_000);
+  const r = await services().startTransient(plan.args);
   return r.ok ? { ok: true, message: t('devservers.started', { unit: plan.unit, port: plan.port, fw: plan.fw }) } : { ok: false, message: (r.stderr || r.stdout).trim().slice(0, 300) };
 }
 
 export async function stopUnit(unit: string): Promise<{ ok: boolean; message: string }> {
   if (!unit.startsWith(UNIT_PREFIX)) return { ok: false, message: 'not a Portboard dev server unit' };
-  const r = await run('systemctl', ['--user', 'stop', unit], 20_000);
+  const r = await services().stop(unit, true);
   return r.ok ? { ok: true, message: t('devservers.stopped', { unit }) } : { ok: false, message: (r.stderr || r.stdout).trim().slice(0, 300) };
 }

@@ -1,0 +1,12 @@
+{
+ "settings": {
+  "mode": "daily",
+  "time": "09:00"
+ },
+ "scheduled": true,
+ "channel": {
+  "configured": true
+ },
+ "nextAt": "2026-10-18T09:00:24.356Z",
+ "lastSent": "2026-10-17T09:00:24.356Z"
+}

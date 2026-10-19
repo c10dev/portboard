@@ -11,6 +11,7 @@ import {
 } from '../src/core/known.ts';
 import { loadPrefs, newDeviceSettings, setNewDevicePrefs, setPortPrefs } from '../src/core/prefs.ts';
 import type { DeviceCard, UseRow } from '../src/core/usage.ts';
+import { L } from './fixtures/locale.ts';
 
 const MIN = 60_000;
 const T0 = Date.UTC(2026, 9, 17, 12);
@@ -65,7 +66,7 @@ function day1() {
 test('observationOf: neighbours on docker/bridge interfaces and MACs of known tailnet devices are left out', () => {
   const o = day1();
   assert.deepEqual(o.neighbors.map((n) => n.key), ['mac:b0:38:6c:0a:0b:07']);
-  assert.equal(o.neighbors[0].name, 'EFM Networks 기기');
+  assert.equal(o.neighbors[0].name, L('EFM Networks 기기', 'EFM Networks device'));
   // routed traffic is the router's, not a device connecting; the self card is not tracked
   assert.deepEqual(o.connected.map((c) => [c.key, c.service?.name]), [['ts:dev-mac', 'SSH'], ['ts:nas', 'svc22000']]);
   assert.deepEqual(o.present.map((c) => c.key).sort(), ['ip:192.168.1.108', 'ts:dev-mac', 'ts:iphone', 'ts:nas', 'ts:pve1']);

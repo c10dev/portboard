@@ -1,3 +1,4 @@
+// @ts-check
 // 읽기 전용 표시 (#29): writes are the owner's only — this machine, or the owner's Tailscale login through
 // tailscale serve. GET /api/whoami says whether this browser may write; when it may not, the page gets
 // <html data-readonly>, every control marked data-write looks disabled (style.css), and a line in the shell's sidebar

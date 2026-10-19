@@ -14,7 +14,7 @@ import { randomBytes } from 'node:crypto';
 import { PROTOCOL_VERSIONS } from '../mcp/rpc.ts';
 import { STRICT, type RedactPolicy } from './redact.ts';
 import { handleRemoteMessage, type RemoteCore } from './tools.ts';
-import { clientAddress, FailureLimiter, hostAllowed, originAllowed, stderrLogger, viaFunnel, type Logger } from './guard.ts';
+import { approvalKey, clientAddress, FailureLimiter, hostAllowed, originAllowed, stderrLogger, viaFunnel, type Logger } from './guard.ts';
 import {
   authServerMetadata,
   consentHtml,
@@ -140,7 +140,8 @@ export function createRemoteHandler(deps: RemoteDeps) {
   // claude.ai and ChatGPT call from shared egress addresses, so anyone could otherwise get the owner's connector
   // locked out by making their own connector fail from the same address.
   const limiter = new FailureLimiter(20, 10 * 60_000, now);
-  // Wrong approval codes per address: one address can't burn the owner's pending code on its own.
+  // Wrong approval codes per address (an IPv6 /64 counts as one, approvalKey): one address can't burn the owner's
+  // pending code on its own. The store burns the code after 20 wrong tries from everyone together.
   const approvalLimiter = new FailureLimiter(5, 10 * 60_000, now);
   // Unauthenticated work that writes the file or fetches from the internet: per address and for everyone together.
   const registerLimiter = new FailureLimiter(10, 10 * 60_000, now);
@@ -160,7 +161,13 @@ export function createRemoteHandler(deps: RemoteDeps) {
     showAddresses: s.policy?.showAddresses === true || STRICT.showAddresses,
     showProcesses: s.policy?.showProcesses === true || STRICT.showProcesses,
   });
-  const redirectOpts = (s: RemoteState) => ({ allowLoopback: s.allowLoopbackRedirects !== false, extraPrefixes: strings(s.extraRedirectPrefixes) });
+  // Loopback redirects (Claude Code, MCP inspector, the smoke script): a literal true or false in remote.json decides.
+  // Unset (no remote.json at all, or the key left out) they work only for requests that didn't come through Funnel, so
+  // a server that goes public before its file is written doesn't hand strangers loopback clients (security review S11).
+  const redirectOpts = (s: RemoteState, req: IncomingMessage) => ({
+    allowLoopback: s.allowLoopbackRedirects === true || (s.allowLoopbackRedirects !== false && !viaFunnel(req)),
+    extraPrefixes: strings(s.extraRedirectPrefixes),
+  });
 
   async function resolveClient(id: string, s: RemoteState): Promise<ClientInfo | string> {
     if (Object.hasOwn(s.clients, id)) {
@@ -270,7 +277,7 @@ export function createRemoteHandler(deps: RemoteDeps) {
     if (!uris.length || uris.length > 10 || !uris.every((u: unknown) => typeof u === 'string')) {
       return json(res, 400, { error: 'invalid_redirect_uri', error_description: 'redirect_uris must be a non-empty list' });
     }
-    const bad = uris.find((u: string) => !redirectAllowed(u, redirectOpts(s)));
+    const bad = uris.find((u: string) => !redirectAllowed(u, redirectOpts(s, req)));
     if (bad) {
       authFail(req, '/register', 'redirect-not-allowed', { redirect: bad.slice(0, 120) });
       return json(res, 400, { error: 'invalid_redirect_uri', error_description: `redirect_uri not allowed: ${bad}` });
@@ -293,13 +300,13 @@ export function createRemoteHandler(deps: RemoteDeps) {
   }
 
   /** Checks shared by GET and POST /authorize. Errors before the redirect URI is trusted are shown, not redirected. */
-  async function authorizeRequest(p: Record<string, string>, s: RemoteState, base: string) {
+  async function authorizeRequest(req: IncomingMessage, p: Record<string, string>, s: RemoteState, base: string) {
     if (!p.client_id) return { page: 'client_id is missing' } as const;
     const client = await resolveClient(p.client_id, s);
     if (typeof client === 'string') return { page: client } as const;
     const redirectUri = p.redirect_uri || (client.redirectUris.length === 1 ? client.redirectUris[0] : '');
     if (!redirectUri || !client.redirectUris.includes(redirectUri)) return { page: 'redirect_uri is not registered for this client' } as const;
-    if (!redirectAllowed(redirectUri, redirectOpts(s))) return { page: 'redirect_uri is not on the allowlist' } as const;
+    if (!redirectAllowed(redirectUri, redirectOpts(s, req))) return { page: 'redirect_uri is not on the allowlist' } as const;
 
     const back = (error: string, description: string) => {
       const u = new URL(redirectUri);
@@ -321,7 +328,7 @@ export function createRemoteHandler(deps: RemoteDeps) {
     const blocked = limiter.blocked(ip);
     if (blocked) return html(res, 429, errorHtml(t('remoteHttp.tooMany', { n: Math.ceil(blocked / 60) })));
     const p = req.method === 'POST' ? await readParams(req) : Object.fromEntries(new URL(req.url ?? '/', 'http://x').searchParams);
-    const checked = await authorizeRequest(p, s, base);
+    const checked = await authorizeRequest(req, p, s, base);
     if ('page' in checked) {
       // Counted: each unknown https client_id is a fetch to claude.ai / chatgpt.com on the requester's behalf.
       authFail(req, '/authorize', 'rejected', { detail: (checked.page ?? '').slice(0, 120) });
@@ -353,12 +360,15 @@ export function createRemoteHandler(deps: RemoteDeps) {
       return back({ error: 'access_denied', error_description: 'the owner denied access' });
     }
 
-    const wait = approvalLimiter.blocked(ip);
+    const key = approvalKey(ip);
+    const wait = approvalLimiter.blocked(key);
     if (wait) return page(429, t('remoteHttp.tooMany', { n: Math.ceil(wait / 60) }));
     const verdict = await deps.store.consumeApprovalCode(p.approval_code ?? '');
     if (verdict !== 'ok') {
-      approvalLimiter.fail(ip);
+      approvalLimiter.fail(key);
       authFail(req, '/authorize', verdict === 'none' ? 'no-pending-code' : 'wrong-code', { client: client.name });
+      // The owner's next try will say there is no code: the journal says why, so they make a new one.
+      if (verdict === 'burned') log('approval-burned', { ip, client: client.name });
       return page(401, verdict === 'none' ? t('remoteHttp.noCode') : t('remoteHttp.wrongCode'));
     }
 

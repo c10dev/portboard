@@ -47,6 +47,10 @@ export interface Paths {
   site: string;
   /** access.json: writeDevices, the devices that may write through tailscale serve (security review v1.0, M1) */
   access: string;
+  /** owner-token.json: the sha256 of the owner token for token mode (#12), written by `portboard token`, never the token */
+  token: string;
+  /** devhealth.json: thresholds of the device health alerts (devhealth.ts, docs/config.md) */
+  devhealth: string;
   history: string;
   uptime: string;
   alertsState: string;
@@ -105,6 +109,9 @@ export function resolvePaths(env: Env = process.env, home = homedir()): Paths {
     site: env.PORTBOARD_SITE ?? join(configDir, 'portboard.json'),
     // A preview's own (it starts without one: no allowlist), never production's.
     access: env.PORTBOARD_ACCESS ?? join(configDir, 'access.json'),
+    // The same for the owner token's hash (#12): a preview needs its own `portboard token`.
+    token: env.PORTBOARD_TOKEN_FILE ?? join(configDir, 'owner-token.json'),
+    devhealth: env.PORTBOARD_DEVHEALTH ?? join(configDir, 'devhealth.json'),
     // Not under PORTBOARD_STATE_DIR in production (as before); a preview keeps its own.
     history: env.PORTBOARD_HISTORY ?? join(preview ? previewDir : prodState, 'usage-history.json'),
     uptime: env.PORTBOARD_UPTIME ?? join(stateDir, 'uptime.json'),

@@ -23,9 +23,11 @@ import { open, readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { t } from './i18n.ts';
+import { SITE } from './site.ts';
 
 const DAY = 86_400_000;
-const KST = 9 * 3_600_000;
+/** The configured fixed UTC offset (portboard.json utcOffset, PORTBOARD_UTC_OFFSET; default +09:00, KST) */
+const KST = SITE.utcOffsetMs;
 
 export const MARKER = '[portboard]';
 

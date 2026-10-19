@@ -13,6 +13,7 @@
 // from. A link to settings.html (the sidebar, the checklist chip, the inspector) opens the modal in place.
 
 import { showAccess } from '../lib/access.js';
+import { loadOwnerToken, saveOwnerToken } from '../lib/api.js';
 import { row, segmented } from '../lib/controls.js';
 import { h } from '../lib/dom.js';
 import { loadLocalePref, saveLocalePref, t, tn } from '../lib/i18n.js';
@@ -102,9 +103,52 @@ function paintDisplay() {
     row({ label: t('settings.display.lang'), desc: t('settings.display.lang.desc'), control: lang })));
 }
 
-/** Sections with write controls get one line saying why they are greyed out, for a viewer who may not write */
+/**
+ * 화면 › 소유자 토큰 (token mode, #12): the token `portboard token` printed, kept in this browser only (lib/api.js
+ * sends it as a header). Shown when the server is in token mode, or while this browser still keeps one. Not a
+ * data-write control: entering it is how a read-only browser becomes the owner. A change reloads the page, so every
+ * part asks /api/whoami again.
+ */
+function paintOwnerToken(w) {
+  const rows = document.getElementById('displayBody')?.querySelector('.st-rows');
+  if (!rows) return;
+  document.getElementById('ownerTokenRow')?.remove();
+  const kept = loadOwnerToken();
+  if (w?.mode !== 'token' && !kept) return;
+  const input = h('input', { type: 'password', id: 'ownerToken', class: 'ctl-text', autocomplete: 'off', spellcheck: 'false', placeholder: kept ? t('settings.token.kept') : 'pbt_…', 'aria-label': t('settings.token.label') });
+  const save = () => {
+    if (!input.value.trim()) return;
+    if (!saveOwnerToken(input.value)) {
+      input.setCustomValidity?.(t('settings.token.invalid'));
+      input.reportValidity?.();
+      return;
+    }
+    location.reload();
+  };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+  input.addEventListener('input', () => input.setCustomValidity?.(''));
+  const state = !kept ? t('settings.token.none') : w?.source === 'token' && w.canWrite ? t('settings.token.ok') : t('settings.token.refused');
+  rows.append(row({
+    id: 'ownerTokenRow',
+    label: t('settings.token.label'),
+    desc: `${t('settings.token.desc')} ${state}`,
+    control: h('div', { class: 'ctl-group' },
+      input,
+      h('button', { type: 'button', class: 'btn primary', onclick: save }, t('settings.token.save')),
+      kept ? h('button', { type: 'button', class: 'btn', onclick: () => { saveOwnerToken(''); location.reload(); } }, t('settings.token.forget')) : null),
+  }));
+}
+
+/**
+ * Sections with write controls get one line saying why they are greyed out, for a viewer who may not write. Also what
+ * depends on how the server decides that (#12): the owner token row, and 쓰기 허용 기기 (a list of tailnet devices)
+ * left out of the menu when Tailscale isn't running there.
+ */
 async function readOnlyNotes() {
   const w = await showAccess();
+  paintOwnerToken(w);
+  const wd = modal.el.querySelector('.st-tab[data-section="write-devices"]');
+  if (wd) wd.hidden = w?.tailscale === false;
   for (const p of modal.el.querySelectorAll('.set-ro.st-ro')) p.remove();
   if (!w || w.canWrite) return;
   for (const sec of modal.el.querySelectorAll('.st-sec[data-has-write]')) {

@@ -1,0 +1,14 @@
+{
+  // The published package only (npm run build, run by prepack): Node won't strip types under node_modules, so the
+  // tarball carries src/ compiled to dist/ (same depth, so the code's ../public/ and ../package.json still resolve).
+  // A checkout keeps running src/*.ts directly.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "src",
+    "outDir": "dist",
+    "rewriteRelativeImportExtensions": true,
+    "removeComments": false
+  },
+  "include": ["src"]
+}

@@ -1,3 +1,4 @@
+// @ts-check
 // Inline SVG sparklines (no libraries). Values are fractions on [0, scale]; null is a gap, never 0.
 
 const NS = 'http://www.w3.org/2000/svg';

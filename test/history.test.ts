@@ -8,6 +8,7 @@ import {
   samplesOf, withHistory, type Sample,
 } from '../src/core/history.ts';
 import type { DeviceCard, Usage, UseRow } from '../src/core/usage.ts';
+import { L } from './fixtures/locale.ts';
 
 const T0 = Date.parse('2026-10-17T10:00:00Z');
 const MIN = 60_000;
@@ -158,7 +159,7 @@ test('samplesOf: one sample per device and port; routed traffic and local proces
     s.map((x) => `${x.device}|${x.port}×${x.connections}`).sort(),
     ['local|7720×1', 'mac|22×2', 'mac|8790×2', 'pve1~routed|22×3'],
   );
-  assert.equal(s.find((x) => x.device === 'pve1~routed')!.name, 'pve1 경유');
+  assert.equal(s.find((x) => x.device === 'pve1~routed')!.name, L('pve1 경유', 'via pve1'));
   assert.equal(s.find((x) => x.device === 'pve1~routed')!.nameKey, null);
 });
 

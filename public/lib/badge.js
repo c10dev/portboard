@@ -1,3 +1,4 @@
+// @ts-check
 // Badges and chips: the small pills on rows and cards (style.css .badge, .user-chip).
 
 import { el } from './dom.js';

@@ -12,7 +12,7 @@ Everything Portboard needs to know about the machine it runs on (its name, the t
 
 Each value is resolved on its own. The first source that has it wins:
 
-1. **Environment variable.** `PORTBOARD_POOL_URL`, `PORTBOARD_REPOS_ROOT`, `PORTBOARD_DASHBOARD_URL` and `PORTBOARD_LOCALE`. The other keys have no variable.
+1. **Environment variable.** `PORTBOARD_POOL_URL`, `PORTBOARD_REPOS_ROOT`, `PORTBOARD_DASHBOARD_URL`, `PORTBOARD_LOCALE` and `PORTBOARD_UTC_OFFSET`; `portboard agent` also reads `PORTBOARD_AGENT_*` over the `agent` key. The other keys have no variable.
 2. **Runtime.** What the machine reports:
    - `tailscale status --json` gives the host name and tailnet.
    - git gives the checkout of the running code.
@@ -40,12 +40,26 @@ Every key is optional. A key of the wrong type is ignored, and the rest still ap
 | `dashboardUrl` | string | none | the `tailscale serve` https port that proxies to the dashboard (8443 in [setup.md](setup.md)) | `PORTBOARD_DASHBOARD_URL` | Links to the dashboard: alert messages, the consent page's link to the 설정 tab, and the 정보 section's 대시보드 address. It is only used when serve doesn't publish the dashboard |
 | `publicUrl` | string | `https://<host>.<tailnet>` | — (`remote.json`'s `publicUrl` comes first) | — | The public Funnel URL `scripts/deploy.ts` smoke-checks when `remote.json` has none. The remote server itself still takes its issuer URL from `remote.json` only |
 | `locale` | `"en"` or `"ko"` | `en` | — | `PORTBOARD_LOCALE` | The language of the text the server writes: alert, digest, new-port and memory pushes, the setup checklist, suggestions, MCP prompts and messages, the remote consent page, and the shell of each page as it is served. A browser shows the dashboard in the device's choice (Settings › Display › Language), else this locale when it is set, else the browser's language; the API text it reads follows the page ([docs/i18n](i18n/README.md)). Another value is ignored and reported |
+| `utcOffset` | `"+HH:MM"`, `"-HH:MM"` or `"Z"` | `+09:00` | — | `PORTBOARD_UTC_OFFSET` | The fixed offset from UTC the digest time (`HH:MM`, and Monday for weekly) and the Claude adoption days are counted in. No DST: a zone that changes its clock needs the value changed with it. The default keeps the original KST behaviour. Another value is ignored and reported |
 | `pve` | object | `{"host": "pve", "user": "root", "key": "~/.ssh/portboard_ro", "node": "pve", "enabled": false}` | — | — | Defaults for the Proxmox SSH port reader ([runbooks/ssh-readonly-setup.md](runbooks/ssh-readonly-setup.md)). `pveports.json` (`PORTBOARD_PVEPORTS`) still goes on top. `node` also names the reader in labels |
 | `windows` | object | `{"host": "windows", "user": null, "key": "~/.ssh/portboard_ro", "device": "windows", "enabled": false}` | — | — | Defaults for a desktop's Windows SSH port reader (same runbook). `winports.json` (`PORTBOARD_WINPORTS`) still goes on top |
+| `agents` | array of `{name, url, token?}` | `[]` | — | — | The board: other machines' `portboard agent`s to read ([multi-host.md](multi-host.md)). Their ports go on the tailnet device of that name, ahead of compute-pool's. `name` is a host name, unique; `url` is http(s) without credentials; `token` is sent as `Authorization: Bearer`. A bad entry is ignored and reported (never its token) |
+| `agent` | object | `{"port": 8797, "allow": [], "token": null, "showAddresses": false}` | — | `PORTBOARD_AGENT_PORT`, `PORTBOARD_AGENT_ALLOW` (merged with `allow`), `PORTBOARD_AGENT_TOKEN`, `PORTBOARD_AGENT_HOSTS` (bind list) | This machine's `portboard agent`: its port, who may read it (`allow`: Tailscale node names or IDs, logins, `tag:` ACL tags), an optional shared `token`, and whether LAN addresses leave the machine. With no `allow` and no token only loopback reads ([multi-host.md](multi-host.md#who-may-read)). A field of the wrong type falls back to its default |
 
 Each value of `pve` and `windows` resolves in this order: `pveports.json`/`winports.json`, then `portboard.json`, then the default. The dedicated files stay the per-install override for those SSH targets. They are validated the same way as before; an invalid value makes that reader report a config error.
 
 The dashboard's own ports are not keys: 8790 (`PORTBOARD_PORT`) and 8794 (`PORTBOARD_REMOTE_PORT`) are set by environment, as before. The https port in front of the dashboard (8443) is whatever `tailscale serve` publishes.
+
+## Platform environment
+
+How Portboard reads ports and acts on services is picked from the OS ([platforms.md](platforms.md)); these variables override it. They are environment only, read once at start. A value that isn't understood is ignored, and the start log says so.
+
+| Env | Values | Default | Meaning |
+|---|---|---|---|
+| `PORTBOARD_PORT_READER` | `ss`, `lsof` | `ss` on Linux, `lsof` elsewhere | The listening-port reader: `ss -ltnpH`, or `lsof -nP +c 0 -iTCP -sTCP:LISTEN -F pcnL` |
+| `PORTBOARD_SERVICES` | `systemd`, `none` | `systemd` on Linux outside a container, else `none` | The service manager. `none` never runs `systemctl`, `journalctl` or `systemd-run`: unit restart/stop/logs and dev servers answer with why they can't |
+| `PORTBOARD_READ_ONLY` | `1`, `0` | `1` in a container, else `0` | Refuse every write: write routes answer `403` (`"error": "read-only"`), and restart, stop and dev servers are refused for MCP tools and auto-stop too |
+| `PORTBOARD_CONTAINER` | `1` | unset (the Docker image sets it) | Running in the Docker image: no service manager, read-only unless `PORTBOARD_READ_ONLY=0` |
 
 ## Example
 
@@ -153,3 +167,46 @@ The following never produce a notice:
 - The same port and command line again within 10 minutes, for example a dev server restarting on a file change.
 
 A look whose `ss` returned nothing changes nothing. The events are kept in memory for the toast and the Mac app: `GET /api/new-ports` ([api.md](api.md#new-ports)).
+
+## Access: `access.json`
+
+Who may change things ([security.md](security.md)). A separate file because it is a security setting: it must be mode
+0600 (a file group or others can read or write is refused), and it is read on every write, so an edit applies at once.
+
+- **Where it is:** `~/.config/portboard/access.json` (a preview: its own config dir). `PORTBOARD_ACCESS` moves it.
+- **The code:** `src/core/access.ts` (`loadWriteDevices`, `loadAccessPolicy`).
+
+| Key | Type | Default | Env | Meaning |
+|---|---|---|---|---|
+| `writeDevices` | string array | unset (every device logged in as the owner) | `PORTBOARD_WRITE_DEVICES` (merged) | Tailscale only: the devices that may write through `tailscale serve` ([security.md](security.md#write-devices)); 설정 › 쓰기 허용 기기 writes it |
+| `mode` | `"tailscale"` or `"token"` | `"tailscale"` | `PORTBOARD_ACCESS_MODE` (wins) | `"token"`: a request with the owner token (`Authorization: Bearer …`) may write from any address but Funnel ([token mode](security.md#token-mode-c10devportboard12)). Any other value is reported and counts as `"tailscale"` |
+| `requireTokenOnLoopback` | boolean | `false` | `PORTBOARD_REQUIRE_TOKEN_ON_LOOPBACK=1` (can only turn it on) | Token mode only: processes on this machine (and `tailscale serve`) need the token too |
+
+The owner token itself is never stored: `portboard token` writes its sha256 to `~/.config/portboard/owner-token.json`
+(`PORTBOARD_TOKEN_FILE`; 0600, `{"sha256": "…", "created": "…"}`) and prints the token once. A file that isn't 0600
+or isn't that shape refuses every token until `portboard token` runs again.
+
+```json
+{ "mode": "token", "requireTokenOnLoopback": false }
+```
+
+## Device health: `devhealth.json`
+
+The thresholds of the device health alerts ([operations.md](operations.md#device-health-alerts)). A separate file, read on every check and never written; every key is optional, and a missing, wrong-typed or out-of-range key keeps its default.
+
+- **Where it is:** `~/.config/portboard/devhealth.json` (a preview: its own config dir). Set `PORTBOARD_DEVHEALTH` to read it from somewhere else.
+- **The code:** `src/core/devhealth.ts` (`DEFAULT_THRESHOLDS`, `parseThresholds`).
+
+| Key | Default | Range | Meaning |
+|---|---|---|---|
+| `failMinRuns` | 5 | 1–1000 | A compute-pool host's failure rate counts only with at least this many runs in the last 24 h |
+| `failPct` | 50 | 1–100 | Alert when this share (%) of those runs failed; it recovers at 10 points under |
+| `offlineMin` | 30 | 1–1440 | Alert when a Proxmox guest is `running` and its tailnet device has been offline this many minutes |
+| `loadPerCore` | 2 | 0.1–64 | Alert when a pool host's load1 / cores is at this or more; it recovers at 80 % of it |
+| `loadMin` | 15 | 1–1440 | … for this many minutes |
+| `recoverMin` | 5 | 1–120 | A condition must be clear this many minutes to send the recovery |
+| `reminderHours` | 6 | 1–168 | A reminder while a condition lasts |
+
+```json
+{ "failPct": 60, "offlineMin": 60, "loadPerCore": 3 }
+```

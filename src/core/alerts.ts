@@ -446,13 +446,6 @@ export function createChecker(deps: CheckerDeps) {
       return running;
     },
 
-    start(every = CHECK_MS): () => void {
-      const timer = setInterval(() => void this.tick(), every);
-      timer.unref();
-      void this.tick();
-      return () => clearInterval(timer);
-    },
-
     async test(): Promise<{ ok: boolean; message: string; sent: Sent[] }> {
       const c = await channel();
       if (!c) return { ok: false, message: t('alertsMsg.noChannel'), sent: [] };

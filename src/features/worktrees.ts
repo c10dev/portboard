@@ -7,14 +7,21 @@
 //                                          (refresh: started | running | throttled, with a note unless started)
 //   POST /api/worktrees/remove {repo, paths}  `git worktree remove` (no --force) each still-removable path (X-Portboard)
 //   POST /api/worktrees/prune {repo}         `git worktree prune` (records of deleted directories only)
-//   MCP  list_worktrees (read), remove_worktrees (write, local only)
+//   MCP  list_worktrees (read; also remote, redacted, from the saved scan), remove_worktrees (write, local only)
+//   file worktrees-state.json in the state dir: every scan's result, for the processes that don't scan themselves
+//        (the remote server; the stdio server before its own first scan)
 //
 // Removal deletes the worktree directory (its branch stays). The dashboard asks per batch; the MCP tool tells the
 // model to ask the user first.
 
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { discoverRepos, pruneWorktrees, removeWorktrees, scanWorktrees, type RemoveResult, type WorktreesDoc } from '../core/worktrees.ts';
 import { gate, type GateState } from '../core/throttle.ts';
+import { writePrivate } from '../core/atomic.ts';
+import { PATHS, type Paths } from '../core/paths.ts';
 import { text, type Core } from '../mcp/kit.ts';
+import { redactWorktrees } from '../remote/redact.ts';
 import { ok, reply } from './router.ts';
 import type { FeatureModule, Tool } from './types.ts';
 
@@ -89,7 +96,31 @@ export function createWorktreesRefresher(o: { scan?: typeof scanWorktrees; now?(
   };
 }
 
-const refresher = createWorktreesRefresher();
+/** Every scan's result, in the state dir: what the remote server's list_worktrees reads (it never scans) */
+export const WORKTREES_STATE = 'worktrees-state.json';
+export const savedPath = (paths: Paths = PATHS) => join(paths.stateDir, WORKTREES_STATE);
+/** The stdio server takes a saved scan this young instead of scanning itself (the server scans every 15 minutes) */
+export const SAVED_FRESH_MS = 60 * 60_000;
+
+/** The last saved scan, or null when there is none or it doesn't read as one */
+export async function loadSavedWorktrees(path = savedPath()): Promise<WorktreesDoc | null> {
+  try {
+    const raw = JSON.parse(await readFile(path, 'utf8'));
+    if (typeof raw?.at !== 'string' || !Array.isArray(raw.repos) || !raw.totals || typeof raw.totals !== 'object') return null;
+    return { ...(raw as WorktreesDoc), scanning: false };
+  } catch {
+    return null;
+  }
+}
+
+/** A scan that also saves its result (a failed write is logged, never the scan's failure) */
+async function scanAndSave(opts: Parameters<typeof scanWorktrees>[0]): Promise<WorktreesDoc> {
+  const doc = await scanWorktrees(opts);
+  await writePrivate(savedPath(), `${JSON.stringify(doc)}\n`).catch((err) => console.error(`[portboard] worktrees state: ${(err as Error).message}`));
+  return doc;
+}
+
+const refresher = createWorktreesRefresher({ scan: scanAndSave });
 
 /** The background (incremental) scan, a forced full one, or one after a change (see WorktreesRefresher.refresh) */
 export function refreshWorktrees(opts: { full?: boolean; fresh?: boolean } = {}): Promise<WorktreesDoc> {
@@ -155,6 +186,32 @@ const listTool: Tool = {
           .map((w) => ({ path: w.path, branch: w.branch, pr: w.pr, changes: w.changes, lastCommit: w.lastCommit, sizeMb: w.sizeKb ? Math.round(w.sizeKb / 1024) : null, inUse: w.inUse.length, removable: w.removable, keep: w.keep })),
       }));
     return text({ at: doc.at, ...(note ? { note } : {}), totals: doc.totals, repos });
+  },
+  remote: {
+    description:
+      'Git worktrees of the repositories on the Portboard server: per repository its name, then per worktree the branch, ' +
+      'state (merged, unmerged, locked, missing), PR number and state, whether it has uncommitted changes, size, whether ' +
+      'a process runs inside, and whether it could be removed safely, with the reasons to keep it. Counts in totals. ' +
+      'From the last background scan (at; the server scans every 15 minutes). Paths, commit messages and processes are ' +
+      'left out on purpose. Read-only: nothing here removes anything.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repo: { type: 'string', description: 'Repository name, e.g. webapp' },
+        removable_only: { type: 'boolean' },
+      },
+      additionalProperties: false,
+    },
+    async call(args, core, policy) {
+      const a = (args ?? {}) as { repo?: unknown; removable_only?: unknown; refresh?: unknown };
+      if (a.refresh !== undefined) return text('refresh is not available remotely: results come from the last background scan', true);
+      if (a.repo !== undefined && typeof a.repo !== 'string') return text('repo must be a repository name', true);
+      if (a.removable_only !== undefined && typeof a.removable_only !== 'boolean') return text('removable_only must be true or false', true);
+      if (!core.worktrees) return text('list_worktrees is not available here', true);
+      const doc = await core.worktrees();
+      if (!doc) return text({ at: null, note: 'No worktree scan saved yet: the Portboard server scans every 15 minutes.', repos: [] });
+      return text(redactWorktrees(doc, { repo: a.repo as string | undefined, removableOnly: a.removable_only === true }, policy));
+    },
   },
 };
 
@@ -232,9 +289,12 @@ export const worktreesFeature: FeatureModule = {
   ],
   tools: [listTool, removeTool],
   mcpCore: () => ({
+    // The scan this process made, else the server's saved one while it is recent, else a scan of its own
     worktrees: async () => {
       const cur = refresher.current();
-      return cur.at ? cur : refreshWorktrees();
+      if (cur.at) return cur;
+      const saved = await loadSavedWorktrees();
+      return saved && Date.now() - Date.parse(saved.at!) < SAVED_FRESH_MS ? saved : refreshWorktrees();
     },
     removeWorktrees: remove,
   }),

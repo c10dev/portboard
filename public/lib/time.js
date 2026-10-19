@@ -1,3 +1,4 @@
+// @ts-check
 // Relative times and durations, in the page's language (lib/i18n.js time.*). The pages grew slightly different
 // wordings (rounded vs floored, with or without 전 / ago); each variant is kept as it was so the text on screen
 // doesn't change, and they live here side by side.

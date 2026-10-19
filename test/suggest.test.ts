@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import {
   alertSuggestions,
   cleanHostname,
+  IDLE_DAYS,
+  idleSuggestions,
   longLived,
   nameId,
   nameSuggestions,
@@ -18,9 +20,13 @@ import {
   vendorKind,
   type AlertCandidate,
   type AlertInputs,
+  type IdleCandidate,
+  type IdleInputs,
   type NameCard,
   type NameInputs,
+  type UseRecord,
 } from '../src/core/suggest.ts';
+import { withLocale } from '../src/core/i18n.ts';
 import { dismissSuggestion, loadPrefs, setPortPrefs } from '../src/core/prefs.ts';
 
 const NOW = Date.parse('2026-10-18T09:00:00Z');
@@ -206,6 +212,118 @@ test('prefillName: the suggestion, else the Proxmox guest name, else empty; a us
   assert.equal(prefillName({ name: '내 노트북', nameSource: 'user' }, mac), '내 노트북');
 });
 
+// ---------- idle ----------
+
+const DAY = 86400_000;
+
+function svc(p: Partial<IdleCandidate> & { port: number }, unit: string | null = null, pid = p.port): IdleCandidate {
+  return {
+    name: `svc ${p.port}`, kind: 'app', listening: true, hidden: false, pinned: false, container: null,
+    processes: [{ pid, unit, cmdline: `/usr/bin/node server-${p.port}.js` }], ...p,
+  };
+}
+
+const use = (port: number, daysAgo: number, name = 'dev-mac'): UseRecord => ({ port, name, lastSeen: NOW - daysAgo * DAY });
+
+function idleInputs(o: Partial<IdleInputs> = {}): IdleInputs {
+  return {
+    historySince: NOW - 30 * DAY,
+    uses: [],
+    started: new Map(),
+    containers: new Map(),
+    selfUnits: new Set(['portboard.service']),
+    selfPid: 999_999,
+    now: NOW,
+    ...o,
+  };
+}
+
+test('idle: units, containers and processes nobody used for 14 days, with last use and owner; one per unit', () => {
+  const out = idleSuggestions([
+    svc({ port: 3080 }, 'agent-web.service'),
+    svc({ port: 7720 }, 'compute-pool-monitor.service', 7720),
+    svc({ port: 7721 }, 'compute-pool-monitor.service', 7720),
+    svc({ port: 54321, container: 'supabase_kong_webapp', processes: [] }),
+    svc({ port: 8000 }),
+    svc({ port: 5173 }, 'pb-dev-portboard-1a2b.service'),
+  ], idleInputs({
+    uses: [use(3080, 20), use(3080, 21, 'ipad'), use(7721, 16, 'local'), use(54321, 2), use(5173, 15)],
+    started: new Map([[7720, NOW - 60 * DAY], [8000, NOW - 40 * DAY]]),
+  }));
+  assert.deepEqual(out.map((s) => [s.id, s.owner, s.also, s.idleDays, s.lastDevice]), [
+    ['idle-3080', { type: 'unit', name: 'agent-web.service' }, [], 20, 'dev-mac'],
+    ['idle-5173', { type: 'unit', name: 'pb-dev-portboard-1a2b.service' }, [], 15, 'dev-mac'],
+    ['idle-7720', { type: 'unit', name: 'compute-pool-monitor.service' }, [7721], 16, 'local'],
+    ['idle-8000', { type: 'process', name: 'node' }, [], null, null],
+  ]);
+  const [web] = out;
+  assert.equal(web.kind, 'idle');
+  assert.equal(web.days, IDLE_DAYS);
+  assert.equal(web.lastUsed, new Date(NOW - 20 * DAY).toISOString());
+  assert.match(web.text, /agent-web\.service/);
+  assert.match(web.text, /20/);
+  assert.match(out[3].text, /14/, 'never seen: says how long the history covers');
+  assert.ok(out.every((s) => SUGGESTION_ID.test(s.id)));
+});
+
+test('idle: nothing while the history is younger than the threshold, even for old services', () => {
+  const ports = [svc({ port: 3080 }, 'agent-web.service'), svc({ port: 8000 })];
+  const started = new Map([[3080, NOW - 90 * DAY], [8000, NOW - 90 * DAY]]);
+  assert.deepEqual(idleSuggestions(ports, idleInputs({ historySince: NOW - 3 * DAY, started })), []);
+  assert.deepEqual(idleSuggestions(ports, idleInputs({ historySince: null, started })), []);
+  assert.equal(idleSuggestions(ports, idleInputs({ historySince: NOW - 14 * DAY, started })).length, 2, 'exactly the threshold is enough');
+});
+
+test('idle: a port the history never saw needs a service older than the threshold, else it is just new', () => {
+  const ports = [
+    svc({ port: 8000 }),
+    svc({ port: 8001 }),
+    svc({ port: 6380, container: 'old_redis', processes: [] }),
+    svc({ port: 6381, container: 'scratch_redis', processes: [] }),
+  ];
+  const out = idleSuggestions(ports, idleInputs({
+    started: new Map([[8000, NOW - 3 * DAY]]), // 8001: start time unknown
+    containers: new Map([['old_redis', { startedAt: NOW - 20 * DAY, restart: 'no' }], ['scratch_redis', { startedAt: NOW - 3600_000, restart: null }]]),
+  }));
+  assert.deepEqual(out.map((s) => [s.id, s.owner]), [['idle-6380', { type: 'container', name: 'old_redis' }]]);
+});
+
+test('idle: pinned, hidden, system, stopped and Portboard\'s own ports are left out; a used port keeps its whole unit', () => {
+  const old = new Map([[1, NOW - 60 * DAY]]);
+  const out = idleSuggestions([
+    svc({ port: 4000, pinned: true }, null, 1),
+    svc({ port: 4001, hidden: true }, null, 1),
+    svc({ port: 22, kind: 'system', processes: [] }),
+    svc({ port: 4002, listening: false }, null, 1),
+    svc({ port: 7777 }, 'portboard.service', 1),
+    svc({ port: 7778 }, 'portboard-remote.service', 1),
+    svc({ port: 7779 }, 'pb-preview-x.service', 1),
+    svc({ port: 7780 }, null, 4242),
+    svc({ port: 9000 }, 'two-ports.service', 1),
+    svc({ port: 9001, pinned: true }, 'two-ports.service', 1),
+    svc({ port: 9100 }, 'busy.service', 1),
+    svc({ port: 9101 }, 'busy.service', 1),
+  ], idleInputs({
+    started: new Map([...old, [4242, NOW - 60 * DAY]]),
+    uses: [use(9101, 1)],
+    selfUnits: new Set(['portboard.service', 'pb-preview-x.service']),
+    selfPid: 4242,
+  }));
+  assert.deepEqual(out, []);
+});
+
+test('idle: a dismissed one is counted, not shown', () => {
+  const idle = idleSuggestions([svc({ port: 3080 }, 'agent-web.service'), svc({ port: 3081 }, 'other.service')], idleInputs({ uses: [use(3080, 20), use(3081, 20)] }));
+  const r = report(idle, new Set(['idle-3080']), NOW);
+  assert.deepEqual(r.suggestions.map((s) => s.id), ['idle-3081']);
+  assert.equal(r.dismissed, 1);
+});
+
+test('idle: English text names the owner, the days and the last device', () => {
+  const [s] = withLocale('en', () => idleSuggestions([svc({ port: 54321, container: 'supabase_kong_webapp', processes: [] })], idleInputs({ uses: [use(54321, 18, 'dev-mac')] })));
+  assert.equal(s.text, 'Container supabase_kong_webapp: nobody has connected for 18 days (last: dev-mac).');
+});
+
 // ---------- together ----------
 
 test('report: dismissed suggestions are counted, not shown', () => {
@@ -242,7 +360,7 @@ test('POST /api/suggestions/:id/dismiss refuses what isn\'t a suggestion id, bef
   const route = createRouter(REGISTRY.routes);
   const ctx = new Proxy({}, { get: (_t, k) => assert.fail(`touched ctx.${String(k)}`) }) as any;
   const at = (path: string) => route({ method: 'POST', headers: { 'x-portboard': '1' } } as any, new URL(`http://x${path}`), ctx);
-  assert.deepEqual(await at('/api/suggestions/bogus-1/dismiss'), { status: 400, body: { error: 'id must be a suggestion id (alert-<port> or name-<key>)' } });
+  assert.deepEqual(await at('/api/suggestions/bogus-1/dismiss'), { status: 400, body: { error: 'id must be a suggestion id (alert-<port>, idle-<port> or name-<key>)' } });
   assert.equal(await at('/api/suggestions/name-../dismiss'), null, 'not even routed');
 });
 

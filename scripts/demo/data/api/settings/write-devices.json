@@ -1,0 +1,39 @@
+{
+ "path": "~/.config/portboard/access.json",
+ "list": null,
+ "env": [],
+ "error": null,
+ "devices": [
+  {
+   "name": "dev-mac",
+   "os": "macOS",
+   "listed": false,
+   "current": true
+  },
+  {
+   "name": "iphone",
+   "os": "iOS",
+   "listed": false,
+   "current": false
+  },
+  {
+   "name": "desktop-pc",
+   "os": "windows",
+   "listed": false,
+   "current": false
+  },
+  {
+   "name": "gpu-box",
+   "os": "linux",
+   "listed": false,
+   "current": false
+  }
+ ],
+ "others": [],
+ "current": {
+  "name": "dev-mac",
+  "id": "nDevMac1CNTRL",
+  "label": "dev-mac"
+ },
+ "source": "serve"
+}

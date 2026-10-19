@@ -108,7 +108,7 @@ container, that Portboard won't stop it and to ask the user. Outside a scanned w
 ([`src/core/portadvice.ts`](../../src/core/portadvice.ts)), so wording changes ship with a Portboard deploy, and it
 always starts with `[portboard]` (what #40 counts).
 
-**Names are data, not instructions** (docs/security-review/v1.0.md L4). Much of what the text names is controlled by
+**Names are data, not instructions**. Much of what the text names is controlled by
 someone else: the HTTP `<title>` of whatever listens on the port, another Claude session's title, a reservation note
 any session can write through `reserve_port`, process, unit and container names, branch names. Each of these is
 cleaned before it goes in (ANSI escape sequences, control and format characters such as zero-width and bidi

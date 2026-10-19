@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { createRemoteHandler } from '../src/remote/http.ts';
 import { Store } from '../src/remote/store.ts';
 import type { RemoteCore } from '../src/remote/tools.ts';
+import { L } from './fixtures/locale.ts';
 
 let dir: string;
 let server: Server;
@@ -182,7 +183,7 @@ test('end to end: DCR, approval code, PKCE, MCP calls, refresh rotation', async 
   assert.equal(note.body, '');
 
   const list = await rpc(tokens.access_token, { jsonrpc: '2.0', id: 2, method: 'tools/list' }, { 'mcp-protocol-version': '2025-06-18' });
-  assert.deepEqual(JSON.parse(list.body).result.tools.map((t: any) => t.name).sort(), ['free_port', 'list_devices', 'list_ports', 'who_uses_what']);
+  assert.deepEqual(JSON.parse(list.body).result.tools.map((t: any) => t.name).sort(), ['free_port', 'list_dev_servers', 'list_devices', 'list_ports', 'list_worktrees', 'memory_usage', 'who_uses_what']);
 
   const ports = await rpc(tokens.access_token, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'list_ports', arguments: {} } });
   const text = JSON.parse(JSON.parse(ports.body).result.content[0].text);
@@ -227,9 +228,9 @@ test('token is bound to the resource it was issued for', async () => {
 });
 
 test('wrong approval codes are refused, logged, limited per address, and burn the code after twenty tries', async () => {
-  const reg = JSON.parse((await call('POST', '/register', { body: { redirect_uris: ['http://localhost:9/cb'] } })).body);
+  const reg = JSON.parse((await call('POST', '/register', { body: { redirect_uris: ['https://claude.ai/api/mcp/auth_callback'] } })).body);
   const { challenge } = pkce();
-  const params = { response_type: 'code', client_id: reg.client_id, redirect_uri: 'http://localhost:9/cb', code_challenge: challenge, code_challenge_method: 'S256' };
+  const params = { response_type: 'code', client_id: reg.client_id, redirect_uri: 'https://claude.ai/api/mcp/auth_callback', code_challenge: challenge, code_challenge_method: 'S256' };
   const from = (ip: string) => ({ host: `127.0.0.1:${port}`, 'content-type': 'application/x-www-form-urlencoded', 'tailscale-funnel-request': '?1', 'x-forwarded-for': ip });
   const attempt = (ip: string, approval_code: string) =>
     call('POST', '/authorize', { headers: from(ip), body: new URLSearchParams({ ...params, approval_code, decision: 'approve' }).toString() });
@@ -239,7 +240,7 @@ test('wrong approval codes are refused, logged, limited per address, and burn th
   for (let i = 0; i < 15; i++) assert.equal((await attempt(`198.51.100.${30 + Math.floor(i / 5)}`, 'AAAA-AAAA')).status, 401);
   const late = await attempt('198.51.100.40', code);
   assert.equal(late.status, 401, 'the right code no longer works after twenty wrong ones from all addresses');
-  assert.match(late.body, /유효한 승인 코드가 없습니다/);
+  assert.match(late.body, L(/유효한 승인 코드가 없습니다/, /There(&#39;|')s no valid approval code/));
   assert.ok(logs.some((l) => l.startsWith('auth-fail') && l.includes('wrong-code')));
   assert.equal(logs.join('\n').includes(code), false);
 

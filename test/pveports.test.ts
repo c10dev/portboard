@@ -124,10 +124,16 @@ function harness(configPath: string, replies: RunResult[]) {
       return replies.shift() ?? res('', 'Permission denied', false);
     },
   });
+  live.add(c as any);
   return { c, calls, logs, advance: (ms: number) => (t += ms), now: () => t };
 }
 
-const settle = () => new Promise((r) => setTimeout(r, 10));
+// Lets a refreshLater() start, then waits for its attempt (a fixed delay was flaky under a loaded test run)
+const live = new Set<{ inflight: Promise<void> | null }>();
+const settle = async () => {
+  await new Promise((r) => setTimeout(r, 10));
+  for (const c of live) while (c.inflight) await c.inflight;
+};
 
 test('collector: first get waits; not-installed backs off to 5 min; success caches; a later failure keeps the data until stale', async () => {
   const { configPath } = await keyAndConfig();

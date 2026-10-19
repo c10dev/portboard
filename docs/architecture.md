@@ -3,7 +3,11 @@
 ```
 src/core/index.ts     snapshot() / expose(port) / unexpose(port)  ← the single core API
 src/core/ss.ts        parses `ss -ltnpH`
-src/core/proc.ts      /proc (cmdline, cwd, cgroup→systemd unit)
+src/core/proc.ts      /proc (cmdline, cwd, cgroup→systemd unit) and the shared process scan (scanProcs, readProcText, readCwd)
+src/core/platform/    backends per OS (docs/platforms.md): index (detection, env overrides, read-only), ports (ss | lsof),
+                      procs (ps + lsof where there is no /proc), services (systemd | none), launchd (install-service on macOS)
+src/core/cache.ts     the TTL caches: ttlCache (one value), keyedCache (per key, bounded), TtlMap (bounded value store)
+src/core/throttle.ts  cachedValue (the ?fresh-aware snapshot cache) and gate (one forced run per window)
 src/core/docker.ts    docker ps → container that owns each port
 src/core/probe.ts     HTTP probe (status code, <title>)
 src/core/tailscale.ts tailscale status / serve
@@ -24,12 +28,15 @@ src/core/devices.ts   tailscale peers joined with pool hosts
 src/core/usage.ts     who uses what now: device cards, 사용 중 per port, idle services
 src/core/history.ts   last-used history: sampling, merge, 30-day retention, usage-history.json
 src/core/groups.ts    ports of the same compose project / container / unit / process → one group
+src/core/memory.ts    메모리: re-exports src/core/memory/: parse (/proc parsers), classify (CLI / MCP / other), sample
+                      (model + buildSample), pressure (state machine, alert text), advice (suggestions, digest line),
+                      sampler (the reader), state (history, memory-state.json, status line)
 src/features/         feature modules: each owns its REST routes, MCP tools (local and remote), jobs, collectors, page scripts
 src/features/registry.ts  MODULES (alphabetical) → FEATURES (by order) + buildRegistry(): derived views and the security checks
 src/features/types.ts what a feature module declares
 src/features/router.ts REST routing over the declared routes; the one X-Portboard + owner guard and the audit line for every write route
 src/features/context.ts the dashboard's shared state: 2 s snapshot/topology/usage caches, history, uptime, checker, 새 기기, self-watch
-src/features/jobs.ts  starts the declared background jobs
+src/features/jobs.ts  the one scheduler for every declared background job (alert checker and self-watch included)
 src/server.ts         binds, checks Host, routes through the registry, serves public/ (plus the features' page scripts), starts jobs
 src/mcp.ts            stdio MCP server (Claude Code / Desktop); its Core is the features' mcpCore() merged
 src/mcp/kit.ts        what every tool needs: Core (filled in by the features), ToolResult, RpcError, parsePort…
@@ -41,9 +48,11 @@ src/mcp/prompts.ts    MCP prompts (Korean): server_status_summary, port_cleanup,
 src/mcp/rpc.ts        MCP JSON-RPC dispatch (initialize, ping, tools/*, resources/*, prompts/*)
 src/remote/tools.ts   the remote MCP surface: what the features mark remote, nothing else (docs/remote-mcp/)
 src/remote/core.ts    RemoteCore (what the remote may read) and readOnlyCore()
+src/remote/dashboard.ts the remote's snapshot / devices / usage: the dashboard's, over loopback; local only while it is down
 bin/portboard-mcp     SSH entry point for remote MCP clients (finds node without nvm)
 scripts/mac-setup.sh  one-time Mac setup for Claude Code + Claude Desktop
 scripts/mac-menubar-setup.sh  Mac menu bar plugin installer (SwiftBar)
+scripts/demo.ts       the static demo and landing page from example data (scripts/demo/: shim, landing page, data; docs/demo.md)
 menubar/              SwiftBar plugin (portboard.30s.mjs) + pure formatting (format.mjs), legacy
 mac-app/              Native macOS app (SwiftUI): Package.swift, PortboardCore (pure, tested), Portboard (app), build.sh
 public/               web dashboard: plain HTML/CSS and native ES modules, no build step, no packages
@@ -89,7 +98,7 @@ A feature is one file in `src/features/` plus one import and one `MODULES` line 
 2. **The module.** Create `src/features/<name>.ts` exporting a `FeatureModule` (`src/features/types.ts`). Declare only what the feature has:
    - `routes`: `{ method: 'GET', path, handler }` or `{ method: 'POST', write: true, body?: { limit }, path, handler }`. Paths may use `:port` (checked 1–65535, else 400 `bad port`) and `:device`. Handlers get `{ url, params, body }` and the shared `ServerContext` and return `{ status, body }` (`ok()` / `reply()` from `router.ts`). The router checks the `X-Portboard: 1` header and, in the dashboard (`appRouter`), that the caller is the owner (src/core/access.ts, [security.md](security.md)) on every non-GET route before the handler runs, parses the JSON body, and writes an audit line for every write. Body fields named `port`, `path`, `repo`, … are logged as targets; free text never is.
    - `tools`: `{ def, call(args, core) }`, where `def` is the MCP tool definition. If the tool needs something from the core, add it to `Core` in the same file with `declare module '../mcp/kit.ts' { interface Core { … } }`, and provide it for the stdio server in `mcpCore()`. Keep the argument checks and result shaping in the module.
-   - `jobs`: `{ name, everyMs, runAtStart?, run(ctx) }` or `{ name, start(ctx) }` for something with its own timer, with `enabled(paths)` when it must not run everywhere (anything that sends alerts: `paths.alertsOn`, which is false in a preview).
+   - `jobs`: `{ name, everyMs, runAtStart?, firstAfterMs?, run(ctx) }`, with `enabled(paths)` when it must not run everywhere (anything that sends alerts: `paths.alertsOn`, which is false in a preview).
    - `shutdown(ctx)` for what must be flushed on exit, `collectors` for the `health.ts` collector names it reports (add the label to `COLLECTORS` there), `ui` for page scripts (`{ pages: ['index.html'], script: 'features/x.js' }`: the server adds the `<script type="module">` before `</body>`, so the page doesn't carry it). See [Adding UI for a feature](#adding-ui-for-a-feature).
    - `resources` / `prompts` for MCP resources (a `claims(uri)` / `read()` pair and `list()`) and prompts. `list()` must not reject: `resources/list` waits for every module's list, so one failing source should leave its entries out instead.
 3. **Register it.** Give the module an `order` number and import it in `registry.ts`, putting the import and the `MODULES` line in alphabetical order (by file name, and by name ignoring case); `test/registry.test.ts` checks both. Don't append at the end: branches that all append to one list conflict on every merge, while alphabetical lines land in different places. `FEATURES` is `MODULES` sorted by `order`, and that order is the order of `tools/list`, routes, jobs and page scripts (`test/registry.test.ts` pins the current order). Existing modules are spaced by 100, so pick a free number between the two features the new one should sit between; below 2600 keeps it before `remote-connector`, `access`, `write-devices` and `settings`, which stay last. If two branches pick the same number, the merge has no textual conflict, but the unique-order test fails until one of them changes.
@@ -101,7 +110,7 @@ Still shared on purpose: the `MODULES` list (one alphabetical line per feature),
 
 ## Background jobs
 
-`src/features/jobs.ts` runs every feature's interval job (`{ name, everyMs, runAtStart?, run }`) on one scheduler: a 1 s tick, jittered start times, no overlap per job, error isolation, state in `/api/health?detail` → `runtime.jobs`. A job that needs its own timer declares `start(ctx)` instead (alert checker, self-watch). Read-only commands that several jobs need within seconds go through `runShared` (`src/core/exec.ts`).
+`src/features/jobs.ts` runs every feature's interval job (`{ name, everyMs, runAtStart?, firstAfterMs?, run }`) on one scheduler: a 1 s tick, jittered start times, no overlap per job, error isolation, state in `/api/health?detail` → `runtime.jobs`. The alert checker and the self-watch are jobs like the others; the audit log's flush timer (`src/core/audit.ts`) is the one timer kept outside, since it only runs while denials are pending and the stdio MCP server has it too. Read-only commands that several jobs need within seconds go through `runShared` (`src/core/exec.ts`); results that are reused for a while go through the caches in `src/core/cache.ts` (`ttlCache`, `keyedCache`, `TtlMap`).
 
 
 ## Adding UI for a feature
@@ -112,7 +121,7 @@ The front end is native ES modules served as they are from `public/`: no bundler
 - **Two ways onto a page.**
   - *Self-contained* (a header chip, a banner, a dialog of its own): declare it in the feature module, `ui: [{ pages: ['index.html'], script: 'features/<name>.js' }]`, and it runs on its own; the server adds the tag. `features/selfwatch.js` and `features/owners.js` work this way.
   - *Part of a page's rendering* (rows, cards, a section the page redraws every 10 s): export functions that return elements and import them from the page's entry script, which owns the state and the refresh loop. Pass what the module needs from the page as a small context object (`{ data, showDetail, refresh, … }`, with getters for state that changes) instead of reaching into the page.
-- **The shell.** Every page sits in one shell (one bar, the sidebar, the inspector; docs/layout). Its markup comes from `src/core/shell.ts`, which the server expands into the page's `<!--#shell:…-->` markers. `lib/shell-boot.js` is inlined to paint the remembered state before the first paint, and `lib/shell.js`, imported first by the page's entry script, wires it. Page controls go in the header's `.controls`, the title's context in `#shellCtx`, and filters in `#filterPanel`. A chip or note for the sidebar footer goes in `#shellFoot`. Main content that needs its data first waits with `<main data-wait="page …">` and `done('page')`.
+- **The shell.** Every page sits in one shell (one bar, the sidebar, the inspector). Its markup comes from `src/core/shell.ts`, which the server expands into the page's `<!--#shell:…-->` markers. `lib/shell-boot.js` is inlined to paint the remembered state before the first paint, and `lib/shell.js`, imported first by the page's entry script, wires it. Page controls go in the header's `.controls`, the title's context in `#shellCtx`, and filters in `#filterPanel`. A chip or note for the sidebar footer goes in `#shellFoot`. Main content that needs its data first waits with `<main data-wait="page …">` and `done('page')`.
 - **Use `lib/`, don't copy it.**
   - `api.js`: `getJSON` (throws `HTTP n`), `readJSON` (any status), `tryJSON` (null on failure, for optional parts of a page), `post(path, body?)` → `{ ok, status, body }` with `X-Portboard: 1` already set (a 403 with the Korean reason, without sending, once `access.js` knows this browser is read-only), `postOrThrow`, `errorText`. `access.js`: `showAccess()` asks `/api/whoami` and marks a read-only page. `audit.js`: one audit entry as a list row.
   - `dom.js`: `$`, `el(tag, cls, text)`, `h(tag, props, ...children)`, `button(label, onClick, { disabled, danger, title })`, `extLink`, `dl(rows)`, and `escapeHtml` for anything put into an HTML string (prefer building nodes).

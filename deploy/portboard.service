@@ -1,3 +1,6 @@
+# The production host's unit, kept as the reference. Elsewhere, `portboard install-service` writes the same settings
+# with this machine's node and install (src/cli.ts, docs/setup.md#install).
+
 [Unit]
 Description=Portboard — listening ports dashboard on :8790 (loopback + tailnet)
 
@@ -10,8 +13,8 @@ WorkingDirectory=%h/projects/portboard
 ExecStart=%h/.nvm/versions/node/v24.19.0/bin/node --max-semi-space-size=16 src/server.ts
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 # State and config files private to this user (0600 files, 0700 dirs), as in portboard-remote.service (security
-# review v1.0, L6). scripts/deploy.sh does not install unit files: cp this one to ~/.config/systemd/user/ and
-# `systemctl --user daemon-reload` before the next restart.
+# review v1.0, L6). scripts/deploy.sh does not install unit files: cp this one to ~/.config/systemd/user/ (or run
+# `bin/portboard install-service`) and `systemctl --user daemon-reload` before the next restart.
 NoNewPrivileges=yes
 UMask=0077
 # The Tailscale IP may not exist yet right after boot; the server exits and we retry.

@@ -1,257 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { PortEntry, Snapshot } from '../src/core/index.ts';
-import type { Devices } from '../src/core/devices.ts';
-import type { DeviceCard, Usage } from '../src/core/usage.ts';
-import { redactDevices, redactPorts, redactStatus, redactUsage, scrubText, STRICT } from '../src/remote/redact.ts';
+import type { WorktreeInfo, WorktreesDoc } from '../src/core/worktrees.ts';
+import { DEFAULT_THRESHOLDS, emptyPressure, type MemorySample, type SessionRow } from '../src/core/memory.ts';
+import type { DevServersDoc } from '../src/features/devservers.ts';
+import { viewOf, type MemoryView } from '../src/features/memory.ts';
+import { lanAlias, redactDevices, redactDevServers, redactMemory, redactPorts, redactStatus, redactUsage, redactWorktrees, scrubText, STRICT } from '../src/remote/redact.ts';
 import { readRemoteResource } from '../src/remote/tools.ts';
-
-// Synthetic, live-shaped fixtures. Addresses are made up (RFC 1918, CGNAT, TEST-NET, locally administered MACs).
-
-function entry(over: Partial<PortEntry>): PortEntry {
-  return {
-    port: 0,
-    listening: true,
-    scope: 'loopback',
-    addresses: ['127.0.0.1'],
-    owned: true,
-    kind: 'app',
-    container: null,
-    processes: [],
-    name: 'x',
-    detectedName: 'x',
-    label: null,
-    pinned: false,
-    hidden: false,
-    visible: true,
-    probe: null,
-    served: null,
-    urls: { direct: null, served: null, ssh: '' },
-    canExpose: false,
-    exposeBlocker: null,
-    control: null,
-    canRestart: false,
-    canStop: false,
-    ...over,
-  } as PortEntry;
-}
-
-const snap: Snapshot = {
-  at: '2026-10-17T12:33:32.024Z',
-  host: { hostname: 'box', user: 'alice' },
-  tailscale: { available: true, dnsName: 'box.tail0000.ts.net', hostName: 'box', ips: ['100.101.102.103', 'fd7a:115c:a1e0::abcd'] } as any,
-  ports: [
-    entry({
-      port: 3080,
-      name: 'Web UI on 127.0.0.1:3080',
-      scope: 'tailnet',
-      addresses: ['100.101.102.103'],
-      processes: [{ pid: 4242, cmdline: 'node /home/alice/projects/web/server.js --token=abc', cwd: '~/projects/web', project: 'web', unit: null, unitDescription: null }],
-      control: { type: 'process', pids: [4242] },
-      urls: { direct: 'http://box.tail0000.ts.net:3080', served: null, ssh: 'ssh -N -L 3080:127.0.0.1:3080 alice@box' },
-      canStop: true,
-    }),
-    entry({
-      port: 8780,
-      name: 'acme',
-      probe: { http: true, status: 200, title: 'ACME' },
-      control: { type: 'systemd', unit: 'acme.service' },
-      urls: { direct: null, served: 'https://box.tail0000.ts.net:8780/', ssh: 'ssh -N -L 8780:127.0.0.1:8780 alice@box' },
-    }),
-  ],
-};
-
-const devices: Devices = {
-  at: '2026-10-17T12:33:32.024Z',
-  pool: { available: false, source: null, url: 'http://127.0.0.1:7720', healthAt: null, error: 'connect ECONNREFUSED 10.9.8.7:7720' },
-  devices: [
-    {
-      id: 'box',
-      name: 'box',
-      os: 'linux',
-      self: true,
-      online: true,
-      lastSeen: null,
-      tailscaleIps: ['100.101.102.103', 'fd7a:115c:a1e0::abcd'],
-      path: null,
-      lanIps: ['192.168.50.5'],
-      lanVia: { '192.168.50.5': 'proxmox' },
-      routes: [],
-      virt: { type: 'kvm', proxmoxMac: true, macs: ['02:00:00:AA:BB:CC'] },
-      pool: {
-        name: 'box',
-        kind: 'ssh',
-        addresses: ['192.168.50.5'],
-        state: 'ok',
-        inRotation: true,
-        slots: 2,
-        busy: 1,
-        detail: 'ssh alice@192.168.50.5 timed out',
-        cpuPct: 12,
-      },
-      poolMatch: 'self',
-    },
-    {
-      id: 'laptop',
-      name: 'laptop',
-      os: 'macOS',
-      self: false,
-      online: true,
-      lastSeen: '2026-10-17T12:00:00Z',
-      tailscaleIps: ['100.64.0.9'],
-      path: { type: 'direct', endpoint: '203.0.113.9:41641' },
-      lanIps: [],
-      lanVia: {},
-      routes: ['192.168.50.0/24'],
-      pool: null,
-      poolMatch: null,
-    },
-  ],
-  proxmox: {
-    configured: true,
-    ok: false,
-    error: 'HTTP 401 from https://192.168.50.2:8006 for root@pam!portboard',
-    looseMode: true,
-    url: 'https://192.168.50.2:8006',
-    hosts: [
-      {
-        node: 'pve',
-        status: 'online',
-        ip: '192.168.50.2',
-        cpu: 0.1,
-        maxcpu: 8,
-        mem: 1,
-        maxmem: 2,
-        disk: 1,
-        maxdisk: 2,
-        uptime: 10,
-        device: 'lan:192.168.50.2',
-        guests: [
-          {
-            vmid: 101,
-            name: 'nas',
-            type: 'lxc',
-            node: 'pve',
-            status: 'running',
-            template: false,
-            cpu: 0,
-            maxcpu: 1,
-            mem: 1,
-            maxmem: 2,
-            uptime: 5,
-            macs: ['02:00:00:11:22:33'],
-            ips: ['192.168.50.20/24'],
-            lanIp: '192.168.50.20',
-            device: 'lan:192.168.50.20',
-            deviceMatch: 'ip',
-          },
-        ],
-      },
-    ],
-  },
-};
-
-function card(over: Partial<DeviceCard>): DeviceCard {
-  return {
-    id: 'x',
-    name: 'x',
-    nameSource: 'tailscale',
-    kind: 'tailnet',
-    os: null,
-    vendor: null,
-    mac: null,
-    randomMac: false,
-    networks: [],
-    addresses: [],
-    tailscaleIps: [],
-    lanIps: [],
-    online: true,
-    lastSeen: null,
-    path: null,
-    pool: null,
-    poolMatch: null,
-    nameKey: null,
-    lanVia: {},
-    routes: [],
-    virt: null,
-    guestOf: null,
-    pveHost: null,
-    uses: [],
-    connections: 0,
-    bytes: 0,
-    ...over,
-  } as DeviceCard;
-}
-
-const use = {
-  port: 22,
-  service: 'SSH',
-  fullName: 'SSH (sshd)',
-  kind: 'system' as const,
-  url: 'tcp://box.tail0000.ts.net:22',
-  via: 'direct' as const,
-  servePort: null,
-  connections: 2,
-  bytesSent: 10,
-  bytesReceived: 20,
-  rttMs: 1.5,
-  since: '2026-10-17T11:55:54.455Z',
-  processes: ['curl (3790306)'],
-  routed: false,
-};
-
-const usage: Usage = {
-  at: '2026-10-17T12:33:32.024Z',
-  observingSince: '2026-10-17T11:00:00.000Z',
-  cards: [
-    card({
-      id: 'lan:192.168.50.108',
-      name: '192.168.50.108',
-      nameSource: 'ip',
-      kind: 'lan',
-      mac: '16:22:4f:0a:0b:06',
-      addresses: ['192.168.50.108'],
-      lanIps: ['192.168.50.108'],
-      nameKey: 'mac:16:22:4f:0a:0b:06',
-      uses: [use],
-      connections: 2,
-    }),
-    card({ id: 'laptop', name: 'laptop', tailscaleIps: ['100.64.0.9'], addresses: ['100.64.0.9'], uses: [{ ...use, port: 8780, service: 'acme' }] }),
-    card({ id: 'lan:192.168.50.20', name: 'nas', nameSource: 'user', kind: 'lan', addresses: ['192.168.50.20'] }),
-  ],
-  local: { connections: 1, uses: [{ ...use, port: 8790, service: 'Portboard', processes: ['curl (3790306)', 'curl (3790307)'] }] },
-  byPort: {
-    22: [
-      { id: 'lan:192.168.50.108', name: '192.168.50.108', kind: 'lan', connections: 2 },
-      { id: 'pve1~routed', name: 'pve1 경유', kind: 'routed', via: 'lan:192.168.50.2', connections: 1 },
-    ],
-    8780: [{ id: 'laptop', name: 'laptop', kind: 'tailnet', connections: 1 }],
-  },
-  idleServices: 3,
-  pool: devices.pool,
-  selfLanIps: ['192.168.50.5'],
-  proxmox: { configured: true, ok: true, hosts: 1 },
-};
-
-// What must never appear in a strict-policy result.
-const LEAKS: [string, RegExp][] = [
-  ['IPv4', /\b\d{1,3}(?:\.\d{1,3}){3}\b/],
-  ['IPv6', /fd7a:|::[0-9a-f]/i],
-  ['MAC', /\b[0-9a-f]{2}(?::[0-9a-f]{2}){5}\b/i],
-  ['home path', /\/home\/|~\//],
-  ['ssh command', /ssh -N|alice@/],
-  ['pid', /\bpid\b|\(\d{3,}\)|4242/],
-  ['cmdline', /--token|server\.js/],
-  ['proxmox token id', /root@pam/],
-  ['proxmox / pool URL', /:8006|:7720/],
-  ['looseMode', /looseMode/],
-  ['nameKey', /nameKey|mac:/],
-];
-
-function assertClean(label: string, value: unknown) {
-  const s = JSON.stringify(value);
-  for (const [what, re] of LEAKS) assert.doesNotMatch(s, re, `${label}: ${what} leaked: ${s.match(re)?.[0]}`);
-}
+import type { Devices } from '../src/core/devices.ts';
+import { assertClean, devices, snap, usage } from './fixtures/remote-redact.ts';
 
 test('list_ports projection drops pids, cmdlines, ssh commands and addresses, keeps names and tailnet URLs', () => {
   const out = redactPorts(snap, { include_system: true });
@@ -277,25 +33,36 @@ test('list_devices projection drops IPs, MACs, endpoints, routes, URLs and error
   assert.equal((out.devices[0].pool as any).detail, undefined);
   assert.deepEqual(out.devices[0].virt, { type: 'kvm', proxmox: true });
   assert.equal(out.proxmox.hosts[0].guests[0].name, 'nas');
-  assert.equal(out.proxmox.hosts[0].device, 'lan-device-1');
-  assert.equal(out.proxmox.hosts[0].guests[0].device, 'lan-device-2');
+  assert.equal(out.proxmox.hosts[0].device, lanAlias('lan:192.168.50.2'));
+  assert.equal(out.proxmox.hosts[0].guests[0].device, lanAlias('lan:192.168.50.20'));
   assert.equal(out.proxmox.error, 'Proxmox API unreachable or refused the token');
 });
 
 test('who_uses_what projection aliases lan:<ip> ids consistently and drops pids from process names', () => {
   const out = redactUsage(usage);
   assertClean('usage', out);
-  assert.equal(out.cards[0].id, 'lan-device-1');
+  assert.equal(out.cards[0].id, lanAlias('lan:192.168.50.108'));
   assert.equal(out.cards[0].name, 'LAN device');
-  assert.equal(out.cards[2].id, 'lan-device-2');
+  assert.equal(out.cards[2].id, lanAlias('lan:192.168.50.20'));
   assert.equal(out.cards[2].name, 'nas', 'user-given names stay');
-  assert.equal(out.byPort[22][0].id, 'lan-device-1', 'byPort refers to the same alias as the card');
+  assert.equal(out.byPort[22][0].id, lanAlias('lan:192.168.50.108'), 'byPort refers to the same alias as the card');
   assert.equal(out.byPort[22][0].name, 'LAN device');
   assert.equal(out.byPort[22][1].id, 'pve1~routed', 'ids with ~ are not mistaken for paths');
-  assert.equal(out.byPort[22][1].via, 'lan-device-3');
+  assert.equal(out.byPort[22][1].via, lanAlias('lan:192.168.50.2'));
   assert.deepEqual(out.local.uses[0].processes, ['curl']);
   assert.equal((out as any).selfLanIps, undefined);
   assert.equal((out as any).pool, undefined);
+});
+
+test('lan aliases are the same across responses and tools, and hide the address', () => {
+  const a = redactUsage(usage);
+  const b = redactUsage(usage);
+  const d = redactDevices(devices);
+  assert.equal(a.cards[2].id, b.cards[2].id, 'two calls agree');
+  assert.equal(a.cards[2].id, d.proxmox.hosts[0].guests[0].device, 'who_uses_what and list_devices agree');
+  assert.match(lanAlias('lan:192.168.50.20'), /^lan-device-[0-9a-f]{6}$/);
+  assert.notEqual(lanAlias('lan:192.168.50.20'), lanAlias('lan:192.168.50.21'));
+  assert.doesNotMatch(lanAlias('lan:192.168.50.20'), /192\.168|50\.20/, 'the hex suffix may contain any digits, never the address');
 });
 
 test('flags loosen redaction only for what they name', () => {
@@ -310,7 +77,7 @@ test('flags loosen redaction only for what they name', () => {
 
   const u = redactUsage(usage, { showAddresses: false, showProcesses: true });
   assert.deepEqual(u.local.uses[0].processes, ['curl (3790306)', 'curl (3790307)']);
-  assert.equal(u.cards[0].id, 'lan-device-1');
+  assert.equal(u.cards[0].id, lanAlias('lan:192.168.50.108'));
 });
 
 test('scrubText: addresses by category, without mangling times, dates and versions', () => {
@@ -415,4 +182,238 @@ test('status resource over resources/read: failing sources are null without thei
   assert.equal(out.devices, null);
   assert.equal(out.pool, null);
   assert.equal(out.services.listening, 2);
+});
+
+// ---- list_worktrees, list_dev_servers, memory_usage (#8) ----
+
+const wt = (over: Partial<WorktreeInfo>): WorktreeInfo => ({
+  path: '/home/alice/projects/web/.claude/worktrees/agent-1',
+  short: '~/projects/web/.claude/worktrees/agent-1',
+  head: '0123456789abcdef0123456789abcdef01234567',
+  branch: 'feat/login',
+  detached: false,
+  main: false,
+  locked: false,
+  prunable: false,
+  changes: 0,
+  lastCommit: 'fix: talk to 192.168.50.9 with --token=abc (Secret commit message)',
+  sizeKb: 204800,
+  mergedByAncestry: true,
+  pr: null,
+  inUse: [],
+  keep: [],
+  removable: true,
+  ...over,
+});
+
+const worktreesDoc: WorktreesDoc = {
+  at: '2026-10-17T12:30:00.000Z',
+  scanning: false,
+  tookMs: 812,
+  repos: [
+    {
+      name: 'web',
+      path: '/home/alice/projects/web',
+      short: '~/projects/web',
+      remote: 'https://alice:ghp_secret@github.com/acme/web.git',
+      defaultBranch: 'main',
+      prsKnown: true,
+      error: null,
+      worktrees: [
+        wt({ path: '/home/alice/projects/web', short: '~/projects/web', branch: 'main', main: true, keep: ['메인 체크아웃'], removable: false }),
+        wt({}),
+        wt({ path: '/srv/wt/web-pr', short: '/srv/wt/web-pr', branch: 'feat/pay', changes: 3, mergedByAncestry: false, pr: { number: 42, state: 'OPEN', headMatches: true }, inUse: [4242], keep: ['변경 3개', '프로세스 1개 실행 중', 'PR #42 열림'], removable: false }),
+        wt({ path: '/home/alice/projects/web/.claude/worktrees/gone', branch: null, detached: true, prunable: true, changes: null, sizeKb: null, mergedByAncestry: null, removable: false }),
+      ],
+    },
+    {
+      name: 'api',
+      path: '/opt/src/api',
+      short: '/opt/src/api',
+      remote: null,
+      defaultBranch: null,
+      prsKnown: false,
+      error: 'fatal: not a repository: /opt/src/api/.git',
+      worktrees: [],
+    },
+  ],
+  totals: { repos: 2, worktrees: 4, removable: 1, prunable: 1, removableKb: 204800 },
+};
+
+const devServersDoc: DevServersDoc = {
+  running: [
+    {
+      unit: 'pb-dev-worktrees-agent-1-0a1b2c3d.service',
+      path: '/home/alice/projects/web/.claude/worktrees/agent-1',
+      active: true,
+      state: 'active/running',
+      description: 'Portboard dev: web@feat/login :5173 (dev)',
+      port: 5173,
+      since: '2026-10-17T11:00:00.000Z',
+      owner: 'web@feat/login',
+    },
+    { unit: 'pb-dev-tmp-x-0a0a0a0a.service', path: '/tmp/x', active: false, state: 'failed/failed', description: 'Portboard dev: ?', port: null, since: null, owner: null },
+  ],
+  startable: {
+    '/home/alice/projects/web/.claude/worktrees/agent-1': { scripts: { dev: 'vite --host 100.64.0.1 --token=abc', start: 'node server.js' }, preferred: 'dev', owner: 'web@feat/login' },
+    '/srv/wt/web-pr': { scripts: { serve: 'serve -l 192.168.50.5:3000' }, preferred: 'serve', owner: 'web@feat/pay' },
+  },
+};
+
+const session = (over: Partial<SessionRow>): SessionRow => ({
+  pid: 4242,
+  id: '0f0e0d0c-0b0a-4908-8706-050403020100',
+  title: 'Secret project plan',
+  project: 'acme-secret',
+  version: '2.1.299',
+  stale: false,
+  startedAt: '2026-10-17T08:00:00.000Z',
+  uptimeSec: 16200,
+  lastActive: '2026-10-17T10:00:00.000Z',
+  idleMin: 150,
+  cpuPct: 0,
+  idle: true,
+  helper: false,
+  mb: 900,
+  breakdown: { cli: 400, mcp: 300, servers: 150, tools: 50 },
+  procs: 9,
+  mcp: ['supabase-mcp-secret'],
+  ...over,
+});
+
+const memorySample: Omit<MemorySample, 'cpu'> = {
+  at: '2026-10-17T12:33:00.000Z',
+  mem: { totalMb: 16384, usedMb: 12000, cacheMb: 2000, freeMb: 400, availableMb: 1300, availablePct: 8, shmemMb: 100, swapTotalMb: 4096, swapUsedMb: 3900, swapPct: 95 },
+  psi: { some: { avg10: 4, avg60: 6.5, avg300: 3, total: 1 }, full: { avg10: 1, avg60: 1.2, avg300: 0.5, total: 1 } },
+  groups: [
+    { key: 'claude', label: 'Claude 세션', mb: 5000, procs: 40 },
+    { key: 'mcp', label: 'MCP 서버', mb: 2400, procs: 12 },
+    { key: 'services', label: '서비스', mb: 1500, procs: 6 },
+    { key: 'docker', label: 'docker', mb: 1200, procs: 4 },
+    { key: 'other', label: '기타', mb: 800, procs: 30 },
+  ],
+  rssMb: 10900,
+  sessions: [
+    session({}),
+    session({ pid: 5151, title: 'Fix /home/alice/projects/web login', project: 'web', version: '2.1.295', stale: true, idle: false, idleMin: 2 }),
+    session({ pid: 6161, title: null, project: null, helper: true }),
+  ],
+  newestVersion: '2.1.299',
+  mcp: [
+    { name: 'supabase-mcp-secret', label: 'supabase-mcp-secret', instances: 3, mb: 1200, orphans: 1, sessions: 3, procs: 6 },
+    { name: 'playwright', label: '@playwright/mcp', instances: 3, mb: 1200, orphans: 0, sessions: 3, procs: 6 },
+  ],
+  services: [
+    { name: 'web dev', ports: [5173], unit: 'pb-dev-worktrees-agent-1-0a1b2c3d.service', dev: true, unused: true, mb: 600, startedAt: '2026-10-15T08:00:00.000Z', uptimeSec: 200000, session: 'Secret project plan' },
+    { name: 'acme', ports: [8780], unit: 'acme.service', dev: false, unused: false, mb: 300, startedAt: null, uptimeSec: null, session: null },
+  ],
+  docker: [{ name: 'supabase_db', mb: 900 }],
+  other: [{ name: 'python3-secret-worker', count: 3, mb: 500 }],
+};
+
+const memoryView: MemoryView = viewOf(
+  memorySample,
+  { version: 1, pressure: { ...emptyPressure(), active: true, reasons: ['available', 'swap'] }, history: [], view: null },
+  DEFAULT_THRESHOLDS,
+  null,
+);
+
+// Paths (scrubbed or not: a projection that needs the scrub for a path copied one), commit messages, remote URLs,
+// pids, error texts and commit ids.
+const WORKTREE_LEAKS: [string, RegExp][] = [
+  ['path', /\/home\/|~\/|\/srv\/|\/opt\/|\.claude\/worktrees|\[path\]/],
+  ['commit message', /Secret commit|talk to/],
+  ['remote URL', /ghp_secret|github\.com/],
+  ['pid', /4242/],
+  ['error text', /fatal|not a repository/],
+  ['commit id', /0123456789abcdef/],
+];
+const DEV_LEAKS: [string, RegExp][] = [
+  ['path', /\/home\/|\/srv\/|\/tmp\/|\.claude|\[path\]/],
+  ['unit', /pb-dev-|\.service/],
+  ['description', /Portboard dev/],
+  ['command', /vite|server\.js|--token|serve -l|--host/],
+];
+const MEMORY_NAMES = /Secret project plan|acme-secret|supabase-mcp-secret|python3-secret-worker|@playwright\/mcp|"title"|"project"|"session"|"text"|"other":\[|"mcpServers":\[/;
+
+function assertNone(label: string, value: unknown, leaks: [string, RegExp][]) {
+  assertClean(label, value);
+  const s = JSON.stringify(value);
+  for (const [what, re] of leaks) assert.doesNotMatch(s, re, `${label}: ${what} leaked: ${s.match(re)?.[0]}`);
+}
+
+test('list_worktrees projection: repo, branch, state, PR, changed, size, removable and why; no paths, commits or pids', () => {
+  const out = redactWorktrees(worktreesDoc);
+  assertNone('worktrees', out, WORKTREE_LEAKS);
+  assert.deepEqual(out.totals, { repos: 2, worktrees: 4, removable: 1, missing: 1, removableMb: 200 });
+  const web = out.repos[0];
+  assert.equal(web.repo, 'web');
+  assert.equal(web.worktrees.length, 3, 'the main checkout is left out');
+  assert.deepEqual(web.worktrees[0], { branch: 'feat/login', detached: false, state: 'merged', pr: null, changed: false, sizeMb: 200, inUse: false, removable: true, keep: [] });
+  assert.deepEqual(web.worktrees[1], {
+    branch: 'feat/pay',
+    detached: false,
+    state: 'unmerged',
+    pr: { number: 42, state: 'OPEN', headMatches: true },
+    changed: true,
+    sizeMb: 200,
+    inUse: true,
+    removable: false,
+    keep: ['변경 3개', '프로세스 1개 실행 중', 'PR #42 열림'],
+  });
+  assert.equal(web.worktrees[2].state, 'missing');
+  assert.equal(web.worktrees[2].changed, null);
+  assert.deepEqual(out.repos[1], { repo: 'api', defaultBranch: null, prsKnown: false, scanFailed: true, worktrees: [] });
+  assert.deepEqual(Object.keys(web).sort(), ['defaultBranch', 'prsKnown', 'repo', 'scanFailed', 'worktrees']);
+
+  assert.deepEqual(redactWorktrees(worktreesDoc, { repo: 'api' }).repos.map((r) => r.repo), ['api']);
+  assert.deepEqual(redactWorktrees(worktreesDoc, { removableOnly: true }).repos[0].worktrees.map((w) => w.branch), ['feat/login']);
+});
+
+test('list_dev_servers projection: owner, state, port, since and script names; no paths, units or commands', () => {
+  const out = redactDevServers(devServersDoc);
+  assertNone('dev servers', out, DEV_LEAKS);
+  assert.deepEqual(out.running[0], { owner: 'web@feat/login', active: true, state: 'active/running', port: 5173, since: '2026-10-17T11:00:00.000Z' });
+  assert.equal(out.running[1].owner, null);
+  assert.deepEqual(out.startable, [
+    { owner: 'web@feat/login', scripts: ['dev', 'start'], preferred: 'dev' },
+    { owner: 'web@feat/pay', scripts: ['serve'], preferred: 'serve' },
+  ]);
+});
+
+test('memory_usage projection: groups, totals and pressure; no titles, projects, process names or suggestion texts', () => {
+  const out = redactMemory(memoryView);
+  assertNone('memory', out, [['names', MEMORY_NAMES], ['pid', /4242|5151|6161/], ['session id', /0f0e0d0c/]]);
+  assert.deepEqual(out.memory, { totalGb: 16, usedGb: 11.7, availableGb: 1.3, availablePct: 8, swapTotalGb: 4, swapPct: 95, psi: { someAvg60: 6.5, fullAvg60: 1.2 } });
+  assert.equal(out.pressure.active, true);
+  assert.deepEqual(out.pressure.reasons, ['available', 'swap']);
+  assert.deepEqual(out.pressure.thresholds, { availablePct: 10, psiSome60: 5, swapPct: 90, sustainMin: 5 });
+  assert.deepEqual(out.groups.map((g) => [g.group, g.gb, g.processes]), [['claude', 4.9, 40], ['mcp', 2.3, 12], ['services', 1.5, 6], ['docker', 1.2, 4], ['other', 0.8, 30]]);
+  assert.deepEqual(out.totals, {
+    rssGb: 10.6, sessions: 3, idleSessions: 2, staleVersion: 1, newestVersion: '2.1.299', mcpServers: 2, mcpInstances: 6, mcpGb: 2.3, mcpOrphans: 1, services: 2, devServers: 1, docker: 1,
+  });
+  assert.deepEqual(out.sessions[1], { version: '2.1.295', stale: true, helper: false, idle: false, idleMin: 2, mb: 900, mcpMb: 300, uptimeH: 4.5 });
+  assert.deepEqual(out.services[0], { name: 'web dev', ports: [5173], mb: 600, dev: true, unused: true });
+  assert.deepEqual(out.docker, [{ name: 'supabase_db', mb: 900 }]);
+  assert.ok(out.suggestions.length > 0);
+  for (const s of out.suggestions) assert.deepEqual(Object.keys(s).sort(), ['kind', 'mb']);
+  assert.equal(redactMemory(memoryView, 1).sessions.length, 1, 'top limits the rows');
+});
+
+test('#8 flags: showProcesses adds memory names (never pids or paths), showAddresses adds none; worktrees and dev servers never loosen', () => {
+  const procs = redactMemory(memoryView, 10, { showAddresses: false, showProcesses: true });
+  assert.equal(procs.sessions[0].title, 'Secret project plan');
+  assert.equal(procs.sessions[0].project, 'acme-secret');
+  assert.equal(procs.sessions[1].title, 'Fix [path] login', 'a path in a title is still scrubbed');
+  assert.deepEqual(procs.mcpServers?.map((m) => m.name), ['supabase-mcp-secret', '@playwright/mcp']);
+  assert.deepEqual(procs.other, [{ name: 'python3-secret-worker', count: 3, mb: 500 }]);
+  assert.equal(procs.services[0].session, 'Secret project plan');
+  assert.ok(procs.suggestions.every((s) => typeof s.text === 'string'));
+  assert.doesNotMatch(JSON.stringify(procs), /4242|0f0e0d0c|"pid"|\/home\//, 'no pids, session ids or paths even then');
+
+  assert.deepEqual(redactMemory(memoryView, 10, { showAddresses: true, showProcesses: false }), redactMemory(memoryView), 'showAddresses changes nothing here');
+
+  const loose = { showAddresses: true, showProcesses: true };
+  assert.deepEqual(redactWorktrees(worktreesDoc, {}, loose), redactWorktrees(worktreesDoc), 'no flag adds a worktree field');
+  assert.deepEqual(redactDevServers(devServersDoc, loose), redactDevServers(devServersDoc), 'no flag adds a dev-server field');
 });

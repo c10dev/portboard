@@ -63,6 +63,11 @@ export function remoteHosts(doc) {
   const node = doc.pvePorts?.node ?? t('devices.pveHost');
   const pveNote = (name) => t('devices.remote.pveNote', { node, name });
   const hosts = doc.devices.filter((d) => !d.self && d.ports).map((d) => {
+    if (d.portsSource === 'agent') {
+      const ok = !!d.agent?.ok;
+      const note = ok ? t('devices.remote.agentNote', { dns: d.dnsName ?? d.name }) : t('devices.remote.agentStale', { name: d.name });
+      return { key: d.name, name: d.name, label: d.name, state: ok ? t('devices.online') : t('devices.remote.agentDown'), online: ok && d.online, ports: d.ports, note };
+    }
     if (d.portsSource === 'pve-ssh' || !d.pool) {
       const note = d.portsSource === 'pve-ssh' ? pveNote(d.name) : t('devices.remote.winNote', { dns: d.dnsName ?? d.name });
       return { key: d.name, name: d.name, label: d.name, state: d.online ? t('devices.online') : t('devices.remote.tsOff'), online: d.online, ports: d.ports, note };

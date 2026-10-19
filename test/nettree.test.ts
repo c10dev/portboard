@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mergeDevices, parsePeers, type Device } from '../src/core/devices.ts';
 import { buildNetTree, inCidr, walk, type LanHost, type NetNode, type NetTree } from '../src/core/nettree.ts';
 import type { Guest, ProxmoxStatus, PveHost } from '../src/core/proxmox.ts';
-import { redactDevices } from '../src/remote/redact.ts';
+import { lanAlias, redactDevices } from '../src/remote/redact.ts';
 
 const dev = (id: string, over: Partial<Device> = {}): Device => ({
   id, name: id, dnsName: `${id}.example.ts.net`, os: 'linux', self: false, online: true, lastSeen: null,
@@ -249,9 +249,9 @@ test('remote list_devices: the tree without addresses or address-made keys; show
   const net = host.children.find((c: any) => c.kind === 'subnet');
   assert.equal(net.name, 'LAN');
   assert.deepEqual(net.subnet, { router: 'hv1', role: 'primary', primary: 'hv1', standby: [] });
-  assert.deepEqual(net.children.map((c: any) => [c.device, c.reach]), [['desk', 'tailnet'], ['lan-device-2', 'routed'], ['lan-device-3', 'arp']]);
+  assert.deepEqual(net.children.map((c: any) => [c.device, c.reach]), [['desk', 'tailnet'], [lanAlias('lan:10.0.0.108'), 'routed'], [lanAlias('lan:10.0.0.1'), 'arp']]);
   // the LAN-only guest: aliased like the other lan: ids, in one response
-  assert.equal(host.children.find((c: any) => c.guest?.vmid === 204).device, 'lan-device-1');
+  assert.equal(host.children.find((c: any) => c.guest?.vmid === 204).device, lanAlias('lan:10.0.0.44'));
   const open = redactDevices(d, { showAddresses: true, showProcesses: false });
   const openNet = (open.tree!.roots[0] as any).children.find((c: any) => c.kind === 'subnet');
   assert.equal(openNet.subnet.cidr, '10.0.0.0/24');

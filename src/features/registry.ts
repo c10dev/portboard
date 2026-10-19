@@ -22,6 +22,7 @@ import { alertsFeature } from './alerts.ts';
 import { claudeSessionFeature } from './claude-session.ts';
 import { claudeFeature } from './claude.ts';
 import { control } from './control.ts';
+import { devhealthFeature } from './devhealth.ts';
 import { devicesFeature } from './devices.ts';
 import { devServersFeature } from './devservers.ts';
 import { digestFeature } from './digest.ts';
@@ -54,6 +55,7 @@ export const MODULES: FeatureModule[] = [
   claudeFeature,
   claudeSessionFeature,
   control,
+  devhealthFeature,
   devicesFeature,
   devServersFeature,
   digestFeature,
@@ -124,7 +126,7 @@ export function buildRegistry(features: FeatureModule[]): Registry {
   for (const t of tools) {
     if (!t.remote) continue;
     if (t.def.annotations.readOnlyHint !== true) throw new Error(`feature registry: ${t.def.name} changes things and can't be offered remotely`);
-    remoteTools.push({ ...t.def, description: t.remote.description ?? t.def.description, annotations: READ_ONLY });
+    remoteTools.push({ ...t.def, description: t.remote.description ?? t.def.description, inputSchema: t.remote.inputSchema ?? t.def.inputSchema, annotations: READ_ONLY });
     remoteCalls.set(t.def.name, t.remote.call);
   }
   for (const t of features.flatMap((f) => f.remoteTools ?? [])) {

@@ -13,7 +13,9 @@
 import { readdir, readFile, readlink, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { TtlMap } from './cache.ts';
 import { GIT_NO_HOOKS, run } from './exec.ts';
+import { services } from './platform/services.ts';
 import { stillEnded, type EndedLookup } from './claude-sessions.ts';
 import { t } from './i18n.ts';
 
@@ -120,7 +122,8 @@ export function cleanupReasons(o: Owner, now: number, ended?: EndedLookup): Clea
 
 // ---- lookups (cached) ----
 
-const titleCache = new Map<string, { mtimeMs: number; title: string | null; path: string }>();
+/** session id → its title, valid while the transcript's mtime is unchanged; the 512 most recent sessions */
+const titleCache = new TtlMap<string, { mtimeMs: number; title: string | null; path: string }>({ ttlMs: Infinity, maxEntries: 512 });
 let sessionIndex: { at: number; files: Map<string, string> } | null = null;
 
 async function sessionFile(id: string): Promise<string | null> {
@@ -142,7 +145,7 @@ async function sessionInfo(id: string): Promise<{ title: string | null; lastActi
   if (!path) return { title: null, lastActive: null };
   const st = await stat(path).catch(() => null);
   if (!st) return { title: null, lastActive: null };
-  const hit = titleCache.get(id);
+  const hit = titleCache.peek(id);
   if (hit && hit.mtimeMs === st.mtimeMs) return { title: hit.title, lastActive: new Date(st.mtimeMs).toISOString() };
   // Titles are short lines; the last one wins. Read only the tail of big transcripts.
   const text = await readFile(path, 'utf8').catch(() => '');
@@ -174,8 +177,9 @@ async function isClaudeProcess(pid: number): Promise<boolean> {
   return /claude|ccd-cli/i.test(cmd);
 }
 
-const gitCache = new Map<string, { at: number; value: WorktreeRef | null }>();
 const GIT_TTL = 5 * 60_000;
+/** cwd → its checkout (null: not in one), written once the git calls are done; the 512 most recent cwds */
+const gitCache = new TtlMap<string, WorktreeRef | null>({ ttlMs: GIT_TTL, maxEntries: 512 });
 
 async function findGitRoot(dir: string): Promise<{ root: string; gitFile: string | null } | null> {
   let d = dir;
@@ -190,8 +194,7 @@ async function findGitRoot(dir: string): Promise<{ root: string; gitFile: string
 }
 
 async function worktreeOf(cwd: string): Promise<WorktreeRef | null> {
-  const hit = gitCache.get(cwd);
-  if (hit && Date.now() - hit.at < GIT_TTL) return hit.value;
+  if (gitCache.has(cwd)) return gitCache.get(cwd) ?? null;
   let value: WorktreeRef | null = null;
   const g = await findGitRoot(cwd);
   if (g) {
@@ -224,7 +227,7 @@ async function worktreeOf(cwd: string): Promise<WorktreeRef | null> {
       linked: !!g.gitFile,
     };
   }
-  gitCache.set(cwd, { at: Date.now(), value });
+  gitCache.set(cwd, value);
   return value;
 }
 
@@ -268,7 +271,7 @@ export async function transientUnits(units: string[], now = Date.now()): Promise
   if (now - transientCache.at > 60_000) transientCache = { at: now, units: new Map() };
   const missing = [...new Set(units)].filter((u) => !transientCache.units.has(u));
   if (missing.length) {
-    const r = await run('systemctl', ['--user', 'show', '-p', 'Id,FragmentPath', ...missing], 5_000);
+    const r = await services().show(missing, 'Id,FragmentPath', 5_000);
     for (const block of r.stdout.split('\n\n')) {
       const id = /^Id=(.*)$/m.exec(block)?.[1];
       const frag = /^FragmentPath=(.*)$/m.exec(block)?.[1] ?? '';

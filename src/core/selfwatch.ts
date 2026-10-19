@@ -33,6 +33,8 @@ export const SELFWATCH_PATH = join(PATHS.stateDir, 'selfwatch.json');
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
 export const SELFWATCH_EVERY = MIN;
+/** The first look waits a little: right after start every collector is still on its first attempt. */
+export const SELFWATCH_FIRST = Math.min(SELFWATCH_EVERY, 20_000);
 export const THRESHOLD_MS = Math.max(1, Number(process.env.PORTBOARD_SELFWATCH_MIN) || 15) * MIN;
 export const SELF_RATE_MS = 60 * MIN;
 /** A collector that hasn't reported for this long is failing too (its loop is stuck); hostkeys probes only on demand */
@@ -486,18 +488,6 @@ export function createSelfWatch(deps: SelfWatchDeps = {}) {
         .catch((err) => log(`[portboard] self-watch failed: ${(err as Error).message}`))
         .finally(() => (running = null));
       return running;
-    },
-
-    start(every = SELFWATCH_EVERY): () => void {
-      const timer = setInterval(() => void this.tick(), every);
-      timer.unref();
-      // The first look waits a little: right after start every collector is still on its first attempt.
-      const first = setTimeout(() => void this.tick(), Math.min(every, 20_000));
-      first.unref();
-      return () => {
-        clearInterval(timer);
-        clearTimeout(first);
-      };
     },
 
     async status(): Promise<SelfWatchStatus> {

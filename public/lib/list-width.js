@@ -1,3 +1,4 @@
+// @ts-check
 // 목록 너비 (설정 › 화면, after the Claude app's 대화 기록 너비): how wide the list column may get on this device —
 // 좁게 · 보통 · 넓게. Kept in this browser only (localStorage pb.listWidth) and applied as the shell's --col-max (the
 // 서비스 list, shell.css) and --col-wide (개발) on <html>. lib/shell-boot.js applies the same values before the first

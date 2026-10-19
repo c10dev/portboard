@@ -1,0 +1,15 @@
+{
+ "profile": "production",
+ "connectorUrl": null,
+ "publicUrl": false,
+ "pendingApproval": false,
+ "approvalExpiresAt": null,
+ "clients": [],
+ "grants": [],
+ "attention": 0,
+ "thresholds": {
+  "soonDays": 7,
+  "idleDays": 7,
+  "hideDays": 7
+ }
+}
