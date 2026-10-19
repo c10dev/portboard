@@ -31,6 +31,17 @@ export const LOCALES = ['en', 'ko'] as const;
 export type Locale = (typeof LOCALES)[number];
 export const isLocale = (v: unknown): v is Locale => typeof v === 'string' && (LOCALES as readonly string[]).includes(v);
 
+/** "+09:00", "-05:30", "Z" → the offset from UTC in ms; anything else → null. A fixed offset: no DST. */
+export function parseUtcOffset(v: unknown): number | null {
+  if (v === 'Z') return 0;
+  const m = typeof v === 'string' ? /^([+-])(\d{2}):(\d{2})$/.exec(v) : null;
+  if (!m) return null;
+  const h = Number(m[2]);
+  const min = Number(m[3]);
+  if (h > 14 || min > 59) return null;
+  return (m[1] === '-' ? -1 : 1) * (h * 60 + min) * 60_000;
+}
+
 const CODE_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
 /** portboard.json next to the code (the checkout root), read under the user's file */
@@ -65,6 +76,8 @@ export const SITE_DEFAULTS = {
   pve: { host: 'pve', user: 'root', key: '~/.ssh/portboard_ro', node: 'pve', enabled: false },
   /** The language of the text the server writes (alerts, the setup checklist, MCP text) and of the shell it renders */
   locale: 'en' as Locale,
+  /** The fixed UTC offset the digest schedule and the adoption days are counted in (the default keeps the original KST) */
+  utcOffset: '+09:00',
   /** winports.json's defaults (a desktop's Windows side, read over SSH): off until a host is set */
   windows: { host: 'windows', user: null as string | null, key: '~/.ssh/portboard_ro', device: 'windows', enabled: false },
 };
@@ -80,6 +93,7 @@ export interface SiteFile {
   dashboardUrl?: string;
   publicUrl?: string;
   locale?: string;
+  utcOffset?: string;
   pve?: Record<string, unknown>;
   windows?: Record<string, unknown>;
 }
@@ -118,10 +132,14 @@ export interface Site {
   publicUrl: string;
   /** 'en' | 'ko': PORTBOARD_LOCALE, else portboard.json's locale, else en */
   locale: Locale;
+  /** "+09:00": PORTBOARD_UTC_OFFSET, else portboard.json's utcOffset, else +09:00 */
+  utcOffset: string;
+  /** utcOffset in ms */
+  utcOffsetMs: number;
   pve: typeof SITE_DEFAULTS.pve;
   windows: typeof SITE_DEFAULTS.windows;
   /** where each value came from */
-  sources: Record<'host' | 'tailnet' | 'dnsName' | 'user' | 'checkout' | 'reposRoots' | 'poolUrl' | 'dashboardUrl' | 'publicUrl' | 'locale', SiteSource>;
+  sources: Record<'host' | 'tailnet' | 'dnsName' | 'user' | 'checkout' | 'reposRoots' | 'poolUrl' | 'dashboardUrl' | 'publicUrl' | 'locale' | 'utcOffset', SiteSource>;
   /** the portboard.json path read (whether or not it exists) */
   file: string;
   /** the file exists and was used */
@@ -134,7 +152,7 @@ export interface Site {
 
 type Env = Record<string, string | undefined>;
 
-const STRING_KEYS = ['host', 'tailnet', 'user', 'checkout', 'poolUrl', 'dashboardUrl', 'publicUrl', 'locale'] as const;
+const STRING_KEYS = ['host', 'tailnet', 'user', 'checkout', 'poolUrl', 'dashboardUrl', 'publicUrl', 'locale', 'utcOffset'] as const;
 const OBJECT_KEYS = ['pve', 'windows'] as const;
 
 /** Parses portboard.json. A key of the wrong type is dropped (and reported); the rest still apply. */
@@ -152,7 +170,7 @@ export function parseSiteFile(text: string | null): { file: SiteFile; found: boo
   const bad: string[] = [];
   for (const k of STRING_KEYS) {
     if (r[k] === undefined) continue;
-    if (typeof r[k] === 'string' && r[k] && (k !== 'locale' || isLocale(r[k]))) file[k] = r[k] as string;
+    if (typeof r[k] === 'string' && r[k] && (k !== 'locale' || isLocale(r[k])) && (k !== 'utcOffset' || parseUtcOffset(r[k]) !== null)) file[k] = r[k] as string;
     else bad.push(k);
   }
   if (r.reposRoot !== undefined) {
@@ -229,6 +247,9 @@ export function resolveSite(input: ResolveInput = {}): Site {
   const publicUrl = publicFound ?? (dnsName.includes('.') ? `https://${dnsName}` : `https://${host}`);
   // an unknown PORTBOARD_LOCALE is ignored (the file or the default applies)
   const [locale, localeSrc] = pick<Locale>(isLocale(env.PORTBOARD_LOCALE) ? env.PORTBOARD_LOCALE : null, null, isLocale(f.locale) ? f.locale : null, D.locale);
+  // an unparsable PORTBOARD_UTC_OFFSET is ignored the same way
+  const envOffset = parseUtcOffset(env.PORTBOARD_UTC_OFFSET) !== null ? env.PORTBOARD_UTC_OFFSET : null;
+  const [utcOffset, utcOffsetSrc] = pick<string>(envOffset, null, f.utcOffset, D.utcOffset);
 
   return {
     host,
@@ -242,6 +263,8 @@ export function resolveSite(input: ResolveInput = {}): Site {
     dashboardUrl: dash,
     publicUrl,
     locale,
+    utcOffset,
+    utcOffsetMs: parseUtcOffset(utcOffset) ?? 0,
     // Merged here, validated by pveports.ts / winports.ts with their own files on top
     pve: { ...D.pve, ...(f.pve as Partial<typeof D.pve>) },
     windows: { ...D.windows, ...(f.windows as Partial<typeof D.windows>) },
@@ -256,6 +279,7 @@ export function resolveSite(input: ResolveInput = {}): Site {
       dashboardUrl: dash === null ? 'default' : dashSrc,
       publicUrl: publicSrc,
       locale: localeSrc,
+      utcOffset: utcOffsetSrc,
     },
     file: input.path ?? PATHS.site,
     fileFound: input.found ?? false,

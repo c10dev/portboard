@@ -23,11 +23,13 @@ import type { History } from './history.ts';
 import type { SelfWatchStatus } from './selfwatch.ts';
 import { adoptionLine, type Totals } from './adoption.ts';
 import { t } from './i18n.ts';
+import { SITE } from './site.ts';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
-const KST = 9 * HOUR;
+/** The configured fixed UTC offset (portboard.json utcOffset, PORTBOARD_UTC_OFFSET; default +09:00, KST) */
+const KST = SITE.utcOffsetMs;
 
 export type DigestMode = 'off' | 'daily' | 'weekly';
 
@@ -62,7 +64,7 @@ export function checkSettings(body: unknown): string | null {
   const b = body as Record<string, unknown>;
   for (const k of Object.keys(b)) if (k !== 'mode' && k !== 'time') return `unknown field: ${k}`;
   if (b.mode !== undefined && !isMode(b.mode)) return 'mode must be off, daily or weekly';
-  if (b.time !== undefined && !isTime(b.time)) return 'time must be HH:MM (24 h, KST)';
+  if (b.time !== undefined && !isTime(b.time)) return 'time must be HH:MM (24 h, server time zone)';
   return null;
 }
 

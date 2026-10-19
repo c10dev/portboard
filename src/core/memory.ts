@@ -24,6 +24,7 @@
 //
 // Read-only: nothing here stops, signals or changes a process.
 
+import { readFileSync } from 'node:fs';
 import { open, readdir, readFile, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { dur, type Message } from './alerts.ts';
@@ -35,7 +36,29 @@ const HOUR = 60 * MIN;
 /** USER_HZ: /proc times are in these ticks on every Linux this runs on */
 export const CLK_TCK = 100;
 /** /proc/<pid>/stat rss is in pages */
-export const PAGE_KB = 4;
+export const PAGE_KB = pageKb();
+
+/**
+ * The kernel's page size in kB: 4 on x86-64, 16 or 64 on some arm64 kernels. Node has no API for it, so it is
+ * worked out from this process's own RSS, which /proc reports both in kB (status) and in pages (statm); 4 when
+ * /proc can't be read (not Linux, tests on another OS).
+ */
+export function pageKb(): number {
+  try {
+    const kb = Number(/^VmRSS:\s+(\d+)/m.exec(readFileSync('/proc/self/status', 'utf8'))?.[1]);
+    const pages = Number(readFileSync('/proc/self/statm', 'utf8').split(' ')[1]);
+    return pageKbFrom(kb, pages);
+  } catch {
+    return 4;
+  }
+}
+
+/** The page size that best explains `kb` over `pages` (the two reads are a moment apart): 4, 16 or 64 */
+export function pageKbFrom(kb: number, pages: number): number {
+  if (!(kb > 0) || !(pages > 0)) return 4;
+  const ratio = kb / pages;
+  return [4, 16, 64].reduce((best, s) => (Math.abs(Math.log2(ratio / s)) < Math.abs(Math.log2(ratio / best)) ? s : best), 4);
+}
 export const SAMPLE_EVERY = MIN;
 /** A waiting CLI still polls (0.5–1.6 % of a core measured); a running tool call is well above this */
 export const IDLE_CPU_PCT = 3;

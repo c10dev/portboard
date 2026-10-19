@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { PortEntry, Snapshot } from '../src/core/index.ts';
 import type { Devices } from '../src/core/devices.ts';
 import type { DeviceCard, Usage } from '../src/core/usage.ts';
-import { redactDevices, redactPorts, redactStatus, redactUsage, scrubText, STRICT } from '../src/remote/redact.ts';
+import { lanAlias, redactDevices, redactPorts, redactStatus, redactUsage, scrubText, STRICT } from '../src/remote/redact.ts';
 import { readRemoteResource } from '../src/remote/tools.ts';
 
 // Synthetic, live-shaped fixtures. Addresses are made up (RFC 1918, CGNAT, TEST-NET, locally administered MACs).
@@ -277,25 +277,36 @@ test('list_devices projection drops IPs, MACs, endpoints, routes, URLs and error
   assert.equal((out.devices[0].pool as any).detail, undefined);
   assert.deepEqual(out.devices[0].virt, { type: 'kvm', proxmox: true });
   assert.equal(out.proxmox.hosts[0].guests[0].name, 'nas');
-  assert.equal(out.proxmox.hosts[0].device, 'lan-device-1');
-  assert.equal(out.proxmox.hosts[0].guests[0].device, 'lan-device-2');
+  assert.equal(out.proxmox.hosts[0].device, lanAlias('lan:192.168.50.2'));
+  assert.equal(out.proxmox.hosts[0].guests[0].device, lanAlias('lan:192.168.50.20'));
   assert.equal(out.proxmox.error, 'Proxmox API unreachable or refused the token');
 });
 
 test('who_uses_what projection aliases lan:<ip> ids consistently and drops pids from process names', () => {
   const out = redactUsage(usage);
   assertClean('usage', out);
-  assert.equal(out.cards[0].id, 'lan-device-1');
+  assert.equal(out.cards[0].id, lanAlias('lan:192.168.50.108'));
   assert.equal(out.cards[0].name, 'LAN device');
-  assert.equal(out.cards[2].id, 'lan-device-2');
+  assert.equal(out.cards[2].id, lanAlias('lan:192.168.50.20'));
   assert.equal(out.cards[2].name, 'nas', 'user-given names stay');
-  assert.equal(out.byPort[22][0].id, 'lan-device-1', 'byPort refers to the same alias as the card');
+  assert.equal(out.byPort[22][0].id, lanAlias('lan:192.168.50.108'), 'byPort refers to the same alias as the card');
   assert.equal(out.byPort[22][0].name, 'LAN device');
   assert.equal(out.byPort[22][1].id, 'pve1~routed', 'ids with ~ are not mistaken for paths');
-  assert.equal(out.byPort[22][1].via, 'lan-device-3');
+  assert.equal(out.byPort[22][1].via, lanAlias('lan:192.168.50.2'));
   assert.deepEqual(out.local.uses[0].processes, ['curl']);
   assert.equal((out as any).selfLanIps, undefined);
   assert.equal((out as any).pool, undefined);
+});
+
+test('lan aliases are the same across responses and tools, and hide the address', () => {
+  const a = redactUsage(usage);
+  const b = redactUsage(usage);
+  const d = redactDevices(devices);
+  assert.equal(a.cards[2].id, b.cards[2].id, 'two calls agree');
+  assert.equal(a.cards[2].id, d.proxmox.hosts[0].guests[0].device, 'who_uses_what and list_devices agree');
+  assert.match(lanAlias('lan:192.168.50.20'), /^lan-device-[0-9a-f]{6}$/);
+  assert.notEqual(lanAlias('lan:192.168.50.20'), lanAlias('lan:192.168.50.21'));
+  assert.doesNotMatch(lanAlias('lan:192.168.50.20'), /192|168/);
 });
 
 test('flags loosen redaction only for what they name', () => {
@@ -310,7 +321,7 @@ test('flags loosen redaction only for what they name', () => {
 
   const u = redactUsage(usage, { showAddresses: false, showProcesses: true });
   assert.deepEqual(u.local.uses[0].processes, ['curl (3790306)', 'curl (3790307)']);
-  assert.equal(u.cards[0].id, 'lan-device-1');
+  assert.equal(u.cards[0].id, lanAlias('lan:192.168.50.108'));
 });
 
 test('scrubText: addresses by category, without mangling times, dates and versions', () => {

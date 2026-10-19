@@ -1,7 +1,0 @@
-### Changed
-- Site defaults are generic: with no `portboard.json` the host name and user come from the machine, there is no tailnet, the checkout is the running one, the public URL is `https://<host>.<tailnet>`, and the Proxmox and Windows SSH readers are off until a host is set. A `portboard.json` at the checkout root is read under `~/.config/portboard/portboard.json`, key by key; the private repo keeps production's values there, so production resolves what it did ([config.md](../docs/config.md), `portboard.example.json`).
-- Mac app: the default server address and the bundle id come from the build (`PORTBOARD_SERVER_URL`, `PORTBOARD_BUNDLE_ID`, from the environment or `mac-app/build.env`), else a placeholder. The SwiftBar plugin's default is a placeholder that `mac-menubar-setup.sh` fills in.
-- Text that named the Proxmox node reads it from the site config. The Proxmox and Windows setup links open `docs/runbooks/ssh-readonly-setup.md` instead of an issue comment; the 설정 tab's doc list drops the settings write-up; the reservation owner placeholder reads `shop-web`.
-
-### Docs
-- Ready to publish: a README for a general user with screenshots from example data, LICENSE (MIT), CONTRIBUTING, SECURITY, CODE_OF_CONDUCT, issue and PR templates. Tests, fixtures and public docs use example names. `scripts/public-tree.sh` builds and checks the public tree; `docs/public-release.md` has the audit and the steps to publish.

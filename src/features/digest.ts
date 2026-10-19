@@ -12,8 +12,9 @@
 // Scheduled and manual sends both go to alerts.jsonl (the 🔔 dialog's 최근 보낸 알림). State, so a restart neither
 // re-sends nor skips: ~/.local/state/portboard/digest-state.json.
 
-import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { appendPrivate, writePrivate } from '../core/atomic.ts';
 import { snapshot } from '../core/index.ts';
 import { defaultChecker, httpSender, loadChannel, redact, type Channel, type Sender, type Sent } from '../core/alerts.ts';
 import {
@@ -181,10 +182,7 @@ export function createDigester(deps: DigesterDeps) {
   }
 
   async function saveState(st: DigestState): Promise<void> {
-    await mkdir(dirname(statePath), { recursive: true });
-    const tmp = `${statePath}.${process.pid}.tmp`;
-    await writeFile(tmp, `${JSON.stringify(st, null, 2)}\n`);
-    await rename(tmp, statePath);
+    await writePrivate(statePath, `${JSON.stringify(st, null, 2)}\n`);
   }
 
   async function preview(mode?: 'daily' | 'weekly', end = now()): Promise<Digest> {
@@ -198,7 +196,7 @@ export function createDigester(deps: DigesterDeps) {
     const m = digestMessage(d);
     const sent = await send(c, m).catch((err) => [{ channel: 'ntfy' as const, ok: false, error: redact(String(err), c) }]);
     const line = { t: new Date(now()).toISOString(), key: m.key, kind: m.kind, title: m.title, body: m.body, sent };
-    await mkdir(dirname(logPath), { recursive: true }).then(() => appendFile(logPath, `${JSON.stringify(line)}\n`)).catch(() => {});
+    await appendPrivate(logPath, `${JSON.stringify(line)}\n`).catch(() => {});
     return sent;
   }
 
@@ -277,7 +275,7 @@ const previewTool: Tool = {
     description:
       "The daily/weekly digest text as it would be sent now (period ending now): watched ports' uptime and outages, what is " +
       'down, new devices, leftover servers, removable worktrees, self-watch problems, most used services. Also the ' +
-      'setting (off/daily/weekly at HH:MM KST, Monday for weekly), the next slot and when one was last sent. Sends nothing.',
+      'setting (off/daily/weekly at HH:MM in the server time zone (utcOffset, default KST), Monday for weekly), the next slot and when one was last sent. Sends nothing.',
     inputSchema: {
       type: 'object',
       properties: { period: { type: 'string', enum: ['daily', 'weekly'], description: 'Default: the configured mode (daily when off)' } },
@@ -297,14 +295,14 @@ const setTool: Tool = {
     name: 'set_digest',
     title: 'Daily/weekly digest setting',
     description:
-      'Turn the digest off, daily or weekly (Monday), at a time in KST (default 09:00). It goes out through the same ' +
+      'Turn the digest off, daily or weekly (Monday), at a time in the server time zone (utcOffset, default KST; default 09:00). It goes out through the same ' +
       "channel as the down alerts. The first digest is the next slot after it's switched on. Use digest_preview to show " +
       'the user what it would say.',
     inputSchema: {
       type: 'object',
       properties: {
         mode: { type: 'string', enum: ['off', 'daily', 'weekly'] },
-        time: { type: 'string', pattern: '^([01]\\d|2[0-3]):[0-5]\\d$', description: 'HH:MM, 24 h, KST' },
+        time: { type: 'string', pattern: '^([01]\\d|2[0-3]):[0-5]\\d$', description: 'HH:MM, 24 h, server time zone (utcOffset, default KST)' },
       },
       required: ['mode'],
       additionalProperties: false,

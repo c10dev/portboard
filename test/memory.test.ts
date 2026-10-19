@@ -7,33 +7,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  classify,
-  createSampler,
-  DEFAULT_THRESHOLDS,
-  digestLine,
-  emptyPressure,
-  memView,
-  parseBtime,
-  parseMeminfo,
-  parsePsi,
-  parseStat,
-  parseState,
-  parseThresholds,
-  projectName,
-  pressureMessage,
-  pushHistory,
-  scanTitle,
-  sessionIdFromEnviron,
-  statusLine,
-  stepPressure,
-  suggestions,
-  useOf,
-  versionCmp,
-  type MemorySample,
-  type PressureState,
-  type ServiceRef,
-} from '../src/core/memory.ts';
+import { classify, createSampler, DEFAULT_THRESHOLDS, digestLine, emptyPressure, memView, pageKbFrom, parseBtime, parseMeminfo, parsePsi, parseStat, parseState, parseThresholds, pressureMessage, projectName, pushHistory, scanTitle, sessionIdFromEnviron, statusLine, stepPressure, suggestions, type MemorySample, type PressureState, type ServiceRef, useOf, versionCmp } from '../src/core/memory.ts';
 import { memoryReport, statusReport } from '../src/mcp/status.ts';
 import { redactStatus } from '../src/remote/redact.ts';
 import { toolSummary, viewOf } from '../src/features/memory.ts';
@@ -412,4 +386,12 @@ test('adoption counts tool calls per MCP server, and says so only for scans that
   // a scan from before the count (days without mcpServers): null, not "never used"
   const old: SessionRecord = { ...session, days: { '2026-10-18': { ...session.days['2026-10-18'], mcpServers: undefined } } };
   assert.equal(summarize([old], '2026-10-01', '2026-10-31').mcpServers, null);
+});
+
+test('pageKbFrom: the page size that explains RSS in kB over RSS in pages', () => {
+  assert.equal(pageKbFrom(40_000, 10_000), 4);
+  assert.equal(pageKbFrom(160_016, 10_000), 16, 'the two reads are a moment apart');
+  assert.equal(pageKbFrom(640_000, 10_000), 64);
+  assert.equal(pageKbFrom(0, 0), 4);
+  assert.equal(pageKbFrom(NaN, 10), 4);
 });

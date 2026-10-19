@@ -12,7 +12,7 @@ Everything Portboard needs to know about the machine it runs on (its name, the t
 
 Each value is resolved on its own. The first source that has it wins:
 
-1. **Environment variable.** `PORTBOARD_POOL_URL`, `PORTBOARD_REPOS_ROOT`, `PORTBOARD_DASHBOARD_URL` and `PORTBOARD_LOCALE`. The other keys have no variable.
+1. **Environment variable.** `PORTBOARD_POOL_URL`, `PORTBOARD_REPOS_ROOT`, `PORTBOARD_DASHBOARD_URL`, `PORTBOARD_LOCALE` and `PORTBOARD_UTC_OFFSET`. The other keys have no variable.
 2. **Runtime.** What the machine reports:
    - `tailscale status --json` gives the host name and tailnet.
    - git gives the checkout of the running code.
@@ -40,6 +40,7 @@ Every key is optional. A key of the wrong type is ignored, and the rest still ap
 | `dashboardUrl` | string | none | the `tailscale serve` https port that proxies to the dashboard (8443 in [setup.md](setup.md)) | `PORTBOARD_DASHBOARD_URL` | Links to the dashboard: alert messages, the consent page's link to the 설정 tab, and the 정보 section's 대시보드 address. It is only used when serve doesn't publish the dashboard |
 | `publicUrl` | string | `https://<host>.<tailnet>` | — (`remote.json`'s `publicUrl` comes first) | — | The public Funnel URL `scripts/deploy.ts` smoke-checks when `remote.json` has none. The remote server itself still takes its issuer URL from `remote.json` only |
 | `locale` | `"en"` or `"ko"` | `en` | — | `PORTBOARD_LOCALE` | The language of the text the server writes: alert, digest, new-port and memory pushes, the setup checklist, suggestions, MCP prompts and messages, the remote consent page, and the shell of each page as it is served. A browser shows the dashboard in the device's choice (Settings › Display › Language), else this locale when it is set, else the browser's language; the API text it reads follows the page ([docs/i18n](i18n/README.md)). Another value is ignored and reported |
+| `utcOffset` | `"+HH:MM"`, `"-HH:MM"` or `"Z"` | `+09:00` | — | `PORTBOARD_UTC_OFFSET` | The fixed offset from UTC the digest time (`HH:MM`, and Monday for weekly) and the Claude adoption days are counted in. No DST: a zone that changes its clock needs the value changed with it. The default keeps the original KST behaviour. Another value is ignored and reported |
 | `pve` | object | `{"host": "pve", "user": "root", "key": "~/.ssh/portboard_ro", "node": "pve", "enabled": false}` | — | — | Defaults for the Proxmox SSH port reader ([runbooks/ssh-readonly-setup.md](runbooks/ssh-readonly-setup.md)). `pveports.json` (`PORTBOARD_PVEPORTS`) still goes on top. `node` also names the reader in labels |
 | `windows` | object | `{"host": "windows", "user": null, "key": "~/.ssh/portboard_ro", "device": "windows", "enabled": false}` | — | — | Defaults for a desktop's Windows SSH port reader (same runbook). `winports.json` (`PORTBOARD_WINPORTS`) still goes on top |
 

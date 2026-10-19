@@ -168,7 +168,7 @@ Not available remotely: `expose_port`, `unexpose_port`, `restart_service`, `stop
 
 The remote dispatcher answers `initialize`, `tools/*`, `resources/*` and `prompts/*` itself and delegates **only `ping` and notifications** to the shared one. Any other method gets `-32601` here. This matters since #16: the shared dispatcher now serves `resources/read` for ports and devices, unredacted, and must never see it from this process. `test/remote-tools.test.ts` checks that port and device URIs and the local-only prompts fail exactly like unknown ones and never reach the core.
 
-**The status resource** is built by `redactStatus()` in `src/remote/redact.ts` from the redacted projections of `list_ports`, `list_devices` and `who_uses_what` (never from core objects), passed through the shared `statusReport()` and scrubbed again. So device names, `lan-device-N` aliases and service names are exactly what the tools show. It adds two things the tools don't have, read by `src/remote.ts` from local files (cached 2 s):
+**The status resource** is built by `redactStatus()` in `src/remote/redact.ts` from the redacted projections of `list_ports`, `list_devices` and `who_uses_what` (never from core objects), passed through the shared `statusReport()` and scrubbed again. So device names, `lan-device-<id>` aliases and service names are exactly what the tools show. It adds two things the tools don't have, read by `src/remote.ts` from local files (cached 2 s):
 - watched (🔔) ports and devices that are **down**: kind, port, name, since (from `alerts-state.json` and `prefs.json`; the alert checker is never started and the channel settings it can read are never copied)
 - how many 새 기기 are pending, **a count only** (from `known-devices.json`; their names can be a MAC vendor or an address)
 
@@ -187,7 +187,7 @@ Everything that leaves the process is built by **projection**: named fields are 
 | `ssh -N -L …` commands, `user@host` | never copied; in text → `[ssh command]` |
 | pids, `curl (3790306)` | dropped; process names without pids kept |
 | LAN, Tailscale, public IPs; subnet routes; direct-path endpoints | dropped, `routes` → `routesSubnets: true/false`; in text → `[lan-ip]`, `[tailnet-ip]`, `[loopback]`, `[ip]` |
-| Device ids that are addresses (`lan:192.168.1.108`) | `lan-device-N`, consistent between `cards` and `byPort` within one response |
+| Device ids that are addresses (`lan:192.168.1.108`) | `lan-device-<6 hex>`: a keyed hash of the address (random key per process), so the same device has the same alias in every response and tool until the remote server restarts |
 | Names that are just the address (`nameSource: ip`) | `LAN device` / `unnamed device` |
 | MACs, vendor, `nameKey` | dropped; in text → `[mac]` |
 | compute-pool URL and host addresses, `detail` text | dropped |

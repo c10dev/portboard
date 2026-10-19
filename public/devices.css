@@ -12,7 +12,8 @@
   display: grid; gap: 10px; padding: 14px 16px; min-width: 0;
   background: var(--surface); border: 1px solid var(--line); border-radius: 14px; cursor: pointer;
 }
-.card:hover, .card:focus-visible { border-color: var(--muted); outline: none; }
+.card:hover { border-color: var(--muted); }
+.card:focus-visible { border-color: var(--muted); outline: 2px solid var(--accent); outline-offset: 1px; }
 .card.self { cursor: default; }
 .card-head { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
 .glyph {

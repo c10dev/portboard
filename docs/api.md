@@ -9,6 +9,19 @@
 | GET | `/api/ports/:port/logs?lines=100` | Recent logs of whatever owns the port (max 1000 lines); the owner comes from the shared 2 s snapshot |
 | GET | `/api/ports/:port/detail` | Everything for `service.html`: `entry` (the snapshot entry, null while nothing listens), `usingNow`, `lastUsed` (devices × last seen), `watch`, `uptime` (%, recent checks, 24 h and 30-day slots, outages), `events` (alerts sent); 404 when nothing is known about the port |
 | GET | `/api/free-ports?count=1&preferred=3000` | Free ports for a new server |
+| GET | `/api/topology` | Raw connections: who is connected to which port now (`?fresh` as for `/api/ports`); `/api/usage` is the per-device view built on it |
+| GET | `/api/owners` | Owners of every listening plain process (the Claude Code session that started it, its worktree and branch) and the cleanup candidates: servers whose working directory was deleted, whose starting session ended, or whose branch is merged |
+| POST | `/api/cleanup` | JSON `{ports: [...]}` (1–50): stops those candidates, each re-checked first (SIGTERM, or `systemctl --user stop` for a transient unit). Installed units, docker containers, other users' processes and pinned ports are never candidates; needs `X-Portboard: 1` |
+| GET | `/api/reservations` | Port reservations (owner `repo`, `repo@branch` or a worktree path, port, note) with what listens on each port now |
+| POST | `/api/reservations` | JSON `{owner, port?, note?}`: reserve. Without `port`: the owner's existing reservation, else a free one. `free_port` never offers someone else's reserved port; needs `X-Portboard: 1` |
+| POST | `/api/reservations/:port/release` | Release a reservation; needs `X-Portboard: 1` |
+| GET | `/api/dev-servers` | Running `pb-dev-*` units (worktree, port, since) and which known worktrees have a startable `package.json` script |
+| POST | `/api/dev-servers/start` | JSON `{path, script?, port?}`: starts the worktree's `dev`, `start`, `preview` or `serve` script as a transient systemd user unit on loopback, on its reserved port (owner `<repo>@<branch>`) or a free one that then gets reserved. Only worktrees of the scanned repos; needs `X-Portboard: 1` |
+| POST | `/api/dev-servers/stop` | JSON `{path}`: `systemctl --user stop` for that worktree's unit; the port stays reserved; needs `X-Portboard: 1` |
+| GET | `/api/worktrees` | The last worktree scan of every repo under the repos root: branch, PR state, changes, last commit, size, processes inside, `removable` and why (`scanning: true` while one runs). `?refresh` starts a full scan, at most one forced per minute (`refresh`: `started`, `running` or `throttled`, with a `note` unless started) |
+| POST | `/api/worktrees/remove` | JSON `{repo, paths}`: `git worktree remove` (never `--force`; branches stay) for each path that is still removable when re-checked; needs `X-Portboard: 1` |
+| POST | `/api/worktrees/prune` | JSON `{repo}`: `git worktree prune` (records of directories already deleted); needs `X-Portboard: 1` |
+| GET | `/api/memory` | The last memory sample: memory, swap and PSI, the partition by group (Claude sessions, MCP servers, services, docker, other), sessions, the hour's history, the pressure state and thresholds, and suggestions (never actions) ([memory](memory/README.md)) |
 | GET | `/api/devices` | Tailnet devices joined with compute-pool host status; `tree` is the network hierarchy ([dashboard](dashboard.md#network-tree-구조)) |
 | GET | `/api/usage` | One card per device with what it uses now, `idle` services, `history` (`byPort` last use, `byDevice` last 7 days), and the same `tree` as `/api/devices` |
 | POST | `/api/clients/name` | JSON `{key, name}` names a LAN device (`clients.json`); needs `X-Portboard: 1` |
@@ -20,22 +33,22 @@
 | GET | `/api/alerts` | Down alerts: channel kinds (`ntfy`/`webhook`, never the topic or URL), what is watched, its state and (ports) `uptime` (`checks`, `pct24h`, `pct7d`), last 5 sent |
 | POST | `/api/alerts/test` | Send a test notification; needs `X-Portboard: 1` |
 | POST | `/api/devices/:id/alert` | JSON `{on: boolean}`: offline alert for a tailnet device; needs `X-Portboard: 1` |
-| GET | `/api/digest` | 요약 알림: `settings` (`{mode: off\|daily\|weekly, time: "HH:MM"}` KST, weekly = Monday), `scheduled` (this process sends: production only), `channel.configured`, `nextAt`, `lastSent` |
+| GET | `/api/digest` | 요약 알림: `settings` (`{mode: off\|daily\|weekly, time: "HH:MM"}` in the configured `utcOffset`, default KST, weekly = Monday), `scheduled` (this process sends: production only), `channel.configured`, `nextAt`, `lastSent` |
 | POST | `/api/digest` | JSON `{mode?, time?}`; answers like `GET /api/digest`; needs `X-Portboard: 1` |
 | GET | `/api/digest/preview` | `?mode=daily\|weekly` (default: the setting's): `{title, body, empty, lines, period}` over the period ending now |
 | POST | `/api/digest/send` | 지금 보내기: the preview, sent now (the schedule is untouched); 409 with `message` when nothing got through or there is no channel; needs `X-Portboard: 1` |
 | GET | `/api/known-devices` | 새 기기: pending new devices (`key`, `name`, `kind`, `vendor`, `ip`, `scope`, `since`, `service`, `nameKey`), settings, how many are known |
 | POST | `/api/known-devices/ack` | JSON `{key}` (or `"all"`) clears the 새 기기 badge; needs `X-Portboard: 1` |
 | POST | `/api/known-devices/settings` | JSON `{connections?, neighbors?}` (booleans) into `prefs.json` `newDevices`; needs `X-Portboard: 1` |
-| GET | `/api/suggestions` | Smart defaults (docs/suggestions/): `{at, suggestions, dismissed}`; `kind: "alert"` (`port`, `reasons`, `unit`, `container`, `also`) or `kind: "name"` (`key`, `device`, `ip`, `current`, `name`, `source`, `confidence`). Never applied by themselves |
+| GET | `/api/suggestions` | Smart defaults: `{at, suggestions, dismissed}`; `kind: "alert"` (`port`, `reasons`, `unit`, `container`, `also`) or `kind: "name"` (`key`, `device`, `ip`, `current`, `name`, `source`, `confidence`). Never applied by themselves |
 | POST | `/api/suggestions/:id/dismiss` | 무시: the id goes into `prefs.json` `suggestions.dismissed` and isn't suggested again; needs `X-Portboard: 1` |
-| GET | `/api/adoption` | 채택 지표 (docs/adoption/): `?days=1–7` (default 7); `{at, scanning, tookMs, days, current, previous, files}`, `current`/`previous` = `{from, to, totals, byDay, byProject, topPorts, topPrefixes, mcpTools}` (KST days). From the cached daily scan; `?refresh` starts a scan, at most one forced per 10 min (the answer adds `refresh`: `started`, `running` or `throttled`, and a `note` unless started). Counts only |
+| GET | `/api/adoption` | 채택 지표: `?days=1–7` (default 7); `{at, scanning, tookMs, days, current, previous, files}`, `current`/`previous` = `{from, to, totals, byDay, byProject, topPorts, topPrefixes, mcpTools}` (KST days). From the cached daily scan; `?refresh` starts a scan, at most one forced per 10 min (the answer adds `refresh`: `started`, `running` or `throttled`, and a `note` unless started). Counts only |
 | POST | `/api/claude/session-end` | JSON `{session_id, cwd?, reason?}` from the plugin's SessionEnd hook: that session's servers become cleanup candidates (`session-ended-hook`) at once, and are stopped when `autoStop` allows it (in the background; the answer is `{recorded, autoStop}`). Loopback only (403 through tailscale serve); needs `X-Portboard: 1` ([claude-plugin/session-end.md](claude-plugin/session-end.md)) |
 | GET | `/api/claude/sessions` | `ended` (the last 20 hook-ended sessions: `id`, `reason`, `at`, `cwd`), `settings.autoStop`, `lastAutoStop` (this process's last run and its results) |
 | POST | `/api/claude/settings` | JSON `{autoStop: off\|scratchpad\|all}` into `prefs.json` `claudeCleanup`; needs `X-Portboard: 1` |
 | GET | `/api/proxmox/trends?timeframe=hour\|day` | CPU/memory per node and guest (`nodes.<node>`, `guests["<node>/<vmid>"]`): `start`, `step`, `cpu[]`, `mem[]` (fractions, null = gap), `maxcpu`, `maxmem`; or `error` per entry |
 | GET | `/api/claude/port-advice?port=N&cmd=start\|kill&cwd=…` | For the Claude Code port nudge: who holds or reserved the port, the cwd's `repo@branch`, a port to use instead, and the `[portboard]` context text, in which every name from the machine is sanitized, capped and quoted ([claude-plugin/](claude-plugin/README.md)); read-only. From the shared snapshot and short caches (see **Load bounds**) |
-| GET | `/api/onboarding` | 설정 체크리스트: `items` (`key`, `title`, `status` ok/missing/warn, `detail`, `action` command or link), `ok`, `total`, `summary` (docs/onboarding/); kinds and counts only, never secrets |
+| GET | `/api/onboarding` | 설정 체크리스트: `items` (`key`, `title`, `status` ok/missing/warn, `detail`, `action` command or link), `ok`, `total`, `summary`; kinds and counts only, never secrets |
 | GET | `/api/remote/clients` | 원격 커넥터 (#31): the remote MCP's clients (`id` c-…, `name`, `kind` registered\|hosted, `redirectHosts`, `createdAt`, `lastUsedAt`, `grants`) and authorizations (`id` g-…, `clientId`, `clientName`, `scopes`, `resourceHost`, `createdAt`, `lastUsedAt`, `accessExpiresAt`, `expiresAt`), plus `pendingApproval`, `approvalExpiresAt` (ms, null when none is pending), `publicUrl` (boolean), `connectorUrl` (the URL to paste: `publicUrl` + `/mcp`, null when not public) and `profile`. This profile's `remote.json`; derived ids only, never a token, hash or client_id ([runbooks/remote-connector.md](runbooks/remote-connector.md)) |
 | POST | `/api/remote/clients/<id>/revoke` | Every token of that client and its registration (a hosted claude.ai/ChatGPT client has none): `{revoked: {tokens, registration}}`, 404 for an unknown id; needs `X-Portboard: 1`. The remote server refuses the tokens on its next request |
 | POST | `/api/remote/tokens/<id>/revoke` | One authorization (its access and refresh tokens, rotated ones too): `{revoked: {tokens}}`, 404 for an unknown id; a pending approval code stays; needs `X-Portboard: 1` |
@@ -85,7 +98,7 @@
 | `open` | A URL a tailnet device can open (the `tailscale serve` URL, else `http://<host>:<port>` when it is bound to the tailnet or all interfaces), or null for a loopback-only port |
 | `canExpose` | `POST /api/ports/:port/expose` can publish it (then `open` is the served URL on the next snapshot) |
 
-**Load bounds.** Reads are open to every tailnet device, so the ones that start heavy work are bounded on the server (docs/security-review/v1.0.md L1). None of them answers an error for asking too often: they answer with the running or latest result.
+**Load bounds.** Reads are open to every tailnet device, so the ones that start heavy work are bounded on the server. None of them answers an error for asking too often: they answer with the running or latest result.
 
 | Read | Bound |
 |---|---|

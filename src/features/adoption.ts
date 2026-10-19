@@ -149,12 +149,12 @@ const statsTool: Tool = {
       "How Claude Code sessions on this machine handled ports, from their transcripts: Portboard MCP calls vs raw port " +
       'inspection (ss -ltn, lsof -i, netstat, fuser), kill-by-port, and servers started on a hard-coded port (PORT=N, ' +
       '--port N, -p N), per day and per project, the most used ports, and Portboard hook nudges shown. Over the last ' +
-      '`days` KST days (default 7) and the same span before, for comparison. Counts only; from a daily cached scan ' +
+      '`days` days (server time zone, default KST) (default 7) and the same span before, for comparison. Counts only; from a daily cached scan ' +
       '(refresh: true rescans, several seconds).',
     inputSchema: {
       type: 'object',
       properties: {
-        days: { type: 'integer', minimum: 1, maximum: MAX_DAYS, description: 'Window in days ending today (KST), default 7' },
+        days: { type: 'integer', minimum: 1, maximum: MAX_DAYS, description: 'Window in days ending today (server time zone, default KST), default 7' },
         refresh: { type: 'boolean', description: 'Scan the transcripts now instead of using the cached scan' },
       },
       additionalProperties: false,

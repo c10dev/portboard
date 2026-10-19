@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, readFile, mkdir } from 'node:fs/promises';
 import { hostname, tmpdir, userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
-import { CHECKOUT_SITE, loadSite, mergeSiteFiles, parseSiteFile, resolveDashboardUrl, resolveSite, SITE_DEFAULTS, tildePath } from '../src/core/site.ts';
+import { CHECKOUT_SITE, loadSite, mergeSiteFiles, parseSiteFile, parseUtcOffset, resolveDashboardUrl, resolveSite, SITE_DEFAULTS, tildePath } from '../src/core/site.ts';
 import { resolvePaths, seedPreview } from '../src/core/paths.ts';
 import { checkConfig, DEFAULT_CONFIG } from '../src/core/pveports.ts';
 import type { ServeEntry } from '../src/core/tailscale.ts';
@@ -195,4 +195,20 @@ test('portboard.example.json is a valid site file with every key', async () => {
   const r = parseSiteFile(await readFile(new URL('../portboard.example.json', import.meta.url), 'utf8'));
   assert.equal(r.error, null);
   assert.deepEqual(Object.keys(r.file).sort(), ['checkout', 'dashboardUrl', 'host', 'locale', 'poolUrl', 'publicUrl', 'pve', 'reposRoot', 'tailnet', 'user', 'windows']);
+});
+
+test('utcOffset: env over file over the +09:00 default; a bad value is ignored', () => {
+  assert.equal(parseUtcOffset('+09:00'), 9 * 3_600_000);
+  assert.equal(parseUtcOffset('-05:30'), -(5 * 60 + 30) * 60_000);
+  assert.equal(parseUtcOffset('Z'), 0);
+  for (const bad of ['9', '+9:00', '+15:00', '+09:60', 'Asia/Seoul', 9]) assert.equal(parseUtcOffset(bad), null, String(bad));
+
+  const d = resolveSite({});
+  assert.deepEqual([d.utcOffset, d.utcOffsetMs, d.sources.utcOffset], ['+09:00', 9 * 3_600_000, 'default']);
+  const f = resolveSite({ file: parseSiteFile('{"utcOffset":"+01:00"}').file });
+  assert.deepEqual([f.utcOffset, f.utcOffsetMs, f.sources.utcOffset], ['+01:00', 3_600_000, 'file']);
+  const e = resolveSite({ env: { PORTBOARD_UTC_OFFSET: '-08:00' }, file: { utcOffset: '+01:00' } });
+  assert.deepEqual([e.utcOffsetMs, e.sources.utcOffset], [-8 * 3_600_000, 'env']);
+  assert.equal(resolveSite({ env: { PORTBOARD_UTC_OFFSET: 'PST' }, file: { utcOffset: '+01:00' } }).utcOffset, '+01:00');
+  assert.match(parseSiteFile('{"utcOffset":"KST"}').error ?? '', /utcOffset/);
 });

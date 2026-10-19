@@ -8,6 +8,7 @@
 // Two flags in remote.json loosen this for a private setup: showAddresses (IPs, MACs, routes, endpoints) and
 // showProcesses (pids and client process names). Both default to false.
 
+import { createHmac, randomBytes } from 'node:crypto';
 import type { MemoryStatus } from '../core/memory.ts';
 import type { Snapshot } from '../core/index.ts';
 import type { Devices, Device } from '../core/devices.ts';
@@ -69,22 +70,26 @@ export function scrubDeep<T>(value: T, policy: RedactPolicy = STRICT): T {
   return value;
 }
 
-// ---- ids that are addresses (lan:192.168.1.108) get a stable alias within one response ----
+// ---- ids that are addresses (lan:192.168.1.108) get a stable alias ----
+
+// A keyed hash, so the same address gets the same alias in every response of this process (a client that joins
+// list_devices with who_uses_what sees one device, not two), while the alias can't be turned back into the
+// address: the key is random per process and never leaves it. A restart changes the aliases.
+const ALIAS_KEY = randomBytes(32);
+
+/** `lan:<address>` → `lan-device-<6 hex>`, the same for the same id for as long as this process runs */
+export function lanAlias(id: string): string {
+  return `lan-device-${createHmac('sha256', ALIAS_KEY).update(id).digest('hex').slice(0, 6)}`;
+}
 
 class Aliases {
-  private map = new Map<string, string>();
   private policy: RedactPolicy;
   constructor(policy: RedactPolicy) {
     this.policy = policy;
   }
   id(id: string): string {
     if (this.policy.showAddresses || !/^lan:/.test(id)) return id;
-    let alias = this.map.get(id);
-    if (!alias) {
-      alias = `lan-device-${this.map.size + 1}`;
-      this.map.set(id, alias);
-    }
-    return alias;
+    return lanAlias(id);
   }
 }
 
