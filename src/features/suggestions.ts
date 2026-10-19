@@ -14,6 +14,7 @@
 
 import { Resolver } from 'node:dns/promises';
 import { readFile } from 'node:fs/promises';
+import { TtlMap, ttlCache } from '../core/cache.ts';
 import { SELF_UNIT } from '../core/control.ts';
 import { run } from '../core/exec.ts';
 import { loadHistory, type History } from '../core/history.ts';
@@ -52,36 +53,28 @@ declare module '../mcp/kit.ts' {
 
 // ---- inputs (each cached: the 서비스 and 기기 pages ask every 30 s) ----
 
-function cached<T>(ms: number, load: () => Promise<T>): () => Promise<T> {
-  let hit: { at: number; value: Promise<T> } | null = null;
-  return () => {
-    if (hit && Date.now() - hit.at < ms) return hit.value;
-    const value = load();
-    hit = { at: Date.now(), value };
-    value.catch(() => (hit = null));
-    return value;
-  };
-}
-
-let containerCache: { at: number; key: string; value: Map<string, ContainerInfo> } | null = null;
+/** The last `docker inspect` answer, for the same set of containers only */
+const containerCache = new TtlMap<string, Map<string, ContainerInfo>>({ ttlMs: 60_000, maxEntries: 1 });
 
 async function containers(names: string[]): Promise<Map<string, ContainerInfo>> {
   const key = [...names].sort().join(',');
   if (!names.length) return new Map();
-  if (containerCache && containerCache.key === key && Date.now() - containerCache.at < 60_000) return containerCache.value;
+  const hit = containerCache.get(key);
+  if (hit) return hit;
   const r = await run('docker', ['inspect', '--format', '{{.Name}}\t{{.State.StartedAt}}\t{{.HostConfig.RestartPolicy.Name}}', ...names], 5_000);
   const value = parseDockerInspect(r.stdout);
-  containerCache = { at: Date.now(), key, value };
+  containerCache.set(key, value);
   return value;
 }
 
-const gateways = cached(10 * 60_000, async () => parseDefaultRoutes((await run('ip', ['route', 'show', 'default'], 3_000)).stdout));
+const gateways = ttlCache(async () => parseDefaultRoutes((await run('ip', ['route', 'show', 'default'], 3_000)).stdout), { ttlMs: 10 * 60_000 });
 
 /** This process's own unit (portboard.service in production, a systemd-run unit in a preview) */
-const ownUnit = cached(3600_000, async () => unitOf(await readFile('/proc/self/cgroup', 'utf8').catch(() => '')));
+const ownUnit = ttlCache(async () => unitOf(await readFile('/proc/self/cgroup', 'utf8').catch(() => '')), { ttlMs: 3600_000 });
 
 const PTR_TTL = 10 * 60_000;
-const ptrCache = new Map<string, { at: number; name: string | null }>();
+/** ip → its PTR name (null: none); bounded, the LAN's addresses come and go */
+const ptrCache = new TtlMap<string, string | null>({ ttlMs: PTR_TTL, maxEntries: 1024 });
 
 /** The one call hostnames() makes of a resolver (node:dns's Resolver; a fake in test/suggestions-ptr.test.ts) */
 export interface PtrResolver {
@@ -104,13 +97,14 @@ export async function hostnames(ips: string[], via: string[], resolverFor: (serv
   if (!ask.length || !via.length) return out;
   const resolver = resolverFor(via);
   await Promise.all(ask.map(async (ip) => {
-    const hit = ptrCache.get(ip);
-    if (hit && now() - hit.at < PTR_TTL) {
-      if (hit.name) out.set(ip, hit.name);
+    const t = now();
+    if (ptrCache.has(ip, t)) {
+      const name = ptrCache.get(ip, t);
+      if (name) out.set(ip, name);
       return;
     }
     const name = await resolver.reverse(ip).then((n) => n[0] ?? null, () => null);
-    ptrCache.set(ip, { at: now(), name });
+    ptrCache.set(ip, name, PTR_TTL, now());
     if (name) out.set(ip, name);
   }));
   return out;

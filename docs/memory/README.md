@@ -1,6 +1,6 @@
 # 메모리
 
-Where this server's RAM goes, grouped the way parallel Claude Code work uses it, and an alert when memory runs short. It lives on the 기기 tab under 이 서버, in `GET /api/memory`, and in the local MCP tool `memory_usage`. Code: `src/core/memory.ts` (collector, grouping, pressure state machine) and `src/features/memory.ts` (job, API, tool, alerts).
+Where this server's RAM goes, grouped the way parallel Claude Code work uses it, and an alert when memory runs short. It lives on the 기기 tab under 이 서버, in `GET /api/memory`, and in the local MCP tool `memory_usage`. Code: `src/core/memory.ts` (collector, grouping, pressure state machine; split into modules under `src/core/memory/`, re-exported there) and `src/features/memory.ts` (job, API, tool, alerts).
 
 Portboard only reads. It never stops or signals a process: the suggestions say where to act (archive a session in the Claude app, or 정리 on the 서비스 tab).
 

@@ -22,6 +22,7 @@
 
 import { isIP } from 'node:net';
 import { readFile, stat } from 'node:fs/promises';
+import { keyedCache } from './cache.ts';
 import { run, runShared, type RunResult } from './exec.ts';
 import { writePrivate } from './atomic.ts';
 import { t } from './i18n.ts';
@@ -196,36 +197,12 @@ export function deviceResolver(opts: ResolverOptions = {}): (addr: string) => Pr
   const ttl = opts.ttlMs ?? 180_000;
   const miss = opts.missMs ?? 60_000;
   const max = opts.max ?? 512;
-  const now = opts.now ?? Date.now;
-  const cache = new Map<string, { until: number; value: Promise<Device> }>();
-  return (addr: string) => {
-    if (!isTailnetAddr(addr)) return Promise.resolve({ addr });
-    const t = now();
-    const hit = cache.get(addr);
-    if (hit && t < hit.until) return hit.value;
-    cache.delete(addr);
-    if (cache.size >= max) {
-      for (const [k, v] of cache) if (t >= v.until) cache.delete(k);
-      for (const k of cache.keys()) {
-        if (cache.size < max) break;
-        cache.delete(k);
-      }
-    }
-    const entry: { until: number; value: Promise<Device> } = { until: t + ttl, value: Promise.resolve({ addr }) };
-    entry.value = exec(['whois', '--json', addr]).then(
-      (r) => {
-        const d = r.ok ? parseWhois(r.stdout, addr) : { addr };
-        if (!d.name && !d.id) entry.until = now() + miss;
-        return d;
-      },
-      () => {
-        entry.until = now() + miss;
-        return { addr };
-      },
-    );
-    cache.set(addr, entry);
-    return entry.value;
-  };
+  const cache = keyedCache(
+    (addr: string): Promise<Device> => exec(['whois', '--json', addr]).then((r) => (r.ok ? parseWhois(r.stdout, addr) : { addr }), () => ({ addr })),
+    // a lookup that found nobody (or failed) is asked again sooner, counted from when it answered
+    { ttlMs: ttl, maxEntries: max, shortMs: (d) => (!d.name && !d.id ? miss : null), now: opts.now },
+  );
+  return (addr: string) => (isTailnetAddr(addr) ? cache(addr) : Promise.resolve({ addr }));
 }
 
 // ---------- the write-device allowlist (M1) ----------

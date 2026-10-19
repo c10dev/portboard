@@ -126,10 +126,15 @@ interface JobBase {
   enabled?(paths: Paths): boolean;
 }
 
-/** Runs `run` every `everyMs` (and once at start with `runAtStart`). Errors are the job's own to report. */
+/**
+ * Runs `run` every `everyMs`: the first time at start with `runAtStart`, after `firstAfterMs` when given, else after
+ * one interval. Errors are the job's own to report.
+ */
 export interface IntervalJob extends JobBase {
   everyMs: number;
   runAtStart?: boolean;
+  /** The first run this long after start (the self-watch looks after 20 s, once every collector has had a go) */
+  firstAfterMs?: number;
   /**
    * A big scan (thousands of files or stats): at most one heavy job runs at a time, a due one waits for the running
    * one, so their transient memory peaks don't add up (both scans start at boot)
@@ -138,12 +143,7 @@ export interface IntervalJob extends JobBase {
   run(ctx: ServerContext): unknown;
 }
 
-/** Something with its own timer (the alert checker, the self-watch): started once. */
-export interface StartJob extends JobBase {
-  start(ctx: ServerContext): void;
-}
-
-export type Job = IntervalJob | StartJob;
+export type Job = IntervalJob;
 
 // ---- the module ----
 

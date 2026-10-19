@@ -10,6 +10,7 @@
 //   GET /api/proxmox/trends?timeframe=hour   → sparklines on the pve1 card and guest cards (60 points, 1 min)
 //   GET /api/proxmox/trends?timeframe=day    → the 24 h view in the detail panel (144 points, 10 min)
 
+import { keyedCache } from './cache.ts';
 import { loadConfig, proxmoxStatus, pveGet, PROXMOX_PATH, type ProxmoxConfig, type ProxmoxStatus } from './proxmox.ts';
 
 export type Timeframe = 'hour' | 'day';
@@ -163,15 +164,10 @@ export async function fetchTrends(timeframe: Timeframe, src: TrendSource, now = 
   return { ...base, configured: true, ok, ...(!ok && firstError ? { error: firstError } : {}), nodes, guests };
 }
 
-const cache = new Map<Timeframe, { at: number; value: Promise<Trends> }>();
+const cache = keyedCache((timeframe: Timeframe, path: string) => fetchTrends(timeframe, defaultSource(path)), { ttlMs: TTL, maxEntries: 8 });
 
 export function proxmoxTrends(timeframe: Timeframe, path = PROXMOX_PATH): Promise<Trends> {
-  const hit = cache.get(timeframe);
-  if (hit && Date.now() - hit.at < TTL) return hit.value;
-  const value = fetchTrends(timeframe, defaultSource(path));
-  cache.set(timeframe, { at: Date.now(), value });
-  value.catch(() => cache.delete(timeframe));
-  return value;
+  return cache(timeframe, path);
 }
 
 export function resetTrendsCache() {

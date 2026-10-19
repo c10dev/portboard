@@ -9,7 +9,7 @@
 //   MCP  set_alert
 //   job  alerts (the checker); uptime flushed on shutdown
 
-import { defaultChecker, type AlertsStatus, type WatchStatus } from '../core/alerts.ts';
+import { CHECK_MS, defaultChecker, type AlertsStatus, type WatchStatus } from '../core/alerts.ts';
 import { setPrefs } from '../core/index.ts';
 import { setDeviceAlert } from '../core/prefs.ts';
 import { summary as uptimeSummary } from '../core/uptime.ts';
@@ -94,7 +94,8 @@ export const alertsFeature: FeatureModule = {
     // prefs.json). This checker is never started.
     alerts: () => defaultChecker(async () => []).status(),
   }),
-  jobs: [{ name: 'alerts', enabled: (paths) => paths.alertsOn, start: (ctx) => ctx.alerts.start() }],
+  // every 30 s from start; tick() shares a check still running
+  jobs: [{ name: 'alerts', everyMs: CHECK_MS, runAtStart: true, enabled: (paths) => paths.alertsOn, run: (ctx) => ctx.alerts.tick() }],
   shutdown: (ctx) => ctx.uptime.flush().catch((err) => console.error(`[portboard] uptime: ${err}`)),
   collectors: ['alerts'],
 };

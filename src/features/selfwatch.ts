@@ -4,10 +4,10 @@
 //
 //   GET /api/health            ({ok, profile, port}: production or a preview, see core/paths.ts; ?detail adds the
 //                              self-watch: each collector's health, credential expiry, and memory pressure)
-//   job selfwatch (its own 1 min timer)
+//   job selfwatch (every minute, the first look 20 s after start)
 //   ui  selfwatch.js on the 서비스 and 기기 pages (header chip + dialog)
 
-import { savedStatus, type SelfWatchStatus } from '../core/selfwatch.ts';
+import { savedStatus, SELFWATCH_EVERY, SELFWATCH_FIRST, type SelfWatchStatus } from '../core/selfwatch.ts';
 import { ok } from './router.ts';
 import type { FeatureModule } from './types.ts';
 import { runStats } from '../core/exec.ts';
@@ -45,7 +45,7 @@ export const selfWatchFeature: FeatureModule = {
   ],
   // Self-watch as the server last wrote it (selfwatch.json): which collectors fail, which credentials expire.
   mcpCore: () => ({ collection: () => savedStatus() }),
-  jobs: [{ name: 'selfwatch', start: (ctx) => ctx.selfwatch.start() }],
+  jobs: [{ name: 'selfwatch', everyMs: SELFWATCH_EVERY, firstAfterMs: SELFWATCH_FIRST, run: (ctx) => ctx.selfwatch.tick() }],
   // in the shell's sidebar footer on every page (docs/layout/)
   ui: [{ pages: ['index.html', 'devices.html', 'dev.html', 'service.html'], script: 'features/selfwatch.js' }],
 };

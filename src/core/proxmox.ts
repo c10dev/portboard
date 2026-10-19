@@ -12,6 +12,7 @@ import { connect, type TLSSocket } from 'node:tls';
 import { join } from 'node:path';
 import { PATHS } from './paths.ts';
 import type { HostPorts } from './hostports.ts';
+import { ttlCache } from './cache.ts';
 import { reportHealth } from './health.ts';
 
 export const PROXMOX_PATH = PATHS.proxmox;
@@ -217,19 +218,22 @@ export function parseGuestConfig(cfg: unknown): { macs: string[]; ips: string[] 
 // ---- status (cached) ----
 
 const TTL = 30_000;
-let cache: { at: number; value: Promise<ProxmoxStatus> } | null = null;
+const cache = ttlCache(
+  (path: string) => {
+    const value = fetchStatus(path);
+    // No proxmox.json is not an outage; an invalid one is a setup step (reported, alerted only once it has worked).
+    void value.then((s) => reportHealth('proxmox', { ok: s.ok, error: s.configured ? s.error : 'no proxmox.json', enabled: s.configured, setup: !s.ok && s.configured && !s.url }));
+    return value;
+  },
+  { ttlMs: TTL, cacheErrors: true },
+);
 
 export function proxmoxStatus(path = PROXMOX_PATH): Promise<ProxmoxStatus> {
-  if (cache && Date.now() - cache.at < TTL) return cache.value;
-  const value = fetchStatus(path);
-  cache = { at: Date.now(), value };
-  // No proxmox.json is not an outage; an invalid one is a setup step (reported, alerted only once it has worked).
-  void value.then((s) => reportHealth('proxmox', { ok: s.ok, error: s.configured ? s.error : 'no proxmox.json', enabled: s.configured, setup: !s.ok && s.configured && !s.url }));
-  return value;
+  return cache(path);
 }
 
 export function resetProxmoxCache() {
-  cache = null;
+  cache.clear();
 }
 
 async function fetchStatus(path: string): Promise<ProxmoxStatus> {

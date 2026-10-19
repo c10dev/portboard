@@ -19,10 +19,11 @@
 
 import { createHash } from 'node:crypto';
 import type { BigIntStats } from 'node:fs';
-import { lstat, readFile, readdir, readlink, stat } from 'node:fs/promises';
+import { lstat, readFile, readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { GIT_NO_HOOKS, run as execRun, type RunResult } from './exec.ts';
+import { readCwd, scanProcs } from './proc.ts';
 import { SITE } from './site.ts';
 import { t } from './i18n.ts';
 
@@ -204,15 +205,13 @@ async function pool<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): 
   return out;
 }
 
-/** Working directories of every process we can see, as real paths. */
+/** Working directories of every process we can see, as real paths (a deleted one is left out). */
 export async function processCwds(): Promise<Map<number, string>> {
-  const out = new Map<number, string>();
-  for (const name of await readdir('/proc').catch(() => [] as string[])) {
-    if (!/^\d+$/.test(name)) continue;
-    const cwd = await readlink(`/proc/${name}/cwd`).catch(() => null);
-    if (cwd && !cwd.endsWith(' (deleted)')) out.set(Number(name), cwd);
-  }
-  return out;
+  const rows = await scanProcs(async (pid) => {
+    const cwd = await readCwd(pid);
+    return cwd && !cwd.deleted ? ([pid, cwd.path] as const) : null;
+  });
+  return new Map(rows);
 }
 
 export function pidsInside(dir: string, cwds: Map<number, string>): number[] {

@@ -4,6 +4,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { ttlCache } from './cache.ts';
 import { reportHealth } from './health.ts';
 import { PATHS } from './paths.ts';
 import { SITE } from './site.ts';
@@ -62,14 +63,17 @@ const BASE = SITE.poolUrl;
 const POOL_DIR = PATHS.poolDir;
 const TTL = 10_000;
 
-let cache: { at: number; value: Promise<PoolStatus> } | null = null;
+const cache = ttlCache(
+  () => {
+    const value = fetchPool();
+    void value.then((s) => reportHealth('pool', { ok: s.available, error: s.error }));
+    return value;
+  },
+  { ttlMs: TTL, cacheErrors: true },
+);
 
 export function poolStatus(): Promise<PoolStatus> {
-  if (cache && Date.now() - cache.at < TTL) return cache.value;
-  const value = fetchPool();
-  cache = { at: Date.now(), value };
-  void value.then((s) => reportHealth('pool', { ok: s.available, error: s.error }));
-  return value;
+  return cache();
 }
 
 async function fetchPool(): Promise<PoolStatus> {

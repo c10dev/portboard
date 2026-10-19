@@ -10,6 +10,7 @@
 import { createServer } from 'node:http';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
+import { ttlCache } from './core/cache.ts';
 import { freePorts, snapshot, type Snapshot } from './core/index.ts';
 import { devices } from './core/devices.ts';
 import { defaultChecker } from './core/alerts.ts';
@@ -103,16 +104,7 @@ const hosts = new Set(
 );
 
 // Same 2 s caching as the dashboard: a burst of tool calls shares one `ss` + probe run.
-const cached = <T>(fn: () => Promise<T>, ttl = 2_000) => {
-  let hit: { at: number; value: Promise<T> } | null = null;
-  return () => {
-    if (hit && Date.now() - hit.at < ttl) return hit.value;
-    const value = fn();
-    hit = { at: Date.now(), value };
-    value.catch(() => (hit = null));
-    return value;
-  };
-};
+const cached = <T>(fn: () => Promise<T>, ttlMs = 2_000) => ttlCache(() => fn(), { ttlMs });
 const getSnapshot = cached<Snapshot>(snapshot);
 const getUsage = cached<Usage>(async () => usage(await topology(await getSnapshot())));
 // portboard://status only: down state of watched ports/devices (alerts-state.json, prefs.json), the number of

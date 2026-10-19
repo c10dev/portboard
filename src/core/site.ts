@@ -22,6 +22,7 @@ import { readFileSync } from 'node:fs';
 import { homedir, hostname, userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { keyedCache } from './cache.ts';
 import { run } from './exec.ts';
 import { PATHS } from './paths.ts';
 import { dashboardUrl, serveStatus, tailscaleInfo, type ServeEntry } from './tailscale.ts';
@@ -332,19 +333,20 @@ export async function siteRuntime(dashboardPort: number = PATHS.port): Promise<S
 }
 
 const TTL_MS = 60_000;
-const cache = new Map<number, { at: number; value: Promise<Site> }>();
+/** Per dashboard port (one or two in practice: production and a preview) */
+const cache = keyedCache(
+  (dashboardPort: number) =>
+    siteRuntime(dashboardPort).then((runtime) => {
+      const { file, found, error } = readSiteFile(SITE.file);
+      const c = readCheckoutFile(CHECKOUT_SITE);
+      return resolveSite({ env: process.env, file, runtime, path: SITE.file, found, fileError: error ?? c.error, checkoutFile: c.file, checkoutPath: c.path });
+    }),
+  { ttlMs: TTL_MS, maxEntries: 8, cacheErrors: true },
+);
 
 /** SITE with the runtime sources on top, cached for a minute (serve can change). */
 export function site(dashboardPort: number = PATHS.port): Promise<Site> {
-  const hit = cache.get(dashboardPort);
-  if (hit && Date.now() - hit.at < TTL_MS) return hit.value;
-  const value = siteRuntime(dashboardPort).then((runtime) => {
-    const { file, found, error } = readSiteFile(SITE.file);
-    const c = readCheckoutFile(CHECKOUT_SITE);
-    return resolveSite({ env: process.env, file, runtime, path: SITE.file, found, fileError: error ?? c.error, checkoutFile: c.file, checkoutPath: c.path });
-  });
-  cache.set(dashboardPort, { at: Date.now(), value });
-  return value;
+  return cache(dashboardPort);
 }
 
 /**
