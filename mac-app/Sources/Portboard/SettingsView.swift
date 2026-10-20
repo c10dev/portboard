@@ -14,6 +14,7 @@ struct SettingsView: View {
     @AppStorage(Pref.notifyDecided) private var notifyDecided = false
     @AppStorage(Pref.pollActive) private var pollActive = Poll.activeDefault
     @AppStorage(Pref.pollBackground) private var pollBackground = Poll.backgroundDefault
+    @AppStorage(Pref.updateCheck) private var updateCheck = true
 
     @State private var serverInput = ""
     @State private var serverError: String?
@@ -99,6 +100,21 @@ struct SettingsView: View {
                 }
             }
 
+            Section(L10n.t("mac.settings.updates")) {
+                Toggle(L10n.t("mac.settings.updateCheck"), isOn: $updateCheck)
+                Text(L10n.t("mac.settings.updateNote"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Button(L10n.t("mac.menu.checkForUpdates")) { model.checkForUpdatesByHand() }
+                        .disabled(model.checkingUpdate)
+                    if let update = model.update {
+                        Button(UpdateCheck.menuTitle(update)) { model.openUpdatePage() }
+                            .buttonStyle(.link)
+                    }
+                }
+            }
+
             Section {
                 Text("Portboard for Mac \(AppInfo.version) · \(Bundle.main.bundlePath)")
                     .font(.caption)
@@ -107,7 +123,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 560, height: 640)
+        .frame(width: 560, height: 720)
         .onAppear {
             serverInput = model.base.absoluteString
             loginOn = LoginItem.isEnabled

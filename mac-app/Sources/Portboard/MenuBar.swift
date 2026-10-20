@@ -200,6 +200,11 @@ struct MenuContent: View {
             Text(L10n.t("mac.menu.lastUpdate", ["time": at.formatted(date: .omitted, time: .standard)]))
         }
         Divider()
+        if let update = model.update {
+            Button(UpdateCheck.menuTitle(update)) { model.openUpdatePage() }
+        }
+        Button(L10n.t(model.checkingUpdate ? "mac.update.checking" : "mac.menu.checkForUpdates")) { model.checkForUpdatesByHand() }
+            .disabled(model.checkingUpdate)
         SettingsLink { Text(L10n.t("mac.menu.settings")) }
             .keyboardShortcut(",")
         Button(L10n.t("mac.menu.quit")) { NSApp.terminate(nil) }

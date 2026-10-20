@@ -14,6 +14,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var refreshing = false
     /// The result of the last action (tailnet 공개), shown at the top of the menu for a minute
     @Published private(set) var flash: String?
+    /// A newer Portboard.app on GitHub (the menu offers its page); nil when this one is current or nothing was checked
+    @Published private(set) var update: LatestRelease?
+    @Published private(set) var checkingUpdate = false
 
     var menuOpen = false
     /// Set by a view that has SwiftUI's openWindow (the menu bar label): shows the dashboard window
@@ -38,11 +41,13 @@ final class AppModel: ObservableObject {
 
     func start() {
         guard loop == nil else { return }
+        update = UpdateCheck.newer(current: AppInfo.version, latest: LatestRelease(stored: defaults.string(forKey: Pref.updateLatest)))
         // A 5 s tick that polls when the interval for the current state (in front / menu open / background) is due,
         // so switching to the app or opening the menu takes effect at once.
         loop = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.pollIfDue()
+                await self?.checkUpdateIfDue()
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
             }
         }
@@ -145,6 +150,52 @@ final class AppModel: ObservableObject {
         NSApp.dockTile.badgeLabel = n > 0 ? "\(n)" : nil
     }
 
+    // MARK: update check
+
+    /// Once a day (an hour after a failure) when 설정 allows it. Only Portboard.app checks: `swift run` is "dev".
+    private func checkUpdateIfDue() async {
+        guard defaults.bool(forKey: Pref.updateCheck), AppInfo.isBundled, !checkingUpdate else { return }
+        let last = defaults.object(forKey: Pref.updateLastCheck) as? Date
+        guard UpdateCheck.isDue(lastCheck: last, lastFailed: defaults.bool(forKey: Pref.updateLastFailed), now: Date()) else { return }
+        _ = await checkUpdate()
+    }
+
+    /// Reads GitHub's latest release and remembers it, so a restart shows the menu line without asking again
+    private func checkUpdate() async -> Result<LatestRelease, APIError> {
+        checkingUpdate = true
+        defer { checkingUpdate = false }
+        let result = await ReleaseClient.latest()
+        defaults.set(Date(), forKey: Pref.updateLastCheck)
+        switch result {
+        case .success(let latest):
+            defaults.set(false, forKey: Pref.updateLastFailed)
+            defaults.set(latest.stored, forKey: Pref.updateLatest)
+            update = UpdateCheck.newer(current: AppInfo.version, latest: latest)
+        case .failure:
+            defaults.set(true, forKey: Pref.updateLastFailed)
+        }
+        return result
+    }
+
+    /// 업데이트 확인… in the menu: checks now, whatever 설정 says, and answers in a dialog
+    func checkForUpdatesByHand() {
+        guard !checkingUpdate else { return }
+        Task {
+            switch await checkUpdate() {
+            case .success(let latest):
+                let r = UpdateCheck.manualResult(current: AppInfo.version, latest: latest)
+                showAlert(r.title, r.message, style: .informational,
+                          link: r.newer ? (L10n.t("mac.update.openPage"), latest.page) : nil)
+            case .failure(let e):
+                showAlert(L10n.t("mac.update.failedTitle"), e.message)
+            }
+        }
+    }
+
+    func openUpdatePage() {
+        NSWorkspace.shared.open(update?.page ?? UpdateCheck.releasesPage)
+    }
+
     // MARK: actions
 
     /// tailnet 공개: POST /api/ports/<port>/expose (X-Portboard: 1), then refresh
@@ -180,12 +231,12 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func showAlert(_ title: String, _ message: String, link: (String, URL)? = nil) {
+    private func showAlert(_ title: String, _ message: String, style: NSAlert.Style = .warning, link: (String, URL)? = nil) {
         NSApp.activate()
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
-        alert.alertStyle = .warning
+        alert.alertStyle = style
         alert.addButton(withTitle: L10n.t("mac.alert.ok"))
         if let link { alert.addButton(withTitle: link.0) }
         if alert.runModal() == .alertSecondButtonReturn, let link { NSWorkspace.shared.open(link.1) }

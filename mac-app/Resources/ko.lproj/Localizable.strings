@@ -146,6 +146,9 @@
 "mac.settings.loginNeedsApproval" = "시스템 설정 → 로그인 항목에서 허용이 필요해요";
 "mac.settings.open" = "열기";
 "mac.settings.loginFailed" = "바꾸지 못했어요: {error}";
+"mac.settings.updates" = "업데이트";
+"mac.settings.updateCheck" = "하루 한 번 새 버전 확인";
+"mac.settings.updateNote" = "api.github.com에서 최신 릴리스를 읽습니다 (앱이 tailnet 밖으로 보내는 유일한 요청이며, 앱 버전 외에는 아무것도 보내지 않습니다). 새 버전이 있으면 메뉴에 표시되고, 자동으로 내려받거나 설치하지는 않습니다.";
 
 // Check connection result lines (PortboardCore WhoAmI)
 "mac.whoami.login" = "로그인: {login}";
@@ -154,3 +157,21 @@
 "mac.whoami.deviceUnknown" = "확인 못 함";
 "mac.whoami.canWrite" = "쓰기: 가능 (서비스 멈춤·공개 같은 동작을 할 수 있어요)";
 "mac.whoami.readOnly" = "쓰기: 불가 — 읽기 전용";
+
+// Update check (PortboardCore UpdateCheck)
+"mac.menu.checkForUpdates" = "업데이트 확인…";
+"mac.update.checking" = "업데이트 확인 중…";
+"mac.update.available" = "새 버전 {version} 있음 — 다운로드 페이지 열기";
+"mac.update.newTitle" = "Portboard {version}이 나왔습니다";
+"mac.update.newMessage" = "지금 버전은 {current}입니다. 릴리스 페이지에서 zip을 받아 응용 프로그램 폴더의 Portboard.app을 바꾸면 됩니다.";
+"mac.update.devTitle" = "이 빌드에는 버전이 없습니다";
+"mac.update.devMessage" = "Portboard.app으로 실행한 것이 아니라서 비교할 수 없습니다. 최신 릴리스는 {latest}입니다.";
+"mac.update.upToDateTitle" = "최신 버전입니다";
+"mac.update.upToDateMessage" = "{current}이 최신 버전입니다.";
+"mac.update.failedTitle" = "업데이트를 확인하지 못했습니다";
+"mac.update.openPage" = "릴리스 페이지 열기";
+"mac.update.rateLimited" = "GitHub가 지금은 요청을 거절했습니다 (요청이 너무 많음). 잠시 뒤에 다시 시도하세요.";
+"mac.update.noRelease" = "GitHub에 릴리스가 없습니다";
+"mac.update.httpError" = "GitHub 응답 HTTP {status}";
+"mac.update.unreadable" = "GitHub 응답을 읽지 못했습니다";
+"mac.update.unreachable" = "GitHub에 연결하지 못했습니다 (오류 {code})";

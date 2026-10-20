@@ -35,6 +35,13 @@ enum Pref {
     static let ntfyCovers = "ntfyCovers"
     /// NotifyState (JSON): what was last seen, so a restart does not notify again
     static let notifyState = "notifyState"
+    /// 하루 한 번 새 버전 확인 (on by default; the menu's 업데이트 확인… works either way)
+    static let updateCheck = "updateCheck"
+    /// Date of the last update check, and whether it failed (then the next one is an hour later, not a day)
+    static let updateLastCheck = "updateLastCheck"
+    static let updateLastFailed = "updateLastFailed"
+    /// The tag of the latest release last seen, e.g. "v1.2.0"
+    static let updateLatest = "updateLatest"
 
     static func register() {
         UserDefaults.standard.register(defaults: [
@@ -45,6 +52,7 @@ enum Pref {
             notifyNewDevices: false,
             notifyDecided: false,
             ntfyCovers: false,
+            updateCheck: true,
         ])
     }
 }

@@ -146,6 +146,9 @@
 "mac.settings.loginNeedsApproval" = "Needs approval in System Settings → Login Items";
 "mac.settings.open" = "Open";
 "mac.settings.loginFailed" = "Couldn't change it: {error}";
+"mac.settings.updates" = "Updates";
+"mac.settings.updateCheck" = "Check for a new version once a day";
+"mac.settings.updateNote" = "Reads the latest release from api.github.com (the app's only request outside your tailnet; it sends nothing but the app's version). A new version shows in the menu; nothing is downloaded or installed automatically.";
 
 // Check connection result lines (PortboardCore WhoAmI)
 "mac.whoami.login" = "Login: {login}";
@@ -154,3 +157,21 @@
 "mac.whoami.deviceUnknown" = "unknown";
 "mac.whoami.canWrite" = "Write: allowed (can stop services, expose ports and the like)";
 "mac.whoami.readOnly" = "Write: not allowed — read-only";
+
+// Update check (PortboardCore UpdateCheck)
+"mac.menu.checkForUpdates" = "Check for Updates…";
+"mac.update.checking" = "Checking for updates…";
+"mac.update.available" = "New version {version} available — open download page";
+"mac.update.newTitle" = "Portboard {version} is available";
+"mac.update.newMessage" = "You have {current}. Download the zip from the release page and replace Portboard.app in Applications.";
+"mac.update.devTitle" = "This build has no version";
+"mac.update.devMessage" = "It isn't running as Portboard.app, so it can't be compared. The latest release is {latest}.";
+"mac.update.upToDateTitle" = "Portboard is up to date";
+"mac.update.upToDateMessage" = "{current} is the latest version.";
+"mac.update.failedTitle" = "Couldn't check for updates";
+"mac.update.openPage" = "Open release page";
+"mac.update.rateLimited" = "GitHub refused for now (too many requests). Try again later.";
+"mac.update.noRelease" = "No release found on GitHub";
+"mac.update.httpError" = "GitHub answered HTTP {status}";
+"mac.update.unreadable" = "Couldn't read GitHub's answer";
+"mac.update.unreachable" = "Couldn't reach GitHub (error {code})";
