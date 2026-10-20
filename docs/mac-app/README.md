@@ -110,7 +110,7 @@ The native successor of `menubar/format.mjs`. The rules are the same and are tes
 4. **Devices** (기기): status dot, online or offline or pool state, CPU and memory. The submenu lists the services the device uses, then View in Devices.
 5. **Local-only services**: **Expose on tailnet** (tailnet 공개) posts `/api/ports/<port>/expose` with `X-Portboard: 1`. The result is shown at the top of the menu for a minute; a refusal is shown in a dialog, with the Tailscale link when Serve has to be turned on first. Also: the reason it can't be exposed, Copy SSH tunnel command, Show service details.
 6. **Servers to clean up** (정리할 수 있는 서버): name, port and why it is a candidate. A click opens the Services tab, which has the clean-up banner. The menu itself never stops anything.
-7. Open dashboard, Open in browser, Refresh (⌘R), last update time, Settings… (⌘,), Quit Portboard.
+7. Open dashboard, Open in browser, Refresh (⌘R), last update time, then **New version 1.x available** when there is one ([Updates](#updates)), Check for Updates…, Settings… (⌘,), Quit Portboard.
 
 When the server cannot be read, the menu shows **Not connected to Portboard**, the reason, the Tailscale hint and **Try again**.
 
@@ -150,6 +150,18 @@ Notifications only work from `Portboard.app`. The bare binary from `swift run` h
 - **Notifications** (알림): the two toggles, the macOS permission state, and a button to the system notification settings.
 - **Refresh interval** (갱신 주기): the interval while in front or with the menu open (15 s to 2 min, default 30 s), and in the background (1 to 10 min, default 2 min).
 - **Open Portboard at login**: `SMAppService.mainApp`. If macOS wants approval, a button opens System Settings → Login Items.
+- **Updates** (업데이트): the once-a-day check (on by default), Check for Updates…, and the new version's link when there is one.
+
+### Updates
+
+There is no Sparkle and nothing is installed for you. The app only tells you when a newer release is out (`PortboardCore/Update.swift`, `UpdateCheck`; `ReleaseClient.swift`):
+
+- **Once a day**, `Portboard.app` reads `https://api.github.com/repos/c10dev/portboard/releases/latest`. After a failed check (offline, GitHub's rate limit) it tries again after an hour. `swift run` (version `dev`) never checks on its own.
+- This is the app's **only request outside the tailnet**. It sends the `User-Agent: portboard-mac/<version>` header and nothing else, in an ephemeral session (no cookies, no cache). Turn it off in Settings → Updates.
+- Drafts, pre-releases and tags that aren't a version are ignored. Versions compare as numbers (`1.10.0` is newer than `1.9.0`).
+- When the release is newer than `CFBundleShortVersionString`, the menu shows **New version 1.x available — open download page**. It opens the release page, which must be under `https://github.com/c10dev/portboard/releases/`; any other `html_url` is replaced by the page built from the tag. The last release seen is kept in the defaults, so the line is back right after a restart, and it goes away once the installed app is that version.
+- **Check for Updates…** (업데이트 확인…) in the menu and in Settings checks at once, even with the daily check off, and answers in a dialog: up to date, a newer version (with Open release page), or why it couldn't check.
+- To update: download `Portboard-<version>-mac.zip` from the release page and replace `Portboard.app` in Applications.
 
 ## Language
 
@@ -164,9 +176,9 @@ The app follows the system language: Korean when Korean comes first in System Se
 | Path | Role |
 |---|---|
 | [`mac-app/Package.swift`](../../mac-app/Package.swift) | Swift package (tools 5.9, macOS 14). The app target is only declared on macOS, so `swift test` works on Linux |
-| [`Sources/PortboardCore/`](../../mac-app/Sources/PortboardCore/) | Pure logic, Foundation only. `JSON.swift`: lenient JSON. `Models.swift`: typed views of the API documents. `Summary.swift`: menu rows, warnings and title, ported from format.mjs. `Notify.swift`: notification dedupe, texts, levels, threads, the page-in-front rule and the Dock badge. `Retry.swift`: the window's automatic retry schedule and the crash-reload limit. `Server.swift`: URLs, tabs, error texts, poll intervals. `L10n.swift`: the string tables (below). `Chrome.swift`: the bar's numbers (48 px, 78 px clear), the page's bar report and its hit-testing, the double-click setting. `Format.swift`: text helpers |
-| [`Tests/PortboardCoreTests/`](../../mac-app/Tests/PortboardCoreTests/) | XCTest. The cases of `test/menubar.test.ts` on the same fixtures, plus dedupe, URLs, errors, models, the retry schedule and the notification rules. They load the Korean table; `L10nTests` checks the string tables and the loader |
-| [`Sources/Portboard/`](../../mac-app/Sources/Portboard/) | The app. `PortboardApp.swift`: scenes, commands, app delegate. `AppModel.swift`: polling, notifications, Expose on tailnet. `APIClient.swift`. `MenuBar.swift`. `WebView.swift`: WKWebView, link policy, JS dialogs. `MainWindow.swift`: the window with no title bar (traffic lights, drag, double-click, frame autosave), error view. `SettingsView.swift`. `Notifier.swift`. `LoginItem.swift`. `AppInfo.swift`: version, User-Agent, settings keys |
+| [`Sources/PortboardCore/`](../../mac-app/Sources/PortboardCore/) | Pure logic, Foundation only. `JSON.swift`: lenient JSON. `Models.swift`: typed views of the API documents. `Summary.swift`: menu rows, warnings and title, ported from format.mjs. `Notify.swift`: notification dedupe, texts, levels, threads, the page-in-front rule and the Dock badge. `Retry.swift`: the window's automatic retry schedule and the crash-reload limit. `Update.swift`: versions, the release document, when to check, the update texts. `Server.swift`: URLs, tabs, error texts, poll intervals. `L10n.swift`: the string tables (below). `Chrome.swift`: the bar's numbers (48 px, 78 px clear), the page's bar report and its hit-testing, the double-click setting. `Format.swift`: text helpers |
+| [`Tests/PortboardCoreTests/`](../../mac-app/Tests/PortboardCoreTests/) | XCTest. The cases of `test/menubar.test.ts` on the same fixtures, plus dedupe, URLs, errors, models, the retry schedule, the notification rules and the update check. They load the Korean table; `L10nTests` checks the string tables and the loader |
+| [`Sources/Portboard/`](../../mac-app/Sources/Portboard/) | The app. `PortboardApp.swift`: scenes, commands, app delegate. `AppModel.swift`: polling, notifications, Expose on tailnet. `APIClient.swift`. `ReleaseClient.swift`: the GitHub latest-release request. `MenuBar.swift`. `WebView.swift`: WKWebView, link policy, JS dialogs. `MainWindow.swift`: the window with no title bar (traffic lights, drag, double-click, frame autosave), error view. `SettingsView.swift`. `Notifier.swift`. `LoginItem.swift`. `AppInfo.swift`: version, User-Agent, settings keys |
 | [`mac-app/Resources/`](../../mac-app/Resources/) | `AppIcon.png`, and `en.lproj` / `ko.lproj` with `Localizable.strings`, the app's text ([Language](#language)) |
 | [`mac-app/build.sh`](../../mac-app/build.sh) | Release build, bundle, icon, text tables, Info.plist, ad-hoc signature, `--install` |
 | [`mac-app/scripts/render-icon.py`](../../mac-app/scripts/render-icon.py) | Renders `public/icon.svg` to `Resources/AppIcon.png` (1024 px, Apple's icon grid). There is no SVG tool on the server and `sips` can't read SVG. Re-run it after changing the icon |
