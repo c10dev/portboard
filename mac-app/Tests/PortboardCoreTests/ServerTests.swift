@@ -75,6 +75,7 @@ final class ServerTests: XCTestCase {
         XCTAssertEqual(Problem.text(urlErrorCode: -1001), "8초 안에 응답이 없어요")
         XCTAssertTrue(Problem.text(urlErrorCode: -1003)!.contains("Tailscale"))
         XCTAssertTrue(Problem.text(urlErrorCode: -1004)!.contains("Tailscale"))
+        XCTAssertTrue(Problem.text(urlErrorCode: -1022)!.contains("https://…ts.net"))
         XCTAssertEqual(Problem.text(urlErrorCode: -42), "연결하지 못했어요 (오류 -42)")
         XCTAssertTrue(Problem.text(httpStatus: 502).hasPrefix("Portboard 서버가 응답하지 않아요 (HTTP 502)"))
         XCTAssertTrue(Problem.hint(base: base).contains("https://devbox.example.ts.net:8443"))

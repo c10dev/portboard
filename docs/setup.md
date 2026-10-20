@@ -48,7 +48,8 @@ version's CHANGELOG section (`node scripts/changelog.ts --notes X.Y.Z`). Reposit
 | `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD` | `notarytool`: the Apple ID, its team, and an app-specific password |
 
 Without all six Apple secrets the `mac-app` job is skipped and the release has the npm package only. With them, it
-builds `mac-app/build.sh` on a macOS runner, re-signs with the Developer ID and the hardened runtime, notarizes,
+builds `mac-app/build.sh` on a macOS runner, re-signs with the Developer ID and the hardened runtime, checks the bundle (`mac-app/scripts/check-bundle.sh --release`:
+no entitlements, no ATS exception), notarizes,
 staples, and attaches `Portboard-X.Y.Z-mac.zip` to the release.
 
 ### Running from a checkout

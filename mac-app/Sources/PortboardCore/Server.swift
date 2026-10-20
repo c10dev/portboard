@@ -125,6 +125,7 @@ public enum Problem {
         case -1005: return L10n.t("mac.error.connectionLost")
         case -1009: return L10n.t("mac.error.notConnected")
         case -1018, -1020: return L10n.t("mac.error.networkUnavailable")
+        case -1022: return L10n.t("mac.error.insecureHTTP")
         case -1200, -1201, -1202, -1203, -1204, -1205, -1206: return L10n.t("mac.error.tls")
         case -1011: return L10n.t("mac.error.badResponse")
         default: return L10n.t("mac.error.other", ["code": code])

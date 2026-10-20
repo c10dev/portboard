@@ -127,6 +127,8 @@ jobs:
         run: |
           codesign --force --options runtime --timestamp --sign "$IDENTITY" mac-app/build/Portboard.app
           codesign --verify --strict --verbose=2 mac-app/build/Portboard.app
+      - name: Check entitlements and ATS
+        run: mac-app/scripts/check-bundle.sh --release mac-app/build/Portboard.app
       - name: Notarize and staple
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}

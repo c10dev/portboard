@@ -89,7 +89,8 @@ for lproj in Resources/en.lproj Resources/ko.lproj; do
   cp -R "$lproj" "$APP/Contents/Resources/"
 done
 
-# NSAppTransportSecurity is left at the defaults: the dashboard is https (tailscale serve).
+# NSAppTransportSecurity is left at the defaults: the dashboard is https (tailscale serve), the update check is
+# https://api.github.com. scripts/check-bundle.sh fails the build if it shows up.
 SERVER_KEY=""
 [[ -n "$SERVER_URL" ]] && SERVER_KEY="<key>PortboardServerURL</key><string>${SERVER_URL}</string>"
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -123,6 +124,7 @@ plutil -lint "$APP/Contents/Info.plist" >/dev/null
 echo "▸ codesign --sign - (ad hoc)"
 codesign --force --sign - --timestamp=none "$APP"
 codesign --verify --strict "$APP"
+scripts/check-bundle.sh "$APP"
 
 if [[ "$INSTALL" == 1 ]]; then
   echo "▸ /Applications/Portboard.app"

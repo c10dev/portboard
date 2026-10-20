@@ -92,6 +92,7 @@
 "mac.error.connectionLost" = "연결이 끊겼어요";
 "mac.error.notConnected" = "인터넷에 연결돼 있지 않아요";
 "mac.error.networkUnavailable" = "지금은 네트워크를 쓸 수 없어요";
+"mac.error.insecureHTTP" = "macOS는 이름으로 된 주소의 http:// 연결을 막아요 (App Transport Security): https://…ts.net 주소를 쓰거나, http://는 Tailscale IP로 넣어 주세요";
 "mac.error.tls" = "보안 연결(TLS)을 만들지 못했어요 (주소가 맞나요? tailnet 주소는 https://…ts.net)";
 "mac.error.badResponse" = "서버가 이상한 응답을 보냈어요";
 "mac.error.other" = "연결하지 못했어요 (오류 {code})";

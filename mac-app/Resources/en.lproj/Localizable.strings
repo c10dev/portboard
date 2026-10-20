@@ -92,6 +92,7 @@
 "mac.error.connectionLost" = "The connection was lost";
 "mac.error.notConnected" = "Not connected to the internet";
 "mac.error.networkUnavailable" = "The network isn't available right now";
+"mac.error.insecureHTTP" = "macOS blocks plain http:// to a named host (App Transport Security): use the https://…ts.net address, or the Tailscale IP for http://";
 "mac.error.tls" = "Couldn't make a secure (TLS) connection (is the address right? tailnet addresses are https://…ts.net)";
 "mac.error.badResponse" = "The server sent an unexpected response";
 "mac.error.other" = "Couldn't connect (error {code})";

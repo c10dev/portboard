@@ -26,9 +26,10 @@ cd ~/portboard/mac-app && ./build.sh --install
 ```
 
 - `./build.sh` runs `swift build -c release` and assembles `mac-app/build/Portboard.app`. The bundle gets:
-  - an `Info.plist`: bundle id `io.github.c10dev.portboard`, version from `package.json`, build number from `git rev-list --count HEAD` or the date, `LSApplicationCategoryType` developer-tools, `LSMinimumSystemVersion` 14.0. `NSAppTransportSecurity` stays at the defaults, since the dashboard is https.
+  - an `Info.plist`: bundle id `io.github.c10dev.portboard`, version from `package.json`, build number from `git rev-list --count HEAD` or the date, `LSApplicationCategoryType` developer-tools, `LSMinimumSystemVersion` 14.0. `NSAppTransportSecurity` stays at the defaults, since the dashboard and the update check are https. A plain `http://` address works only with the Tailscale IP or a bare host name (ATS doesn't cover those); `http://name.tailnet.ts.net` is blocked, and the window says so.
   - an icon: [`Resources/AppIcon.png`](../../mac-app/Resources/AppIcon.png) turned into `AppIcon.icns` with `sips` and `iconutil`.
   - an ad-hoc signature (`codesign --sign -`).
+  - no entitlements and no App Sandbox. Outside the sandbox the app needs no network entitlement, and the hardened runtime of the release build doesn't limit outgoing connections. [`scripts/check-bundle.sh`](../../mac-app/scripts/check-bundle.sh) fails the build if an entitlement or an `NSAppTransportSecurity` key appears; the release runs it with `--release`, which also requires the hardened runtime, the Developer ID and a timestamp.
 - `./build.sh --install` also quits a running Portboard, copies the app to `/Applications` and opens it.
 - `PORTBOARD_VERSION=1.2.3 ./build.sh` overrides the version, for example when only `mac-app/` was copied and there is no `package.json` next to it.
 
@@ -181,6 +182,7 @@ The app follows the system language: Korean when Korean comes first in System Se
 | [`Sources/Portboard/`](../../mac-app/Sources/Portboard/) | The app. `PortboardApp.swift`: scenes, commands, app delegate. `AppModel.swift`: polling, notifications, Expose on tailnet. `APIClient.swift`. `ReleaseClient.swift`: the GitHub latest-release request. `MenuBar.swift`. `WebView.swift`: WKWebView, link policy, JS dialogs. `MainWindow.swift`: the window with no title bar (traffic lights, drag, double-click, frame autosave), error view. `SettingsView.swift`. `Notifier.swift`. `LoginItem.swift`. `AppInfo.swift`: version, User-Agent, settings keys |
 | [`mac-app/Resources/`](../../mac-app/Resources/) | `AppIcon.png`, and `en.lproj` / `ko.lproj` with `Localizable.strings`, the app's text ([Language](#language)) |
 | [`mac-app/build.sh`](../../mac-app/build.sh) | Release build, bundle, icon, text tables, Info.plist, ad-hoc signature, `--install` |
+| [`mac-app/scripts/check-bundle.sh`](../../mac-app/scripts/check-bundle.sh) | Fails when the bundle has entitlements or an ATS exception; `--release` also checks the hardened runtime, Developer ID and timestamp |
 | [`mac-app/scripts/render-icon.py`](../../mac-app/scripts/render-icon.py) | Renders `public/icon.svg` to `Resources/AppIcon.png` (1024 px, Apple's icon grid). There is no SVG tool on the server and `sips` can't read SVG. Re-run it after changing the icon |
 
 **Reading the API.** The app reads every field defensively, like the plugin. Responses decode into a `JSON` value, and models read what they need from it. A missing key, an added key or a changed type reads as "not there", so a newer or older server never breaks the menu. This is tested with the same odd documents as the plugin.
