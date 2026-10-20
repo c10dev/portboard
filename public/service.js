@@ -8,6 +8,7 @@ import { initCommandPalette } from './features/palette.js';
 import { pctText, slotBar, uptimeLine } from './features/uptime.js';
 import { badge, deviceHref, USER_KIND, userChip, usingChip } from './lib/badge.js';
 import { $, button, el, extLink } from './lib/dom.js';
+import { claudeLink } from './lib/claude-link.js';
 import { showProfile } from './lib/profile.js';
 import { showAccess } from './lib/access.js';
 import { isSettingsHash } from './lib/settings-route.js';
@@ -118,6 +119,13 @@ function actions(e) {
   }
   const out = reachButtons(e, { busy, act });
   if (e.control) out.push(button(t('service.logs'), () => logs.show(d)));
+  const claude = claudeLink(e, t('service.claude.prompt', { port: d.port, name: d.name }));
+  if (claude) {
+    const a = el('a', 'btn', t('service.claude'));
+    a.href = claude;
+    a.title = t('service.claude.title');
+    out.push(a);
+  }
   if (e.canRestart) out.push(button(t('service.restart'), () => confirmAct('restart', restartQuestion(e)), { disabled: busy, write: true }));
   if (e.canStop) out.push(button(t('service.stop'), () => confirmAct('stop', stopQuestion(e)), { disabled: busy, danger: true, write: true }));
   return out;

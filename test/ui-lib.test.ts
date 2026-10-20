@@ -150,3 +150,18 @@ test('getJSON throws on a non-2xx; readJSON reads it anyway; tryJSON gives null 
     f.restore();
   }
 });
+
+test('claudeLink: a claude://code/new SSH link for a project process; nothing for system services or odd values', async () => {
+  const { claudeLink, sshTarget } = await import('../public/lib/claude-link.js');
+  const e = { urls: { ssh: 'ssh -N -L 5173:127.0.0.1:5173 dev@devbox' }, processes: [{ project: 'shop', cwd: '~/projects/shop' }] };
+  const link = claudeLink(e, '5173 포트 봐 줘');
+  assert.ok(link.startsWith('claude://code/new?'));
+  const q = new URLSearchParams(link.slice(link.indexOf('?') + 1));
+  assert.deepEqual(Object.fromEntries(q), { ssh_host: 'dev@devbox', ssh_folder: '~/projects/shop', q: '5173 포트 봐 줘' });
+  assert.ok(!link.includes('+'), 'spaces as %20');
+  assert.equal(claudeLink({ ...e, processes: [{ project: null, cwd: '/' }] }, 'x'), null);
+  assert.equal(claudeLink({ ...e, urls: { ssh: '' } }, 'x'), null);
+  assert.equal(claudeLink({ ...e, processes: [{ project: 'x', cwd: 'relative' }] }, 'x'), null);
+  assert.equal(sshTarget('ssh -N -L 1:127.0.0.1:1 -oProxyCommand=x@y'), null);
+  assert.equal(sshTarget('ssh host'), null);
+});

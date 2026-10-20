@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { githubRepo, keepReasons, parsePorcelain, pidsInside, type WorktreeInfo } from '../src/core/worktrees.ts';
+import { githubRepo, isClaudeWorktree, keepReasons, parsePorcelain, pidsInside, type WorktreeInfo } from '../src/core/worktrees.ts';
 import { L } from './fixtures/locale.ts';
 import { loadSavedWorktrees } from '../src/features/worktrees.ts';
 
@@ -65,4 +65,14 @@ test('keepReasons: removable only when merged, clean, unused, unlocked, linked',
   assert.deepEqual(keepReasons(wt({ mergedByAncestry: true, locked: true })), [L('잠김(locked)', 'locked')]);
   assert.ok(keepReasons(wt({ mergedByAncestry: true, main: true })).includes(L('메인 체크아웃', 'main checkout')));
   assert.deepEqual(keepReasons(wt({ prunable: true })), [], 'gone directories are for prune, not remove');
+});
+
+test("Claude Code's own worktrees (.claude/worktrees/<name>) are Claude's to remove, never Portboard's", () => {
+  assert.equal(isClaudeWorktree('/home/dev/projects/shop/.claude/worktrees/feat-auth'), true);
+  assert.equal(isClaudeWorktree('/home/dev/projects/shop/.claude/worktrees/feat-auth/'), true);
+  assert.equal(isClaudeWorktree('/home/dev/projects/shop-feat-auth'), false);
+  assert.equal(isClaudeWorktree('/home/dev/projects/shop/.claude/worktrees/a/nested'), false);
+  const keep = keepReasons(wt({ mergedByAncestry: true, claude: true }));
+  assert.equal(keep.length, 1);
+  assert.match(keep[0], /Claude/);
 });

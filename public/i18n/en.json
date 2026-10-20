@@ -230,6 +230,7 @@
     "one": "{n} change",
     "other": "{n} changes"
   },
+  "dev.claude": "Claude Code",
   "dev.detached": "detached HEAD",
   "dev.empty.removable": "No removable worktrees.",
   "dev.empty.repos": "No git repos found.",
@@ -1383,6 +1384,9 @@
   "service.badge.hidden": "Hidden",
   "service.badge.pinned": "★ Pinned",
   "service.badge.quiet": "Alerts paused 2 min",
+  "service.claude": "Open in Claude",
+  "service.claude.prompt": "Look at the service on port {port} ({name}) on this server: is it healthy, and what's wrong if not? Check its logs first.",
+  "service.claude.title": "Start a Claude Code session over SSH in this service's folder (Claude Code Desktop)",
   "service.events.none": "No alerts sent yet.",
   "service.events.off": "The down alert is off.",
   "service.events.sendFailed": "couldn't send",
@@ -1834,6 +1838,7 @@
     "other": "{n} changes"
   },
   "worktrees.keep.changesUnknown": "couldn't check for changes",
+  "worktrees.keep.claude": "made by Claude Code, which removes it",
   "worktrees.keep.detached": "detached HEAD",
   "worktrees.keep.extraCommits": "commits not in the PR",
   "worktrees.keep.inUse": {

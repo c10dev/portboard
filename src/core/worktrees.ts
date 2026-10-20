@@ -50,6 +50,8 @@ export interface WorktreeInfo {
   pr: { number: number; state: 'OPEN' | 'MERGED' | 'CLOSED'; headMatches: boolean } | null;
   /** pids whose working directory is inside the worktree */
   inUse: number[];
+  /** Claude Code created it (under <repo>/.claude/worktrees/): Claude locks, archives and removes it, not Portboard */
+  claude?: boolean;
   /** Why it can't be removed (empty: it can) */
   keep: string[];
   removable: boolean;
@@ -119,10 +121,15 @@ export function githubRepo(url: string): string | null {
   return m ? `${m[1]}/${m[2]}` : null;
 }
 
+/** A worktree Claude Code made (`claude --worktree`, Desktop's worktree sessions, subagents): .claude/worktrees/<name> */
+export const isClaudeWorktree = (path: string): boolean => /\/\.claude\/worktrees\/[^/]+\/?$/.test(path);
+
 export function keepReasons(w: Omit<WorktreeInfo, 'keep' | 'removable'>): string[] {
   const keep: string[] = [];
   if (w.main) keep.push(t('worktrees.keep.main'));
   if (w.prunable) return keep.length ? keep : []; // gone already: handled by prune, not remove
+  // Claude Code checks for unpushed work, holds a lock while a session runs and sweeps these itself
+  if (w.claude) keep.push(t('worktrees.keep.claude'));
   if (w.locked) keep.push(t('worktrees.keep.locked'));
   if (w.changes === null) keep.push(t('worktrees.keep.changesUnknown'));
   else if (w.changes > 0) keep.push(t('worktrees.keep.changes', { n: w.changes }));
@@ -567,6 +574,7 @@ async function scanRepo(repo: string, ctx: ScanCtx, prev: RepoCache | undefined)
       mergedByAncestry,
       pr: prRec ? { number: prRec.number, state: prRec.state, headMatches } : null,
       inUse: e.prunable ? [] : pidsInside(e.path, ctx.cwds),
+      claude: !main && isClaudeWorktree(e.path),
     };
     const keep = keepReasons(base);
     return { ...base, keep, removable: !main && !e.prunable && keep.length === 0 };

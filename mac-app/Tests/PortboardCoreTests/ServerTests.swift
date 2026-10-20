@@ -58,6 +58,10 @@ final class ServerTests: XCTestCase {
         XCTAssertFalse(Server.opensExternally(URL(string: "vscode://file/etc/hosts")!))
         XCTAssertFalse(Server.opensExternally(URL(string: "javascript:alert(1)")!))
         XCTAssertFalse(Server.opensExternally(URL(string: "relative/path")!))
+        // Claude Code Desktop's new-session page only (it asks before connecting and never sends the prompt itself)
+        XCTAssertTrue(Server.opensExternally(URL(string: "claude://code/new?ssh_host=dev%40devbox&ssh_folder=~/projects/shop&q=x")!))
+        XCTAssertFalse(Server.opensExternally(URL(string: "claude://code/settings")!))
+        XCTAssertFalse(Server.opensExternally(URL(string: "claude://other/new")!))
     }
 
     func testTabs() {

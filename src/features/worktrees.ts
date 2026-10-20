@@ -183,7 +183,7 @@ const listTool: Tool = {
         path: r.path,
         worktrees: r.worktrees
           .filter((w) => !w.main && (a.removable_only === true ? w.removable : true))
-          .map((w) => ({ path: w.path, branch: w.branch, pr: w.pr, changes: w.changes, lastCommit: w.lastCommit, sizeMb: w.sizeKb ? Math.round(w.sizeKb / 1024) : null, inUse: w.inUse.length, removable: w.removable, keep: w.keep })),
+          .map((w) => ({ path: w.path, branch: w.branch, pr: w.pr, changes: w.changes, lastCommit: w.lastCommit, sizeMb: w.sizeKb ? Math.round(w.sizeKb / 1024) : null, inUse: w.inUse.length, ...(w.claude ? { claude: true } : {}), removable: w.removable, keep: w.keep })),
       }));
     return text({ at: doc.at, ...(note ? { note } : {}), totals: doc.totals, repos });
   },

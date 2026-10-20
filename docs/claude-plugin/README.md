@@ -177,3 +177,14 @@ free port. The `write_launch_config {path}` tool writes a `portboard` entry with
 it. The preview then shares the port that `free_port`, the nudge and the dashboard know about. The same is
 `POST /api/dev-servers/launch-config {path, script?, mode?}`.
 
+## Claude Code's own worktrees and sessions
+
+Worktrees under `<repo>/.claude/worktrees/` (`claude --worktree`, Desktop's worktree sessions, subagents) are Claude
+Code's: it locks them while a session runs, checks them for unpushed work and removes them itself. The 개발 page marks
+them "Claude Code" and `remove_worktrees` never removes them. Servers left running in one after Claude removed it still
+show up as cleanup candidates (working directory deleted).
+
+A service page's **Claude로 열기** opens Claude Code Desktop on its new-session page with an SSH connection to this
+server (`claude://code/new?ssh_host=<user>@<host>&ssh_folder=<project folder>&q=<prompt>`). Desktop asks before it
+connects and never sends the prompt by itself. It shows only for processes in a project folder.
+

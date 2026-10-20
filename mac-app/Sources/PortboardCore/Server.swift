@@ -56,10 +56,13 @@ public enum Server {
             && effectivePort(url) == effectivePort(base)
     }
 
-    /// May a link that leaves the dashboard go to another app? Only web pages and mail: a page can't make the app open
-    /// a file:// path or another app's own scheme (x-apple.systempreferences:, vscode:, …).
+    /// May a link that leaves the dashboard go to another app? Web pages, mail, and Claude Code Desktop's new-session
+    /// page (a service page's "Claude로 열기": claude://code/new, which only fills in a session for the user to
+    /// confirm). A page can't make the app open a file:// path or any other app's scheme (x-apple.systempreferences:,
+    /// vscode:, other claude:// pages, …).
     public static func opensExternally(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased() else { return false }
+        if scheme == "claude" { return url.host?.lowercased() == "code" && url.path == "/new" }
         return scheme == "http" || scheme == "https" || scheme == "mailto"
     }
 
