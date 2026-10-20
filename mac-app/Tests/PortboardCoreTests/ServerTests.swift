@@ -48,6 +48,18 @@ final class ServerTests: XCTestCase {
         XCTAssertTrue(Server.isDashboard(URL(string: "https://example.com:443/x")!, base: plain))
     }
 
+    func testOpensExternally() {
+        // web pages and mail go to their app; files and other apps' schemes go nowhere
+        XCTAssertTrue(Server.opensExternally(URL(string: "https://github.com/c10dev/portboard")!))
+        XCTAssertTrue(Server.opensExternally(URL(string: "HTTP://devbox.example.ts.net:5281/")!))
+        XCTAssertTrue(Server.opensExternally(URL(string: "mailto:a@b.c")!))
+        XCTAssertFalse(Server.opensExternally(URL(string: "file:///Applications/Calculator.app")!))
+        XCTAssertFalse(Server.opensExternally(URL(string: "x-apple.systempreferences:com.apple.preference.security")!))
+        XCTAssertFalse(Server.opensExternally(URL(string: "vscode://file/etc/hosts")!))
+        XCTAssertFalse(Server.opensExternally(URL(string: "javascript:alert(1)")!))
+        XCTAssertFalse(Server.opensExternally(URL(string: "relative/path")!))
+    }
+
     func testTabs() {
         XCTAssertEqual(DashboardTab.allCases.map(\.title), ["서비스", "기기", "개발", "설정"])
         XCTAssertEqual(DashboardTab.of(URL(string: "https://h:8443/")), .services)

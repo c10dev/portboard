@@ -73,3 +73,4 @@
 /* the worktree the palette or dev.html#<path> points at */
 .wt-row.flash { animation: pal-flash 1.6s ease-out; }
 @keyframes pal-flash { from { background: var(--info-bg); } to { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { .wt-row.flash { animation: none; } }

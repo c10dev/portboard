@@ -55,7 +55,13 @@ final class WebController: NSObject, ObservableObject, WKNavigationDelegate, WKU
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
-        webView.isInspectable = true // Safari → 개발자용 → Portboard, for debugging the page
+        // Safari → 개발자용 → Portboard, for debugging the page: always in a debug build, in a release build only after
+        // `defaults write <bundle id> PortboardInspectable -bool YES` (docs/mac-app/README.md)
+        #if DEBUG
+        webView.isInspectable = true
+        #else
+        webView.isInspectable = UserDefaults.standard.bool(forKey: "PortboardInspectable")
+        #endif
         webView.configuration.userContentController.add(PageMessages(self), name: "portboard")
         webView.publisher(for: \.canGoBack).sink { [weak self] in
             self?.canGoBack = $0
@@ -220,7 +226,7 @@ final class WebController: NSObject, ObservableObject, WKNavigationDelegate, WKU
         guard let url = navigationAction.request.url else { return decisionHandler(.allow) }
         let mainFrame = navigationAction.targetFrame?.isMainFrame ?? true
         if mainFrame && !Server.isDashboard(url, base: base()) {
-            NSWorkspace.shared.open(url)
+            if Server.opensExternally(url) { NSWorkspace.shared.open(url) }
             return decisionHandler(.cancel)
         }
         decisionHandler(.allow)
@@ -275,7 +281,7 @@ final class WebController: NSObject, ObservableObject, WKNavigationDelegate, WKU
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = navigationAction.request.url {
             if Server.isDashboard(url, base: base()) && url.scheme?.hasPrefix("http") == true { load(url: url) }
-            else { NSWorkspace.shared.open(url) }
+            else if Server.opensExternally(url) { NSWorkspace.shared.open(url) }
         }
         return nil
     }
