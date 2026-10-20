@@ -33,7 +33,7 @@ export function classify(argv: string[], generic = false): Kind {
   if (head.some((x) => /(^|\/)rea$/.test(x) || /^'?rea'?$/.test(x) || /(^|\/)rea-agents(@[\w.-]+)?$/.test(x)) && argv.includes('mcp')) return { kind: 'mcp', name: 'rea' };
   if (head.some((x) => x.includes('@playwright/mcp'))) return { kind: 'mcp', name: 'playwright' };
   if (head.some((x) => /portboard[^ ]*\/(src|bin)\/mcp\.ts$/.test(x) || /claude-plugin\/bin\/mcp\.ts$/.test(x))) return { kind: 'mcp', name: 'portboard' };
-  // the `portboard mcp` command (bin/portboard, #9): node …/bin/portboard mcp, npx portboard mcp
+  // the `portboard mcp` command (bin/portboard, #9): node …/bin/portboard mcp, npx @c10dev/portboard mcp
   if (head.some((x, i) => /(^|\/)portboard$/.test(x) && argv[i + 1] === 'mcp')) return { kind: 'mcp', name: 'portboard' };
   if (!generic) return { kind: 'proc' };
   for (const x of head) {

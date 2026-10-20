@@ -5,8 +5,8 @@
 From npm (Node ≥ 22.18; the package has no dependencies):
 
 ```bash
-npx portboard start                  # run once, without installing
-npm i -g portboard                   # or install the `portboard` command
+npx @c10dev/portboard start                  # run once, without installing
+npm i -g @c10dev/portboard                   # or install the `portboard` command
 portboard install-service [--remote | --agent] [--enable] [--dry-run]
 portboard uninstall-service [--dry-run]
 ```
@@ -23,7 +23,7 @@ portboard uninstall-service [--dry-run]
 | `portboard --version`, `--help` | |
 
 The unit names absolute paths, so run `install-service` again after upgrading node under nvm or moving the install.
-npx copies live in a cache npm may clear: `npm i -g portboard` before `install-service`. User units stop at logout
+npx copies live in a cache npm may clear: `npm i -g @c10dev/portboard` before `install-service`. User units stop at logout
 unless lingering is on (`sudo loginctl enable-linger $USER`). On macOS `install-service` writes launchd agents to
 `~/Library/LaunchAgents` instead ([platforms.md](platforms.md#macos)); a Mac can also be just a client, with the app
 (below).

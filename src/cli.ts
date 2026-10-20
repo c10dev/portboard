@@ -219,7 +219,7 @@ async function installLaunchd(p: Parsed, d: Deps): Promise<number> {
   const kinds = unitsFor(p.remote, p.agent);
   const input = { node: d.node, root: d.root, version: VERSION, home: d.home };
   if (d.root.split('/').includes('_npx')) {
-    d.err('warning: this is an npx cache copy, which npm may delete. Install for good first: npm i -g portboard');
+    d.err('warning: this is an npx cache copy, which npm may delete. Install for good first: npm i -g @c10dev/portboard');
   }
   for (const k of kinds) {
     const file = plistPath(d.home, k);
@@ -285,7 +285,7 @@ async function installService(p: Parsed, d: Deps): Promise<number> {
   const kinds = unitsFor(p.remote, p.agent);
   const input: UnitInput = { node: d.node, root: d.root, version: VERSION };
   if (d.root.split('/').includes('_npx')) {
-    d.err('warning: this is an npx cache copy, which npm may delete. Install for good first: npm i -g portboard');
+    d.err('warning: this is an npx cache copy, which npm may delete. Install for good first: npm i -g @c10dev/portboard');
   }
   for (const k of kinds) {
     const file = join(dir, `${UNIT_NAMES[k]}.service`);

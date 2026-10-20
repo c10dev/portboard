@@ -58,13 +58,13 @@ for anything beyond `localhost`. systemd and docker are used when present. It al
 [docs/platforms.md](docs/platforms.md).
 
 ```bash
-npx portboard start       # try it: dashboard + REST API on 127.0.0.1:8790 and this machine's Tailscale IP
+npx @c10dev/portboard start       # try it: dashboard + REST API on 127.0.0.1:8790 and this machine's Tailscale IP
 ```
 
 To keep it running, install it and let it write a systemd user unit for the node you ran it with:
 
 ```bash
-npm i -g portboard
+npm i -g @c10dev/portboard
 portboard install-service           # writes ~/.config/systemd/user/portboard.service, prints the line below
 systemctl --user daemon-reload && systemctl --user enable --now portboard
 ```

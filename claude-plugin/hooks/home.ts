@@ -12,7 +12,8 @@ import { dirname, join } from 'node:path';
 const isCheckout = (dir: string) => {
   if (!existsSync(join(dir, 'src', 'mcp.ts'))) return false;
   try {
-    return JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).name === 'portboard';
+    const name = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).name;
+    return name === 'portboard' || name === '@c10dev/portboard';
   } catch {
     return false;
   }

@@ -46,7 +46,7 @@ can't do, e.g. `[portboard] platform darwin: ports via lsof; no service manager 
 ## macOS
 
 ```bash
-npm i -g portboard
+npm i -g @c10dev/portboard
 portboard start                       # try it: http://127.0.0.1:8790
 portboard install-service --dry-run   # see the launchd agent it would write
 portboard install-service --enable    # write ~/Library/LaunchAgents/io.github.c10dev.portboard.plist and load it
