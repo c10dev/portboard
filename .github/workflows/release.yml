@@ -7,6 +7,13 @@ name: release
 on:
   push:
     tags: ['v*']
+  # Rebuilds only the Mac app from the chosen branch and attaches it to an existing release, for when the mac-app job
+  # failed after npm already published that version (a re-pushed tag would fail at npm publish)
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to attach the Mac app to, e.g. v1.1.0
+        required: true
 
 # Each job asks for what it needs (docs/security-review/v1.0.md I10)
 permissions:
@@ -18,6 +25,7 @@ concurrency:
 
 jobs:
   npm:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -84,8 +92,11 @@ jobs:
   # Developer ID signed and notarized Portboard.app, attached to the release. Skeleton: not run until the secrets exist.
   mac-app:
     needs: [npm, mac-secrets]
-    if: needs.mac-secrets.outputs.ready == 'true'
+    # On a manual run the npm job is skipped on purpose
+    if: always() && needs.mac-secrets.outputs.ready == 'true' && (needs.npm.result == 'success' || github.event_name == 'workflow_dispatch')
     runs-on: macos-14
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     timeout-minutes: 30
     permissions:
       contents: write # upload to the release
@@ -126,9 +137,9 @@ jobs:
           xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_PASSWORD" --wait
           xcrun stapler staple mac-app/build/Portboard.app
           spctl --assess --type execute --verbose mac-app/build/Portboard.app
-          ditto -c -k --keepParent mac-app/build/Portboard.app "$RUNNER_TEMP/Portboard-${GITHUB_REF_NAME#v}-mac.zip"
+          ditto -c -k --keepParent mac-app/build/Portboard.app "$RUNNER_TEMP/Portboard-${TAG#v}-mac.zip"
       - name: Attach to the release
-        run: gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/Portboard-${GITHUB_REF_NAME#v}-mac.zip"
+        run: gh release upload "$TAG" "$RUNNER_TEMP/Portboard-${TAG#v}-mac.zip" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Remove the keychain
