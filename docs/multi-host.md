@@ -16,7 +16,7 @@ An agent needs no compute-pool, no SSH key and no dashboard of its own. Where bo
 ## On each machine: run the agent
 
 ```bash
-npm i -g portboard
+npm i -g @c10dev/portboard
 portboard agent                          # foreground, :8797 on 127.0.0.1 and this node's Tailscale IPv4
 portboard install-service --agent        # or: a systemd user unit, portboard-agent.service, alone
 ```
