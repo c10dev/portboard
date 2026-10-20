@@ -394,7 +394,7 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
   box-shadow: 0 6px 24px rgb(0 0 0 / .2); pointer-events: auto;
   transform-origin: 50% 100%; transition: transform .18s ease, opacity .18s ease;
 }
-.toast-stack .toast.error { background: var(--danger); color: #fff; }
+.toast-stack .toast.error { background: var(--danger); color: var(--danger-text); }
 .toast-stack .toast-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .toast-stack .toast button {
   flex: none; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; border-radius: 6px;

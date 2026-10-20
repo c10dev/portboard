@@ -72,7 +72,8 @@ On the first poll the app decides the notification default and may ask for notif
 ### Window
 
 - **Web view.** It shows the dashboard at the configured server URL, under a hidden title bar (see [One bar](#one-bar)). The Dashboard menu (대시보드) has the tabs on ⌘1 to ⌘4, Back ⌘[, Refresh ⌘R and Open in browser ⇧⌘O. Settings is the dashboard's own `settings.html` tab (server settings and the checklist). The app's own settings are ⌘, (below).
-- **Links.** A link that leaves the dashboard opens in the default browser. "Leaves" means another host or port: an opened service, the docs on GitHub, `target=_blank`. Dashboard pages stay in the window.
+- **Links.** A link that leaves the dashboard opens in the default browser. "Leaves" means another host or port: an opened service, the docs on GitHub, `target=_blank`. Dashboard pages stay in the window. Only `http`, `https` and `mailto` links leave the app: a `file://` path or another app's own scheme is ignored.
+- **Web Inspector.** Off in the released app. To debug the page in Safari (Develop → Portboard), turn it on and restart the app: `defaults write io.github.c10dev.portboard PortboardInspectable -bool YES` (your own bundle id if you set `PORTBOARD_BUNDLE_ID`). A debug build (`swift run`) always has it.
 - **Dialogs.** The dashboard asks with `confirm()`/`prompt()` before stopping, exposing and naming. The app shows these as native dialogs; a bare WKWebView would silently answer "Cancel".
 - **Writes.** They work as in Safari. Through `tailscale serve` the server sees the Mac's Tailscale login and device, and the Mac is on the `writeDevices` allowlist ([security.md](../security.md)).
 - **Window frame.** Size and position are remembered (`NSWindow` frame autosave).

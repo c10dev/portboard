@@ -56,6 +56,13 @@ public enum Server {
             && effectivePort(url) == effectivePort(base)
     }
 
+    /// May a link that leaves the dashboard go to another app? Only web pages and mail: a page can't make the app open
+    /// a file:// path or another app's own scheme (x-apple.systempreferences:, vscode:, …).
+    public static func opensExternally(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        return scheme == "http" || scheme == "https" || scheme == "mailto"
+    }
+
     /// The port of a service.html#<port> page; nil for any other page
     public static func servicePort(_ url: URL) -> Int? {
         guard url.lastPathComponent == "service.html", let f = url.fragment, let port = Int(f), port > 0 else { return nil }

@@ -6,20 +6,22 @@
   --surface: #ffffff;
   --text: #0b0b0b;
   --text-2: #52514e;
-  --text-3: #898781;
+  --text-3: #6b6964;
   --muted: var(--text-2);
   --line: rgb(0 0 0 / 10%);
   --neutral-bg: #f1f0ed;
-  --accent: #2f6feb;
+  --accent: #1f5fd6;
   --accent-text: #ffffff;
-  --ok: #1a7f37;
+  --ok: #197a35;
   --ok-bg: #dafbe1;
-  --warn: #9a6700;
+  --warn: #8f6000;
   --warn-bg: #fff4d4;
   --info: #0969da;
   --info-bg: #ddf4ff;
   --danger: #cf222e;
+  --danger-text: #ffffff;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Every text colour above reaches 4.5:1 on the backgrounds it sits on, in both modes (test/contrast.test.ts) */
   /* a dense type scale; hierarchy mostly from --text / --text-2 / --text-3 */
   --fs-1: 11px;
   --fs-2: 12px;
@@ -34,10 +36,11 @@
     --surface: #20201f;
     --text: #f0efec;
     --text-2: #c3c2b7;
-    --text-3: #898781;
+    --text-3: #97958f;
     --line: rgb(255 255 255 / 10%);
     --neutral-bg: #2a2a28;
-    --accent: #4c8dff;
+    --accent: #5292ff;
+    --accent-text: #0b0b0b;
     --ok: #56d364;
     --ok-bg: #12261a;
     --warn: #e3b341;
@@ -45,6 +48,7 @@
     --info: #79c0ff;
     --info-bg: #10233a;
     --danger: #ff7b72;
+    --danger-text: #0b0b0b;
   }
 }
 
@@ -102,7 +106,7 @@ main { padding: 8px 16px 40px; max-width: 1100px; margin: 0 auto; }
   padding: 10px 14px; border-radius: 10px;
   background: var(--text); color: var(--bg); font-size: 13px; box-shadow: 0 6px 24px rgb(0 0 0 / .2);
 }
-.toast.error { background: var(--danger); color: #fff; }
+.toast.error { background: var(--danger); color: var(--danger-text); }
 
 @media (max-width: 640px) {
   .row { grid-template-columns: 60px 1fr; }
