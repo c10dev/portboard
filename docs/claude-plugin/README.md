@@ -9,6 +9,7 @@ Claude Code plugin marketplace, and the `portboard` plugin brings Portboard into
 | MCP server | [`claude-plugin/.mcp.json`](../../claude-plugin/.mcp.json) → [`bin/mcp.ts`](../../claude-plugin/bin/mcp.ts) | the local stdio server ([mcp.md](../mcp.md)), run from the checkout |
 | Skill | [`skills/dev-servers-and-ports`](../../claude-plugin/skills/dev-servers-and-ports/SKILL.md) | when to call `list_ports`, `free_port` → `reserve_port` → `start_dev_server`, and `cleanup_servers` instead of kill (Korean and English triggers) |
 | Port nudge | [`hooks/port-nudge.ts`](../../claude-plugin/hooks/port-nudge.ts) (PreToolUse, Bash) | adds `[portboard]` context when a command hard-codes a dev-server port or kills by port. Never blocks, never asks |
+| Worktree port | [`hooks/session-port.ts`](../../claude-plugin/hooks/session-port.ts) (SessionStart, CwdChanged) | exports `PORT=<reserved port>` for the session's Bash commands and adds one `[portboard]` line at session start ([below](#the-worktree-port-as-port)) |
 | Session end | [`hooks/session-end.ts`](../../claude-plugin/hooks/session-end.ts) (SessionEnd) | tells Portboard the session ended (#43) |
 
 The marketplace is [`.claude-plugin/marketplace.json`](../../.claude-plugin/marketplace.json) at the repo root; the
@@ -152,3 +153,27 @@ session-end hook (#43) is a plain `onSessionEnd()` with no `$`, and both should 
 them. So this plugin uses classic command hooks, registered in [`hooks/hooks.json`](../../claude-plugin/hooks/hooks.json).
 Each hook and the MCP server start through [`bin/run.sh`](../../claude-plugin/bin/run.sh), which finds Node (≥ 22.18, for
 type stripping) on PATH or in nvm, like `bin/portboard-mcp`; for a hook, no Node at all is a silent pass.
+
+## The worktree port as `PORT`
+
+Claude Code's own advice for its preview is to have the server read `PORT`. The SessionStart hook asks Portboard
+(`GET /api/claude/session-port?cwd=…`, read-only, 500 ms timeout) which port is reserved for the session's
+`<repo>@<branch>`, and when there is one writes `export PORT=<port>` to `CLAUDE_ENV_FILE`, which Claude Code runs before
+every Bash command. It also adds one `[portboard]` context line: the reserved port, or how to get one, and whether the
+worktree's `.claude/launch.json` points the preview somewhere else.
+
+When Claude moves into another worktree (`EnterWorktree`, `cd`), the CwdChanged hook does the same for the new
+directory, and unsets the `PORT` it set earlier if the new one has no reservation. It never unsets a `PORT` it didn't
+set, and does nothing when Portboard can't be reached. Only reservations count: the hook never reserves a port itself
+(`reserve_port`, `start_dev_server` and `write_launch_config` do).
+
+Off: the plugin's `session_port` option, or `PORTBOARD_SESSION_PORT=0`.
+
+## Claude Code's preview
+
+Claude Code Desktop starts preview servers from `.claude/launch.json` and, with `autoPort` unset, moves them to any
+free port. The `write_launch_config {path}` tool writes a `portboard` entry with the worktree's reserved port and
+`autoPort: false`, or, when Portboard already runs that worktree's server, an entry that only attaches the preview to
+it. The preview then shares the port that `free_port`, the nudge and the dashboard know about. The same is
+`POST /api/dev-servers/launch-config {path, script?, mode?}`.
+

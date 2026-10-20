@@ -25,6 +25,26 @@ reserved for which `repo@branch`, and which servers are leftovers. Its MCP tools
 
 The owner name is `<main repo folder>@<branch>`, e.g. `shop-web@feat-map` — the same name `start_dev_server` uses.
 
+**`PORT` is already set.** When the worktree has a reserved port, this plugin exports `PORT=<that port>` for every
+Bash command of the session (and again when you move into another worktree). Servers that read `PORT` land on it
+without a flag; for one that doesn't, pass that port explicitly. A `[portboard]` line at session start says which port.
+
+## Claude Code's preview (`.claude/launch.json`)
+
+In Claude Code Desktop, the preview starts dev servers from `.claude/launch.json` and otherwise picks any free port.
+**`write_launch_config {path}`** writes a `portboard` entry there with the worktree's reserved port and `autoPort: false`
+(reserving one if needed). If Portboard already runs that worktree's server, the entry only attaches the preview to it
+(`mode: "attach"`). Use it instead of editing the port in `launch.json` by hand. It leaves a file that has comments or
+is tracked by git alone and returns the entry to paste; it adds the file to the repo's `info/exclude` so the port is
+never committed.
+
+## Opening a server from another device (SSH sessions, phone)
+
+Over an SSH session there is no preview pane, and `localhost` on the user's computer is not this server. Don't tell
+the user to run `ssh -N -L …`. Instead, `list_ports {query}` gives each port's `directUrl` / `servedUrl`; if it has no
+`servedUrl` and `canExpose` is true, **`expose_port {port}`** publishes it to the user's tailnet over HTTPS (ask first,
+it is visible to their tailnet devices). Give the user that URL.
+
 ## 끄기 (stopping) — never kill by port
 
 - **`list_cleanup_candidates`** shows servers whose worktree was deleted, whose starting session ended, or whose branch

@@ -242,6 +242,7 @@ test('stdio server answers initialize and tools/list, then exits when stdin clos
     'list_dev_servers',
     'start_dev_server',
     'stop_dev_server',
+    'write_launch_config',
     'setup_status',
     'digest_preview',
     'set_digest',

@@ -1,7 +1,7 @@
 {
   "name": "portboard",
-  "version": "0.1.0",
-  "description": "Portboard MCP server, a dev-servers-and-ports skill, a PreToolUse nudge when a Bash command hard-codes or kills a port, and SessionEnd cleanup",
+  "version": "0.2.0",
+  "description": "Portboard MCP server, a dev-servers-and-ports skill, a PreToolUse nudge when a Bash command hard-codes or kills a port, the worktree's reserved port as PORT in each session, and SessionEnd cleanup",
   "author": {
     "name": "c10dev",
     "url": "https://github.com/c10dev"
@@ -13,6 +13,12 @@
       "type": "boolean",
       "title": "Port nudge",
       "description": "Add Portboard context when a Bash command starts a dev server on a hard-coded port or kills by port. Never blocks or asks.",
+      "default": true
+    },
+    "session_port": {
+      "type": "boolean",
+      "title": "Worktree port as PORT",
+      "description": "At session start and when Claude changes into another worktree, set PORT for Bash commands to the port Portboard reserved for that worktree, and add one line of context about it.",
       "default": true
     }
   }

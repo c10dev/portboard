@@ -3,14 +3,17 @@
 //   GET  /api/dev-servers                         running pb-dev-* units, and which known worktrees can be started
 //   POST /api/dev-servers/start {path, script?, port?}   (X-Portboard)
 //   POST /api/dev-servers/stop  {path}                   (X-Portboard)
-//   MCP  list_dev_servers (also remote, redacted: no paths, units or commands), start_dev_server, stop_dev_server (local only)
+//   POST /api/dev-servers/launch-config {path, script?, mode?}   (X-Portboard)
+//   MCP  list_dev_servers (also remote, redacted: no paths, units or commands), start_dev_server, stop_dev_server,
+//        write_launch_config (local only)
 //
 // Only worktrees/main checkouts of the repos Portboard scans, only package.json scripts (dev, start, preview, serve).
 // The port is the worktree's reservation (owner "<repo>@<branch>"), or a free one that then gets reserved.
 
 import { freePorts } from '../core/index.ts';
 import { run } from '../core/exec.ts';
-import { devScripts, hasScript, listDevServers, planStart, startUnit, stopUnit, unitFor, type DevScripts, type DevServer } from '../core/devservers.ts';
+import { devScripts, frameworkOf, hasScript, listDevServers, planStart, startUnit, stopUnit, unitFor, type DevScripts, type DevServer } from '../core/devservers.ts';
+import { launchEntry, writeLaunch, type LaunchEntry, type LaunchMode } from '../core/launchjson.ts';
 import { loadReservations, reserve } from '../core/reservations.ts';
 import { readOnlyRefusal } from '../core/control.ts';
 import { platform } from '../core/platform/index.ts';
@@ -34,6 +37,7 @@ declare module '../mcp/kit.ts' {
     devServers(): Promise<DevServersDoc>;
     startDevServer(path: string, script?: string, port?: number): Promise<{ ok: boolean; message: string; port?: number; unit?: string }>;
     stopDevServer(path: string): Promise<{ ok: boolean; message: string }>;
+    writeLaunchConfig(path: string, script?: string, mode?: LaunchMode): Promise<LaunchConfigResult>;
   }
 }
 
@@ -113,6 +117,89 @@ export async function stopDevServer(path: string): Promise<{ ok: boolean; messag
   if (!(await listDevServers()).some((r) => r.unit === unit)) return { ok: false, status: 404, message: t('devservers.notRunning') };
   return stopUnit(unit);
 }
+
+export interface LaunchConfigResult {
+  ok: boolean;
+  message: string;
+  status?: number;
+  path?: string;
+  port?: number;
+  mode?: LaunchMode;
+  changed?: boolean;
+  /** The entry, so it can be pasted by hand when the file couldn't be written */
+  entry?: LaunchEntry;
+}
+
+const LAUNCH_REFUSED = {
+  comments: 'devservers.launch.comments',
+  invalid: 'devservers.launch.invalid',
+  tracked: 'devservers.launch.tracked',
+  symlink: 'devservers.launch.symlink',
+  io: 'devservers.launch.io',
+} as const;
+
+/**
+ * Point Claude Code Desktop's preview at the worktree's reserved port: write a "portboard" entry into its
+ * .claude/launch.json (src/core/launchjson.ts). Reserves a port for <repo>@<branch> when it has none. Without `mode`,
+ * attaches to the dev server Portboard already runs for the worktree, else runs the script itself.
+ */
+export async function writeLaunchConfig(path: string, scriptArg?: string, modeArg?: LaunchMode): Promise<LaunchConfigResult> {
+  const refused = readOnlyRefusal();
+  if (refused) return { ok: false, status: 403, message: refused.message };
+  const dir = (await knownDirs()).get(path);
+  if (!dir) return { ok: false, status: 400, message: t('devservers.unknownDir') };
+  const unit = unitFor(path);
+  const running = (await listDevServers()).find((r) => r.unit === unit && r.active);
+  const mode: LaunchMode = modeArg ?? (running ? 'attach' : 'run');
+  const s = await devScripts(path);
+  const script = scriptArg ?? s.preferred;
+  if (mode === 'run' && (!script || !hasScript(s, script))) return { ok: false, status: 400, message: t('devservers.noScript', { scripts: Object.keys(s.scripts).join(', ') || t('devservers.none') }) };
+  if (mode === 'attach' && !running?.port) return { ok: false, status: 409, message: t('devservers.launch.noServer') };
+
+  let port = running?.port ?? undefined;
+  if (mode === 'run' || !port) {
+    const r = await reserve(dir.owner, undefined, 'Claude Code preview (launch.json)', async () => (await freePorts(1, undefined, dir.owner))[0]);
+    if (!r.ok) return { ok: false, status: 409, message: r.error };
+    port = r.reservation.port;
+  }
+  const entry = launchEntry({ mode, port, script: script ?? undefined, fw: script && hasScript(s, script) ? frameworkOf(s.scripts[script]) : 'generic' });
+  const w = await writeLaunch(path, entry);
+  if (!w.ok) return { ok: false, status: w.reason === 'io' ? 500 : 409, message: t(LAUNCH_REFUSED[w.reason], { message: w.message ?? '' }), path: w.path, port, mode, entry };
+  return { ok: true, status: 200, message: t(w.changed ? 'devservers.launch.written' : 'devservers.launch.same', { port, mode }), path: w.path, port, mode, changed: w.changed, entry };
+}
+
+const launchTool: Tool = {
+  def: {
+    name: 'write_launch_config',
+    title: "Point Claude Code's preview at the reserved port",
+    description:
+      "Write a \"portboard\" entry into a worktree's .claude/launch.json, the file Claude Code Desktop's preview reads, " +
+      "so the preview runs on the worktree's reserved port (owner <repo>@<branch>; one is reserved if it has none) " +
+      'with autoPort off, instead of a different free port each time. mode "attach" (the default when Portboard already ' +
+      'runs this worktree\'s dev server) only points the preview at that server; "run" lets the preview start the ' +
+      'package.json script itself. Other entries are kept; a file with comments or one tracked by git is left alone and ' +
+      'the entry is returned to paste. The file is added to the repo\'s info/exclude so the port is never committed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute worktree path (as list_worktrees reports it)' },
+        script: { type: 'string', enum: ['dev', 'start', 'preview', 'serve'] },
+        mode: { type: 'string', enum: ['run', 'attach'] },
+      },
+      required: ['path'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  async call(args, core) {
+    const a = (args ?? {}) as { path?: unknown; script?: unknown; mode?: unknown };
+    if (typeof a.path !== 'string') return text('path must be a worktree path', true);
+    if (a.script !== undefined && typeof a.script !== 'string') return text('script must be a string', true);
+    if (a.mode !== undefined && a.mode !== 'run' && a.mode !== 'attach') return text('mode must be run or attach', true);
+    const r = await core.writeLaunchConfig(a.path, a.script as string | undefined, a.mode as LaunchMode | undefined);
+    return text(r, !r.ok);
+  },
+};
 
 const startTool: Tool = {
   def: {
@@ -215,8 +302,20 @@ export const devServersFeature: FeatureModule = {
         return reply(r.status ?? (r.ok ? 200 : 409), r);
       },
     },
+    {
+      method: 'POST',
+      path: '/api/dev-servers/launch-config',
+      write: true,
+      body: { limit: 4096 },
+      async handler({ body }) {
+        if (typeof body?.path !== 'string') return reply(400, { error: 'path required' });
+        if (body?.mode !== undefined && body.mode !== 'run' && body.mode !== 'attach') return reply(400, { error: 'mode must be run or attach' });
+        const r = await writeLaunchConfig(body.path, typeof body?.script === 'string' ? body.script : undefined, body?.mode);
+        return reply(r.status ?? (r.ok ? 200 : 409), r);
+      },
+    },
   ],
-  tools: [listTool, startTool, stopTool],
+  tools: [listTool, startTool, stopTool, launchTool],
   // The stdio server is a Claude session's child: its CLAUDE_* env tells owners.ts whose unit this is (#43).
-  mcpCore: () => ({ devServers: devServersDoc, startDevServer: (path: string, script?: string, port?: number) => startDevServer(path, script, port, process.env), stopDevServer }),
+  mcpCore: () => ({ devServers: devServersDoc, startDevServer: (path: string, script?: string, port?: number) => startDevServer(path, script, port, process.env), stopDevServer, writeLaunchConfig }),
 };

@@ -16,9 +16,10 @@ import { keyedCache } from '../core/cache.ts';
 import { cachedValue } from '../core/throttle.ts';
 import { cleanupReasons, ownerOf, REASON_TEXT, transientUnits } from '../core/owners.ts';
 import { devScripts, UNIT_PREFIX } from '../core/devservers.ts';
+import { launchPortOf, readLaunch } from '../core/launchjson.ts';
 import { loadReservations, type Reservation } from '../core/reservations.ts';
 import { discoverRepos } from '../core/worktrees.ts';
-import { adviceText, worktreeOfCwd, type AdviceCmd, type AdviceFacts, type Here, type Holder } from '../core/portadvice.ts';
+import { adviceText, sessionText, worktreeOfCwd, type AdviceCmd, type AdviceFacts, type Here, type Holder } from '../core/portadvice.ts';
 import { eligible } from './owners.ts';
 import { ok, reply } from './router.ts';
 import type { FeatureModule } from './types.ts';
@@ -54,8 +55,8 @@ export async function hereOf(cwd: string | null, runner: typeof run = run): Prom
   if (!cwd) return null;
   const wt = await worktreeOfCwd(cwd, runner);
   if (!wt) return null;
-  const [repos, scripts] = await Promise.all([discoverRepos(), devScripts(wt.path).catch(() => null)]);
-  return { owner: wt.owner, path: wt.path, startable: repos.includes(wt.repoDir) && !!scripts?.preferred };
+  const [repos, scripts, launch] = await Promise.all([discoverRepos(), devScripts(wt.path).catch(() => null), readLaunch(wt.path)]);
+  return { owner: wt.owner, path: wt.path, startable: repos.includes(wt.repoDir) && !!scripts?.preferred, launchPort: launchPortOf(launch) };
 }
 
 /** How long a cwd's repo@branch is reused, and how many cwds are kept (L1) */
@@ -102,6 +103,19 @@ export async function portAdvice(
   return { ...facts, text: adviceText(facts) };
 }
 
+/**
+ * What the plugin's SessionStart / CwdChanged hook needs for cwd: its repo@branch, that owner's reserved port, and the
+ * context line. null outside a git checkout.
+ */
+export async function sessionPort(q: { cwd: string; env: boolean }, deps: AdviceDeps = DEPS): Promise<{ owner: string; port: number | null; launchPort: number | null; text: string | null } | null> {
+  const [here, reservations] = await Promise.all([deps.here(q.cwd), deps.reservations()]);
+  if (!here) return null;
+  const port = reservations.filter((r) => r.owner === here.owner).map((r) => r.port).sort((a, b) => a - b)[0] ?? null;
+  return { owner: here.owner, port, launchPort: here.launchPort ?? null, text: sessionText({ here, port, env: q.env && !!port }) };
+}
+
+const validCwd = (cwd: string | null): cwd is string => cwd !== null && cwd.startsWith('/') && cwd.length <= 4096 && !/[\0\n]/.test(cwd);
+
 /** Query parameters, checked: a bad one is a 400, never a guess. */
 export function parseAdviceQuery(url: URL): { ok: true; value: Parameters<typeof portAdvice>[0] } | { ok: false; error: string } {
   const sp = url.searchParams;
@@ -128,6 +142,17 @@ export const claudeFeature: FeatureModule = {
         const q = parseAdviceQuery(url);
         if (!q.ok) return reply(400, { error: q.error });
         return ok(await portAdvice(q.value, await ctx.snapshot()));
+      },
+    },
+    {
+      // GET /api/claude/session-port?cwd=<dir>[&env=1]: the plugin's SessionStart / CwdChanged hook. Read-only, cached
+      // like port-advice (the hook waits at most 500 ms).
+      method: 'GET',
+      path: '/api/claude/session-port',
+      async handler({ url }) {
+        const cwd = url.searchParams.get('cwd');
+        if (!validCwd(cwd)) return reply(400, { error: 'cwd must be an absolute path' });
+        return ok((await sessionPort({ cwd, env: url.searchParams.get('env') === '1' })) ?? { owner: null, port: null, launchPort: null, text: null });
       },
     },
   ],

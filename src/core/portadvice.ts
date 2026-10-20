@@ -47,6 +47,8 @@ export interface Here {
   path: string;
   /** Portboard scans this repo and the worktree has a dev/start/preview/serve script */
   startable: boolean;
+  /** The port its .claude/launch.json gives Claude Code's preview, if it has one */
+  launchPort?: number | null;
 }
 
 export interface AdviceFacts {
@@ -138,6 +140,7 @@ export function adviceText(f: AdviceFacts): string {
       const whose = f.here ? t('portadvice.start.whoseWorktree', { owner: data(f.here.owner) }) : t('portadvice.start.whoseTask');
       lines.push(t('portadvice.start.use', { whose, port: f.suggestion.port, state: f.suggestion.reserved ? t('portadvice.start.reserved') : t('portadvice.start.unreserved') }));
     }
+    if (f.here?.launchPort) lines.push(t('portadvice.start.launch', { port: f.here.launchPort }));
     const herePath = f.here?.startable ? safePath(f.here.path) : null;
     if (herePath) {
       lines.push(t('portadvice.start.devServer', { p: herePath }));
@@ -170,6 +173,28 @@ export function adviceText(f: AdviceFacts): string {
     }
     lines.push('(Prefer Portboard MCP cleanup_servers / stop_dev_server over kill by port.)');
   }
+  return lines.join('\n');
+}
+
+// ---- what a session starting in a worktree is told (SessionStart hook) ----
+
+export interface SessionFacts {
+  here: Here;
+  /** The worktree's reserved port (the lowest, when it holds several) */
+  port: number | null;
+  /** The hook put PORT=<port> into the session's Bash environment */
+  env: boolean;
+}
+
+/** The SessionStart context, or null when there is nothing worth a line (no reservation, nothing to start). */
+export function sessionText(f: SessionFacts): string | null {
+  const { here, port } = f;
+  if (!port && !here.startable) return null;
+  const owner = data(here.owner);
+  const lines = [`${ADVICE_MARKER} ${port ? t('portadvice.session.reserved', { owner, port }) : t('portadvice.session.none', { owner, args: data(here.owner, 120) })}`, DATA_LINE];
+  if (port && f.env) lines.push(t('portadvice.session.env', { port }));
+  if (port && here.launchPort && here.launchPort !== port) lines.push(t('portadvice.session.launchDiffers', { launch: here.launchPort, port }));
+  else if (port && here.startable && !here.launchPort) lines.push(t('portadvice.session.launchNone'));
   return lines.join('\n');
 }
 
