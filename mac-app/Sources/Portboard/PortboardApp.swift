@@ -55,7 +55,9 @@ struct PortboardApp: App {
     }
 }
 
-/// The window has no toolbar, so its actions live here: ⌘1…⌘4 for the dashboard's tabs, ⌘[, ⌘R and ⇧⌘O
+/// The window has no toolbar, so its actions live here: ⌘1…⌘4 for the dashboard's tabs, ⌘[, ⌘R and ⇧⌘O. Main actor like the
+/// WebController it drives; the macOS 14 SDK doesn't make Commands main actor, so CI's compiler rejects the calls otherwise.
+@MainActor
 struct DashboardCommands: Commands {
     let web: WebController
 
