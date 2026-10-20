@@ -41,6 +41,7 @@ const ICON = {
   side: '<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 3.5v13" stroke="currentColor" stroke-width="1.5"/></svg>',
   insp: '<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 3.5v13" stroke="currentColor" stroke-width="1.5"/></svg>',
   filter: '<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M3 5h14M5.5 10h9M8 15h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>',
+  gear: '<svg class="sv-icon" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 2.5v2.2M10 15.3v2.2M2.5 10h2.2M15.3 10h2.2M4.7 4.7l1.6 1.6M13.7 13.7l1.6 1.6M4.7 15.3l1.6-1.6M13.7 6.3l1.6-1.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
 };
 
 /** Pane widths in CSS px, as lib/shell.js PANE (test/ui-shell.test.ts keeps them equal) */
@@ -65,6 +66,12 @@ export function pageOptions(html: string): { view: ViewId; inspector: boolean } 
 
 const current = (view: ViewId, id: string) => (view === id ? ' aria-current="page"' : '');
 
+/** A sidebar view link with its count; in the top list a listitem, in the footer (설정) with an icon in front */
+function sideView(v: (typeof VIEWS)[number], view: ViewId, icon = ''): string {
+  return `<a href="${v.href}" class="side-view"${icon ? '' : ' role="listitem"'} data-view="${v.id}"${current(view, v.id)}>${icon}` +
+    `<span class="sv-label" data-t="${v.label}"></span><span class="side-count" id="count-${v.id}"></span></a>`;
+}
+
 /** Each marker's markup for a page. Text is a data-t / data-t-<attr> key, filled by expandShell (fillStrings). */
 export function shellParts(opts: { view: ViewId; inspector: boolean; hostname: string; boot: string; locale?: Locale }): Record<string, string> {
   const { view, inspector } = opts;
@@ -86,10 +93,11 @@ export function shellParts(opts: { view: ViewId; inspector: boolean; hostname: s
       : '',
     sidebar:
       '<nav id="shellSide" class="shell-side" data-t-aria-label="shell.side">' +
-      `<div class="side-views" role="list">${VIEWS.map((v) => `<a href="${v.href}" class="side-view" role="listitem" data-view="${v.id}"${current(view, v.id)}><span class="sv-label" data-t="${v.label}"></span><span class="side-count" id="count-${v.id}"></span></a>`).join('')}</div>` +
+      `<div class="side-views" role="list">${VIEWS.filter((v) => v.id !== 'settings').map((v) => sideView(v, view)).join('')}</div>` +
       '<section class="side-sec" id="sidePinned" hidden><h2 data-t="shell.pinned"></h2><ul></ul></section>' +
       '<section class="side-sec" id="sideDevices" hidden><h2 data-t="shell.devices"></h2><ul></ul></section>' +
-      '<div class="side-foot" id="shellFoot">' +
+      // 설정 sits at the bottom with the setup and collector chips, like the Claude app's account area
+      `<div class="side-foot" id="shellFoot">${sideView(VIEWS.find((v) => v.id === 'settings')!, view, ICON.gear)}` +
       '<a class="btn ob-chip" id="obChip" href="settings.html#start" data-t-aria-label="shell.obChip" hidden><span class="ob-icon">☑</span><span class="ob-text" id="obText"></span></a>' +
       '<button type="button" class="sw-chip" id="swChip" data-t-aria-label="shell.swChip" hidden><span class="sw-dot"></span><span class="sw-text" id="swText"></span></button>' +
       '</div></nav>' +

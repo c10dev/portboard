@@ -158,6 +158,10 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
 .side-foot:not(:has(> :not([hidden]))) { display: none; }
 .side-foot .readonly-note { margin: 0; width: 100%; max-width: none; padding: 6px 9px; }
 .side-foot .ob-chip, .side-foot .sw-chip { flex: 1 1 auto; justify-content: center; }
+/* 설정 heads the footer: a full-width view row with a gear, its count the setup steps left */
+.side-foot > .side-view { flex: 1 1 100%; color: var(--text-2); }
+.side-foot > .side-view:hover, .side-foot > .side-view[aria-current] { color: var(--text); }
+.side-view .sv-icon { flex: none; color: var(--text-3); }
 
 /* ---- inspector ---- */
 .insp { grid-column: 3; display: none; background: var(--surface); border-left: 0.5px solid var(--line); }

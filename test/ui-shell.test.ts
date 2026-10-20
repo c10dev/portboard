@@ -344,6 +344,9 @@ test('render: one bar (header.top, .brand left, .controls right), the page contr
   assert.deepEqual(doc.getElementById('shellMain')!.children.map((c: FakeElement) => c.id || c.tagName), ['status', 'MAIN']);
   assert.ok(['toast', 'logs', 'row'].every((id) => doc.getElementById(id)!.parentNode === doc.body));
   assert.equal(doc.querySelector('.side-view[aria-current="page"]')!.dataset.view, 'services');
+  // 설정 is the footer's first row, not one of the views at the top
+  assert.deepEqual(doc.querySelector('.side-views')!.children.map((c: FakeElement) => c.dataset.view), ['services', 'devices', 'dev']);
+  assert.equal(doc.getElementById('shellFoot')!.children[0].dataset.view, 'settings');
   assert.equal(mountShell(doc, fakeWindow(1440)), api, 'mounting twice is the same shell');
   // the main column waits for the rows, the owners banner and the alerts, each named
   assert.equal(doc.querySelector('main')!.dataset.wait, 'page owners alerts');
