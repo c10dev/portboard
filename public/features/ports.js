@@ -147,9 +147,10 @@ export function renderRow(p, ctx, sub = false) {
 export function portBadges(p) {
   const out = [];
   const add = (text, tone = '', key = false) => out.push(badge(text, `${tone}${key ? ' key' : ''}`.trim()));
-  if (p.served) add('tailnet HTTPS', 'ok', true);
+  // tones: info is how it is reached (tailnet, every interface), neutral is a plain fact, warn and bad want a look
+  if (p.served) add('tailnet HTTPS', 'info', true);
   if (!p.listening) add(t('ports.badge.notListening'), 'warn', true);
-  else if (p.scope === 'loopback') add(p.served ? 'local' : 'local only', p.served ? '' : 'warn', !p.served);
+  else if (p.scope === 'loopback') add(p.served ? 'local' : 'local only', '', !p.served);
   else if (p.scope === 'all') add(t('ports.badge.allInterfaces'), 'info');
   else if (p.scope === 'tailnet') add('tailnet', 'info');
   else if (p.scope) add(p.addresses.join(', '));
