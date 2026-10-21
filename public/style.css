@@ -30,7 +30,7 @@
   --fs-5: 15px;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --side-bg: #111111;
     --bg: #151515;
     --surface: #20201f;
@@ -51,6 +51,31 @@
     --danger-text: #0b0b0b;
   }
 }
+/* 설정 › 화면 › 테마 (lib/theme.js): data-theme="dark" forces the block above, "light" keeps it out; the two blocks
+   stay equal (test/theme.test.ts). color-scheme follows, for form controls and scrollbars. */
+:root[data-theme="dark"] {
+  --side-bg: #111111;
+  --bg: #151515;
+  --surface: #20201f;
+  --text: #f0efec;
+  --text-2: #c3c2b7;
+  --text-3: #97958f;
+  --line: rgb(255 255 255 / 10%);
+  --neutral-bg: #2a2a28;
+  --accent: #5292ff;
+  --accent-text: #0b0b0b;
+  --ok: #56d364;
+  --ok-bg: #12261a;
+  --warn: #e3b341;
+  --warn-bg: #2a2110;
+  --info: #79c0ff;
+  --info-bg: #10233a;
+  --danger: #ff7b72;
+  --danger-text: #0b0b0b;
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+html[data-theme-switching], html[data-theme-switching] * { transition: none !important; }
 
 * { box-sizing: border-box; }
 body {

@@ -106,6 +106,19 @@ public enum WindowChrome {
     }
 }
 
+/// 설정 › 화면 › 테마 as the page reports it ({type: 'theme', theme}, public/lib/theme.js): the app follows it with
+/// NSApp.appearance, so its menus, alerts and window background match the page
+public enum PageTheme: String, Equatable, Sendable {
+    case system, light, dark
+
+    /// WKScriptMessage.body; nil for any other message or an unknown theme
+    public init?(body: Any) {
+        guard let d = body as? [String: Any], d["type"] as? String == "theme",
+              let raw = d["theme"] as? String, let theme = PageTheme(rawValue: raw) else { return nil }
+        self = theme
+    }
+}
+
 /// JSON numbers arrive as NSNumber (Double or Int when bridged)
 private func number(_ v: Any?) -> Double? {
     if let d = v as? Double { return d }

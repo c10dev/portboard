@@ -8,7 +8,7 @@
 //                         <html> attributes from what is remembered: the sidebar and inspector toggles and widths
 //                         (pb.shell: --side-open / --insp-open and data-side-mode / data-insp-mode, the same arithmetic
 //                         as lib/shell.js layoutFor), 설정 › 화면 › 목록 너비 (pb.listWidth: --col-max / --col-wide, as
-//                         lib/list-width.js), app mode (the Mac app's User-Agent, as lib/macapp.js), read-only (pb.ro,
+//                         lib/list-width.js), 설정 › 화면 › 테마 (pb.theme: data-theme, as lib/theme.js), app mode (the Mac app's User-Agent, as lib/macapp.js), read-only (pb.ro,
 //                         last /api/whoami)
 //   relabel()             the markup the server filled in its own locale (data-t, data-t-<attr>; src/core/shell.ts
 //                         fillStrings), in the page's language when that is another one: after the sidebar and at the end of the body
@@ -275,6 +275,13 @@
           root.style.setProperty('--col-wide', LIST_WIDTHS[lw][1] + 'px');
         }
       } catch (e) { /* 보통: the stylesheet's widths */ }
+      // 설정 › 화면 › 테마 (pb.theme, as lib/theme.js): light or dark on <html>, nothing for 시스템; the Mac app hears it
+      var theme = 'system';
+      try {
+        var th = window.localStorage.getItem('pb.theme');
+        if (th === 'light' || th === 'dark') theme = root.dataset.theme = th;
+      } catch (e) { /* 시스템 */ }
+      try { window.webkit.messageHandlers.portboard.postMessage({ type: 'theme', theme: theme }); } catch (e) { /* not the Mac app */ }
       if (/\bportboard-mac\//.test(navigator.userAgent)) root.dataset.app = 'mac';
       var ro = read(window.sessionStorage, 'pb.ro');
       if (ro && ro.readonly) root.dataset.readonly = '1';

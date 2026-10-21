@@ -99,9 +99,16 @@ final class WebController: NSObject, ObservableObject, WKNavigationDelegate, WKU
     /// messages arrive later over IPC, so the click itself is handled by the window's mouse-down monitor.
     fileprivate func received(_ message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame,
-              let url = message.frameInfo.request.url ?? webView.url, Server.isDashboard(url, base: base()),
-              let regions = WindowChrome.BarRegions(body: message.body) else { return }
-        barRegions = regions
+              let url = message.frameInfo.request.url ?? webView.url, Server.isDashboard(url, base: base()) else { return }
+        if let theme = PageTheme(body: message.body) {
+            switch theme {
+            case .system: NSApp.appearance = nil
+            case .light: NSApp.appearance = NSAppearance(named: .aqua)
+            case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
+            }
+        } else if let regions = WindowChrome.BarRegions(body: message.body) {
+            barRegions = regions
+        }
     }
 
     /// The first time the window shows

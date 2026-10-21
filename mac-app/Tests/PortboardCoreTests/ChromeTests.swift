@@ -86,4 +86,13 @@ final class ChromeTests: XCTestCase {
         XCTAssertTrue(js.contains("toggleAttribute('data-can-go-back', true)"))
         XCTAssertTrue(js.contains("toggleAttribute('data-fullscreen', false)"))
     }
+
+    func testPageTheme() {
+        XCTAssertEqual(PageTheme(body: ["type": "theme", "theme": "dark"] as [String: Any]), .dark)
+        XCTAssertEqual(PageTheme(body: ["type": "theme", "theme": "light"] as [String: Any]), .light)
+        XCTAssertEqual(PageTheme(body: ["type": "theme", "theme": "system"] as [String: Any]), .system)
+        XCTAssertNil(PageTheme(body: ["type": "theme", "theme": "purple"] as [String: Any]))
+        XCTAssertNil(PageTheme(body: ["type": "bar", "theme": "dark"] as [String: Any]))
+        XCTAssertNil(PageTheme(body: "dark"))
+    }
 }
