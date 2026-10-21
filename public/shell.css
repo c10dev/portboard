@@ -158,6 +158,10 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
 .side-foot:not(:has(> :not([hidden]))) { display: none; }
 .side-foot .readonly-note { margin: 0; width: 100%; max-width: none; padding: 6px 9px; }
 .side-foot .ob-chip, .side-foot .sw-chip { flex: 1 1 auto; justify-content: center; }
+/* 설정 heads the footer: a full-width view row with a gear, its count the setup steps left */
+.side-foot > .side-view { flex: 1 1 100%; color: var(--text-2); }
+.side-foot > .side-view:hover, .side-foot > .side-view[aria-current] { color: var(--text); }
+.side-view .sv-icon { flex: none; color: var(--text-3); }
 
 /* ---- inspector ---- */
 .insp { grid-column: 3; display: none; background: var(--surface); border-left: 0.5px solid var(--line); }
@@ -169,6 +173,11 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
 .insp-head strong { font-size: var(--fs-3); color: var(--text-2); font-weight: 600; }
 .insp-body { padding: 12px 14px 24px; font-size: var(--fs-3); }
 .insp-empty { color: var(--text-3); margin: 24px 0; text-align: center; font-size: var(--fs-3); }
+.insp-overview { margin-top: 0; }
+.insp-overview dl { grid-template-columns: minmax(0, 1fr) auto; font-size: var(--fs-3); gap: 4px 10px; }
+.insp-overview dd { font-family: inherit; font-variant-numeric: tabular-nums; text-align: end; }
+.insp-overview dd.bad { color: var(--danger); }
+.insp-overview + .insp-empty { margin: 16px 0 0; text-align: start; font-size: var(--fs-2); }
 .insp-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .insp-title .port { font: 600 var(--fs-5) var(--mono); }
 .insp-title a.name { font-size: var(--fs-5); font-weight: 600; white-space: normal; overflow-wrap: anywhere; }
@@ -425,6 +434,30 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
   .list .row .actions > .menu:not([open]) > summary { opacity: 1; }
 }
 /* ==== end: toast stack, undo and hover row actions ==== */
+
+/* dense rows, quieter (the 서비스 list review, 2026-10): ☆ and 🔔 that are off show on hover, focus and the selected row
+   like ⋯ (they keep their place, so the names stay in line); one is always there when it is on, and always on touch.
+   The row's one action has a common minimum width, so the key badges line up, and 열기 is an outlined accent button:
+   the open-in-browser link is the usual next step, but not louder than the port's own state. It fills on its own
+   hover and focus and on the selected row. */
+@media (min-width: 641px) {
+  .list .row .pin:not(.on), .list .row .bell:not(.on) { opacity: 0; transition: opacity .12s ease; }
+  .list .row:hover .pin:not(.on), .list .row:focus-within .pin:not(.on), .list .row.selected .pin:not(.on) { opacity: .55; }
+  .list .row:hover .bell:not(.on), .list .row:focus-within .bell:not(.on), .list .row.selected .bell:not(.on) { opacity: .28; }
+  .list .row .pin:not(.on):hover, .list .row .bell:not(.on):hover, .list .row .pin:focus-visible, .list .row .bell:focus-visible { opacity: 1; }
+  .list .row .actions > :first-child:not(.menu) { min-width: 6.5em; justify-content: center; }
+  .list .row .actions > .btn.primary { background: transparent; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .list .row .actions > .btn.primary:hover, .list .row.selected .actions > .btn.primary, .list .row .actions > .btn.primary:focus-visible {
+    background: var(--accent); border-color: var(--accent); color: var(--accent-text);
+  }
+}
+@media (min-width: 641px) and (pointer: coarse) {
+  .list .row .pin:not(.on) { opacity: .55; }
+  .list .row .bell:not(.on) { opacity: .28; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .list .row .pin, .list .row .bell { transition: none; }
+}
 
 /* The Mac app (lib/macapp.js): no title bar, so this bar is the window's one bar. 78 px stay clear for the traffic
    lights (the app centres them in the 48 px bar), the empty parts drag the window (the app hit-tests every mouse-down

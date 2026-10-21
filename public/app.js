@@ -9,7 +9,7 @@ import { logsDialog, portAction } from './features/control.js';
 import { deviceStrip, remoteHosts } from './features/devices.js';
 import { remoteView } from './features/host-ports.js';
 import { initCommandPalette } from './features/palette.js';
-import { renderInspector } from './features/port-inspector.js';
+import { portsOverview, renderInspector } from './features/port-inspector.js';
 import { grouped, haystack, renderGroup, renderRow } from './features/ports.js';
 import { offerUndo, prefsUndo } from './features/undo.js';
 import { errorText, getJSON, post, tryJSON } from './lib/api.js';
@@ -204,7 +204,8 @@ function paintInspector() {
     renderInspector(insp, null, { ...rowCtx, emptyText: t('services.remoteInspector') });
     return;
   }
-  renderInspector(insp, data?.ports.find((p) => p.port === selected) ?? null, rowCtx);
+  const p = data?.ports.find((x) => x.port === selected) ?? null;
+  renderInspector(insp, p, p || !data ? rowCtx : { ...rowCtx, overview: portsOverview(data.ports, usage, missingRows(data.ports).length) });
 }
 
 /** Select a port (null: none): the row's highlight, the hash (no new history entry), the inspector */

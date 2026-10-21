@@ -13,7 +13,7 @@ import { clampWidth, done, layoutFor, loadState, maxWidth, mountShell, PANE, sav
 // @ts-expect-error plain browser module, no types
 import { chipState, NAV_KEY, navCounts, navDevices, navPinned } from '../public/features/nav.js';
 // @ts-expect-error plain browser module, no types
-import { inspectorFacts, renderInspector } from '../public/features/port-inspector.js';
+import { inspectorFacts, portsOverview, renderInspector } from '../public/features/port-inspector.js';
 // @ts-expect-error plain browser module, no types
 import { portBadges } from '../public/features/ports.js';
 
@@ -204,6 +204,30 @@ test('dense rows keep the key badges: tailnet HTTPS, 리스닝 없음, local onl
   assert.ok(portBadges(port({ scope: 'all', served: null })).some((b: any) => b.textContent === '모든 인터페이스'), 'the inspector still shows the others');
 });
 
+test('badge tones: tailnet HTTPS is how it is reached (info), local only is a plain fact (no warning colour)', () => {
+  globalThis.document = new FakeDocument() as any;
+  const tone = (p: any, text: string) => portBadges(p).find((b: any) => b.textContent === text)?.className;
+  assert.equal(tone(port(), 'tailnet HTTPS'), 'badge info key');
+  assert.equal(tone(port({ served: null }), 'local only'), 'badge key');
+  assert.equal(tone(port({ listening: false, served: null }), '리스닝 없음'), 'badge warn key', 'a watched port that stopped still warns');
+});
+
+test('portsOverview: 한눈에 counts the shown ports, in use, on tailnet, this server only and the down alerts', () => {
+  globalThis.document = new FakeDocument() as any;
+  const ports = [port(), port({ port: 3000, served: null }), port({ port: 22, visible: false, scope: 'all', served: null }), port({ port: 5173, scope: 'all', served: null, alert: true })];
+  const usage = { byPort: { 3000: [{ name: 'mac' }], 22: [{ name: 'mac' }] } };
+  const rows = (node: any) => {
+    const kids = node.querySelector('dl').children;
+    const out: string[][] = [];
+    for (let i = 0; i < kids.length; i += 2) out.push([kids[i].textContent, kids[i + 1].textContent]);
+    return out;
+  };
+  assert.deepEqual(rows(portsOverview(ports, usage)), [['포트', '3'], ['지금 사용 중', '1'], ['tailnet 공개', '1'], ['이 서버에서만', '1'], ['다운 알림', '1']]);
+  const down = portsOverview(ports, null, 2);
+  assert.deepEqual(rows(down).map(([k]) => k), ['포트', 'tailnet 공개', '이 서버에서만', '다운 알림'], 'no usage yet: no 지금 사용 중 line');
+  assert.equal(rows(down).at(-1)?.[1], '3 · 2개 다운', 'watched ports nothing listens on count as down');
+});
+
 test('inspectorFacts: command, path, PID, unit, control under 무엇인지; addresses and SSH under 주소', () => {
   const f = inspectorFacts(port());
   assert.deepEqual(f.what.map(([k]: string[]) => k), ['명령', '경로', 'PID', 'systemd', '제어', '페이지 제목']);
@@ -320,6 +344,9 @@ test('render: one bar (header.top, .brand left, .controls right), the page contr
   assert.deepEqual(doc.getElementById('shellMain')!.children.map((c: FakeElement) => c.id || c.tagName), ['status', 'MAIN']);
   assert.ok(['toast', 'logs', 'row'].every((id) => doc.getElementById(id)!.parentNode === doc.body));
   assert.equal(doc.querySelector('.side-view[aria-current="page"]')!.dataset.view, 'services');
+  // 설정 is the footer's first row, not one of the views at the top
+  assert.deepEqual(doc.querySelector('.side-views')!.children.map((c: FakeElement) => c.dataset.view), ['services', 'devices', 'dev']);
+  assert.equal(doc.getElementById('shellFoot')!.children[0].dataset.view, 'settings');
   assert.equal(mountShell(doc, fakeWindow(1440)), api, 'mounting twice is the same shell');
   // the main column waits for the rows, the owners banner and the alerts, each named
   assert.equal(doc.querySelector('main')!.dataset.wait, 'page owners alerts');

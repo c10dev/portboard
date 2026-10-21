@@ -5,7 +5,7 @@
 //
 // ctx: the rows' ctx (features/ports.js) plus { shown(): the inspector is on screen }
 
-import { portBell, portUptime } from './alerts.js';
+import { portAlertBadge, portBell, portUptime } from './alerts.js';
 import { controlText, fetchLogs, reachButtons, restartQuestion, stopQuestion } from './control.js';
 import { lastUsedText, portBadges } from './ports.js';
 import { ruleFacts } from './port-rules.js';
@@ -82,6 +82,31 @@ function stopTail() {
   tail = null;
 }
 
+/**
+ * 한눈에: what the inspector shows while no port is selected, so the column is not empty. Counts over the ports the
+ * list shows by default (listening, not system or hidden), and the watched ones that are down; missing: watched ports
+ * nothing listens on that the snapshot doesn't have (alerts.js missingRows), down too.
+ */
+export function portsOverview(ports, usage, missing = 0) {
+  const shown = ports.filter((p) => p.listening && p.visible);
+  const n = (pred) => shown.filter(pred).length;
+  const watched = ports.filter((p) => p.alert);
+  const down = missing + watched.filter((p) => !p.listening || portAlertBadge(p)?.classList.contains('bad')).length;
+  const nWatched = watched.length + missing;
+  const rows = [
+    [t('inspector.overview.ports'), shown.length],
+    [t('inspector.overview.inUse'), usage ? n((p) => usage.byPort[p.port]?.length) : null],
+    [t('inspector.overview.served'), n((p) => p.served)],
+    [t('inspector.overview.local'), n((p) => p.scope === 'loopback' && !p.served)],
+    [t('inspector.overview.watched'), nWatched ? `${nWatched}${down ? ` · ${t('inspector.overview.down', { n: down })}` : ''}` : 0],
+  ].filter(([, v]) => v !== null);
+  const list = facts(rows);
+  if (down) list.lastElementChild.classList.add('bad');
+  const node = section(t('inspector.overview'), list);
+  node.classList.add('insp-overview');
+  return node;
+}
+
 /** Fill the inspector: the selected port p (null: nothing selected / it went away) */
 export function renderInspector(insp, p, ctx) {
   if (!insp) return;
@@ -92,7 +117,7 @@ export function renderInspector(insp, p, ctx) {
     stopTail();
     insp.setTitle(t('inspector.title'));
     delete body.dataset.port;
-    body.replaceChildren(el('p', 'insp-empty', ctx.emptyText ?? t('inspector.empty')));
+    body.replaceChildren(...[ctx.overview, el('p', 'insp-empty', ctx.emptyText ?? t('inspector.empty'))].filter(Boolean));
     return;
   }
   insp.setTitle(t('inspector.title.port', { port: p.port }));
