@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanupReasons, isTransientPath, mainRepoFromGitFile, parseEnviron, scratchpadSession, type Owner } from '../src/core/owners.ts';
+import { CLAUDE_WORKTREE_DIR, cleanupReasons, isTransientPath, mainRepoFromGitFile, parseEnviron, scratchpadSession, type Owner } from '../src/core/owners.ts';
 import { eligible } from '../src/features/owners.ts';
 import type { PortEntry } from '../src/core/index.ts';
 
@@ -22,6 +22,8 @@ test('scratchpad session id and main repo from a worktree .git file', () => {
 
 test('cleanup reasons', () => {
   assert.deepEqual(cleanupReasons(owner({ cwdGone: true }), NOW), ['cwd-gone']);
+  // Claude Code removed its worktree (session ended or archived) and the server it started kept running
+  assert.deepEqual(cleanupReasons(owner({ cwdGone: true, claudeWorktreeGone: true }), NOW), ['claude-worktree-gone']);
   // scratchpad server of an ended session: candidate at once
   assert.deepEqual(cleanupReasons(owner({ scratchpad: true, session: session(false, '2026-10-18T11:59:00Z') }), NOW), ['session-ended']);
   // a worktree server of a session that ended a minute ago: not yet; after 2 h idle: yes
@@ -51,3 +53,11 @@ test('transient units (systemd-run) are eligible; installed units are not', () =
   assert.equal(eligible(unit('pb-sd-dummy-a.service'), new Set(['pb-sd-dummy-a.service'])), true);
   assert.equal(eligible(unit('syncthing.service'), new Set(['pb-sd-dummy-a.service'])), false);
 });
+
+test('CLAUDE_WORKTREE_DIR: the worktree folder or anything inside it', () => {
+  assert.ok(CLAUDE_WORKTREE_DIR.test('/home/dev/projects/shop/.claude/worktrees/feat-auth'));
+  assert.ok(CLAUDE_WORKTREE_DIR.test('/home/dev/projects/shop/.claude/worktrees/feat-auth/web'));
+  assert.ok(!CLAUDE_WORKTREE_DIR.test('/home/dev/projects/shop/.claude/worktrees'));
+  assert.ok(!CLAUDE_WORKTREE_DIR.test('/home/dev/projects/shop-feat-auth'));
+});
+

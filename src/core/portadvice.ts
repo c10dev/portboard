@@ -140,7 +140,11 @@ export function adviceText(f: AdviceFacts): string {
       const whose = f.here ? t('portadvice.start.whoseWorktree', { owner: data(f.here.owner) }) : t('portadvice.start.whoseTask');
       lines.push(t('portadvice.start.use', { whose, port: f.suggestion.port, state: f.suggestion.reserved ? t('portadvice.start.reserved') : t('portadvice.start.unreserved') }));
     }
-    if (f.here?.launchPort) lines.push(t('portadvice.start.launch', { port: f.here.launchPort }));
+    if (f.here?.launchPort) {
+      lines.push(t('portadvice.start.launch', { port: f.here.launchPort }));
+      // the preview would start on another port than the one Portboard keeps for this worktree
+      if (f.suggestion?.reserved && f.suggestion.port !== f.here.launchPort) lines.push(t('portadvice.start.launchFix', { port: f.suggestion.port }));
+    }
     const herePath = f.here?.startable ? safePath(f.here.path) : null;
     if (herePath) {
       lines.push(t('portadvice.start.devServer', { p: herePath }));

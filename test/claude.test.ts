@@ -128,3 +128,14 @@ test('GET /api/claude/port-advice is a read route: 400 on a bad query before tou
   const res = await route({ method: 'GET', headers: {} } as any, new URL('http://x/api/claude/port-advice?port=nope'), untouchable);
   assert.deepEqual(res, { status: 400, body: { error: 'port must be 1–65535' } });
 });
+
+test("start advice names the worktree's launch.json port, and write_launch_config when it isn't the reserved one", () => {
+  const here = { owner: 'shop-web@feat-x', path: '/home/dev/projects/shop-web-x', startable: true };
+  const off = adviceText(facts({ here: { ...here, launchPort: 3000 } }));
+  assert.match(off, /3000/);
+  assert.match(off, /write_launch_config/);
+  const same = adviceText(facts({ here: { ...here, launchPort: 3104 } }));
+  assert.match(same, /3104/);
+  assert.doesNotMatch(same, /write_launch_config/);
+  assert.doesNotMatch(adviceText(facts()), /launch\.json/);
+});
