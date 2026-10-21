@@ -473,3 +473,31 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
 [data-app="mac"] .brand { min-height: 36px; }
 [data-app="mac"] .shell-side { -webkit-user-select: none; user-select: none; }
 
+
+/* ---- phone: the 서비스 list as one bordered list, not a stack of cards (the UI review, 2026-10) ----
+   Rows are 10 px tall-padded with a divider, the port column is narrower, the buttons are the dense rows' size, and
+   상세 sits at the end of the buttons' line (on a line of its own once open). Groups keep their header. Everything a
+   row shows stays: the inspector is not there on a phone. */
+@media (max-width: 640px) {
+  .list { gap: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .list > li + li { border-top: 1px solid var(--line); }
+  .list .row, .list .group { border: 0; border-radius: 0; background: transparent; }
+  .list .row { grid-template-columns: 50px minmax(0, 1fr); gap: 2px 10px; padding: 10px 12px; }
+  .list .row > .port { font-size: var(--fs-5); align-self: start; padding-top: 1px; }
+  .list .row .badges, .list .row .users { margin-top: 4px; }
+  .list .row .last-used, .list .row .uptime-line { margin-top: 3px; }
+  .list .row .actions { grid-column: 2; grid-row: 2; justify-content: flex-start; margin-top: 6px; padding-right: 3.5em; }
+  .list .row .actions .btn, .list .row .actions button, .list .row .menu summary { padding: 4px 10px; font-size: var(--fs-2); }
+  .list .row > .more { grid-column: 2; grid-row: 2; justify-self: end; align-self: end; margin-bottom: 5px; }
+  .list .row > .more[open] { grid-row: 3; justify-self: stretch; margin: 6px 0 0; }
+  .list .group { padding-top: 0; }
+  .list .group-head { padding: 8px 12px 6px; background: var(--side-bg); border-bottom: 1px solid var(--line); }
+  .list .row.sub { border-top: 0; padding: 10px 12px; }
+  .list .row.sub + .row.sub { border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent); }
+  /* the devices strip above the list: cards snap, and the next one peeks in to say it scrolls */
+  .shell-main .devices { scroll-snap-type: x proximity; }
+  .shell-main .device { min-width: 150px; max-width: 72vw; scroll-snap-align: start; }
+}
+
+/* 기기 in the sidebar is the network tree the 기기 tab shows in full: on that tab the sidebar leaves it out */
+:root:has(.side-view[data-view="devices"][aria-current]) #sideDevices { display: none; }

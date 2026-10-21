@@ -11,7 +11,7 @@
   - `local only`: bound to 127.0.0.1 only. You can either
     - press **tailnet 공개** (publish to tailnet), which registers it with `tailscale serve --https=<port>`, so `https://devbox.….ts.net:<port>` reaches it from tailnet devices only, or
     - press **SSH 복사** (copy SSH) to copy the old `ssh -N -L` command.
-- **상세** (details): PID, command, working directory, systemd unit, what controls it, URLs. Wider than a phone, rows are dense and a click (or ↑/↓) shows all of this, with the uptime, who uses it, suggestions, the actions and a live log tail, in the inspector on the right; on a phone it stays the row's inline 상세. With nothing selected the inspector shows 한눈에: how many ports are shown, in use now, on tailnet, on this server only, and the down alerts. Dense rows show ☆ and 🔔 only on hover, focus and the selected row unless they are on.
+- **상세** (details): PID, command, working directory, systemd unit, what controls it, URLs. Wider than a phone, rows are dense and a click (or ↑/↓) shows all of this, with the uptime, who uses it, suggestions, the actions and a live log tail, in the inspector on the right; on a phone it stays the row's inline 상세. With nothing selected the inspector shows 한눈에: how many ports are shown, in use now, on tailnet, on this server only, and the down alerts. Dense rows show ☆ and 🔔 only on hover, focus and the selected row unless they are on. On a phone the rows are one divided list with everything inline, and 상세 at the end of the buttons' line.
 - **☆ / ★**: pin a port to the top.
 - **⋯ menu** (wider than a phone it shows when the row is hovered, focused or selected, always on touch; a right-click on the row opens it too):
   - **이름 바꾸기** (rename): a label of your own; the detected name stays in the gray line below.
