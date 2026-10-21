@@ -928,6 +928,7 @@
   "ports.badge.ephemeral": "임시 포트",
   "ports.badge.hidden": "숨김",
   "ports.badge.notListening": "리스닝 없음",
+  "ports.badge.procs": "프로세스 {n}개",
   "ports.devices7d": "최근 7일 기기 {n}대",
   "ports.fact.address": "주소",
   "ports.fact.command": "명령",

@@ -62,6 +62,9 @@
     var sels = ['[data-t]', '[data-th]', '[data-t-title]', '[data-t-aria-label]', '[data-t-placeholder]', '[data-t-label]'];
     var nodes = [];
     for (var j = 0; j < sels.length; j++) nodes.push.apply(nodes, (scope || document).querySelectorAll(sels[j]));
+    // a <template>'s markup (the 서비스 row's 상세, …) is in its content, which querySelectorAll doesn't enter
+    var tpls = (scope || document).querySelectorAll('template');
+    for (var k = 0; k < tpls.length; k++) if (tpls[k].content) relabel(tpls[k].content);
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i];
       var d = n.dataset;

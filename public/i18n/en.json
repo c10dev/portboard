@@ -1069,6 +1069,7 @@
   "ports.badge.ephemeral": "Ephemeral",
   "ports.badge.hidden": "Hidden",
   "ports.badge.notListening": "Not listening",
+  "ports.badge.procs": "{n} processes",
   "ports.devices7d": {
     "one": "{n} device in the last 7 days",
     "other": "{n} devices in the last 7 days"
