@@ -213,6 +213,17 @@ test('the boot script picks the device choice, then a set server locale, then th
   assert.equal(doc.querySelector('#empty')!.textContent, 'No ports to show.');
   assert.equal(doc.querySelector('#q')!.getAttribute('placeholder'), 'Search ports, names, projects');
   assert.equal(doc.querySelector('#sideToggle')!.getAttribute('aria-label'), 'Sidebar (⌘\\)');
+  // a <template>'s content too: the 서비스 row's 상세 summary
+  const tpl = doc.createElement('template') as any;
+  const content = doc.createElement('div');
+  const summary = doc.createElement('summary');
+  summary.dataset.t = 'page.row.more';
+  summary.textContent = '상세';
+  content.append(summary);
+  tpl.content = content;
+  doc.body.append(tpl);
+  b.relabel();
+  assert.equal(summary.textContent, 'Details');
 });
 
 test('the inlined boot strings are only the shell, page, boot and common keys', () => {

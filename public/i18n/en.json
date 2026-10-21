@@ -1071,6 +1071,7 @@
   "ports.badge.ephemeral": "Ephemeral",
   "ports.badge.hidden": "Hidden",
   "ports.badge.notListening": "Not listening",
+  "ports.badge.procs": "{n} processes",
   "ports.devices7d": {
     "one": "{n} device in the last 7 days",
     "other": "{n} devices in the last 7 days"
@@ -1493,6 +1494,11 @@
   "settings.display.lang.desc": "The language of the dashboard (this device only). Auto follows the server's setting, else the browser's language.",
   "settings.display.lang.en": "English",
   "settings.display.lang.ko": "한국어",
+  "settings.display.theme": "Theme",
+  "settings.display.theme.dark": "Dark",
+  "settings.display.theme.desc": "Colours on this device. System follows the device's light or dark setting; the Mac app follows too.",
+  "settings.display.theme.light": "Light",
+  "settings.display.theme.system": "System",
   "settings.display.width": "List width",
   "settings.display.width.desc": "How wide the Services and Dev list column can grow (this device only)",
   "settings.display.width.max": "Up to {px}px",

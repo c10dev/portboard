@@ -20,6 +20,7 @@ import { loadLocalePref, saveLocalePref, t, tn } from '../lib/i18n.js';
 import { on } from '../lib/keys.js';
 import { applyListWidth, LIST_WIDTH_LABELS, LIST_WIDTHS, loadListWidth, saveListWidth } from '../lib/list-width.js';
 import { createModal } from '../lib/modal.js';
+import { applyTheme, loadTheme, saveTheme } from '../lib/theme.js';
 import { isSettingsHash, linkSection, settingsHash, settingsSection, SETTINGS_IDS, SETTINGS_LABELS } from '../lib/settings-route.js';
 
 /** The sections in menu order: the container its script fills, the script, and the lines above it */
@@ -79,7 +80,7 @@ function sectionEl(s) {
     h('div', { id: s.body, class: 'set-body' }));
 }
 
-/** 화면: this browser's own settings (lib/list-width.js) */
+/** 화면: this browser's own settings (lib/theme.js, lib/list-width.js, the language) */
 function paintDisplay() {
   const body = document.getElementById('displayBody');
   if (!body) return;
@@ -98,7 +99,17 @@ function paintDisplay() {
     // the page is built again in it (lib/shell-boot.js picks it before the first paint)
     onChange: (v) => { saveLocalePref(v); location.reload(); },
   });
+  const theme = segmented({
+    id: 'uiTheme', value: loadTheme(),
+    options: [
+      { value: 'system', label: t('settings.display.theme.system') },
+      { value: 'light', label: t('settings.display.theme.light') },
+      { value: 'dark', label: t('settings.display.theme.dark') },
+    ],
+    onChange: (v) => { saveTheme(v); applyTheme(v); },
+  });
   body.replaceChildren(h('div', { class: 'st-rows' },
+    row({ label: t('settings.display.theme'), desc: t('settings.display.theme.desc'), control: theme }),
     row({ label: t('settings.display.width'), desc: t('settings.display.width.desc'), control: width }),
     row({ label: t('settings.display.lang'), desc: t('settings.display.lang.desc'), control: lang })));
 }

@@ -92,8 +92,8 @@ function render() {
   const b = $('badges');
   b.replaceChildren();
   if (!d.listening) b.append(badge(t('service.notListening'), 'warn'));
-  if (e?.served) b.append(badge('tailnet HTTPS', 'ok'));
-  if (d.listening && e.scope === 'loopback') b.append(badge(e.served ? 'local' : 'local only', e.served ? '' : 'warn'));
+  if (e?.served) b.append(badge('tailnet HTTPS', 'info'));
+  if (d.listening && e.scope === 'loopback') b.append(badge(e.served ? 'local' : 'local only'));
   else if (e?.scope === 'all') b.append(badge(t('service.scope.all'), 'info'));
   else if (e?.scope === 'tailnet') b.append(badge('tailnet', 'info'));
   if (e?.probe?.http) b.append(badge(`HTTP ${e.probe.status}`));

@@ -125,8 +125,10 @@ button.guest-name:hover .gname { text-decoration: underline; }
 .muted { color: var(--muted); font-size: 13px; }
 
 @media (prefers-color-scheme: dark) {
-  .tag.serve { color: #d2a8ff; background: color-mix(in srgb, #d2a8ff 14%, var(--surface)); }
+  :root:not([data-theme="light"]) .tag.serve { color: #d2a8ff; background: color-mix(in srgb, #d2a8ff 14%, var(--surface)); }
 }
+/* the same in 다크 from 설정 › 화면 › 테마 (lib/theme.js) */
+:root[data-theme="dark"] .tag.serve { color: #d2a8ff; background: color-mix(in srgb, #d2a8ff 14%, var(--surface)); }
 
 @media (max-width: 640px) {
   .cards { grid-template-columns: minmax(0, 1fr); }

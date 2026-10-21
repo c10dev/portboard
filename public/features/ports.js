@@ -155,7 +155,7 @@ export function portBadges(p) {
   else if (p.scope === 'tailnet') add('tailnet', 'info');
   else if (p.scope) add(p.addresses.join(', '));
   if (p.probe?.http) add(`HTTP ${p.probe.status}`);
-  if (p.processes.length > 1) add(`${p.processes.length} procs`);
+  if (p.processes.length > 1) add(t('ports.badge.procs', { n: p.processes.length }));
   if (p.kind === 'ephemeral') add(t('ports.badge.ephemeral'));
   if (p.hidden) add(t('ports.badge.hidden'));
   const alertBadge = portAlertBadge(p);
