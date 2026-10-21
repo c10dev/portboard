@@ -143,7 +143,7 @@ test('local tools/list order (FEATURES order) is the order clients have always s
     'list_ports', 'expose_port', 'unexpose_port', 'restart_service', 'stop_service', 'tail_logs', 'list_devices',
     'who_uses', 'list_usage', 'name_device', 'free_port', 'set_alert', 'list_new_devices', 'service_detail',
     'list_cleanup_candidates', 'cleanup_servers', 'list_worktrees', 'remove_worktrees',
-    'list_reservations', 'reserve_port', 'release_port', 'list_dev_servers', 'start_dev_server', 'stop_dev_server',
+    'list_reservations', 'reserve_port', 'release_port', 'list_dev_servers', 'start_dev_server', 'stop_dev_server', 'write_launch_config',
     'setup_status',
     'digest_preview', 'set_digest',
     'list_suggestions',
@@ -186,7 +186,7 @@ test('the stdio server gets every Core method from some feature', () => {
   const core = Object.assign({}, ...FEATURES.map((f: FeatureModule) => f.mcpCore?.() ?? {}));
   assert.deepEqual(Object.keys(core).sort(), [
     'adoption', 'alerts', 'cleanup', 'collection', 'devServers', 'devices', 'digest', 'expose', 'freePorts', 'history', 'logs', 'memory', 'newDevices', 'owners', 'portRules', 'releasePort', 'removeWorktrees', 'reservations', 'reservePort',
-    'restart', 'serviceDetail', 'setAlert', 'setClientName', 'setDigest', 'setPortRule', 'setupStatus', 'snapshot', 'startDevServer', 'stop', 'stopDevServer', 'suggestions', 'unexpose', 'usage', 'worktrees',
+    'restart', 'serviceDetail', 'setAlert', 'setClientName', 'setDigest', 'setPortRule', 'setupStatus', 'snapshot', 'startDevServer', 'stop', 'stopDevServer', 'suggestions', 'unexpose', 'usage', 'worktrees', 'writeLaunchConfig',
   ]);
 });
 

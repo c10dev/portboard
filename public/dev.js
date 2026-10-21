@@ -43,6 +43,7 @@ function row(repo, w) {
   else if (w.mergedByAncestry) tags.append(badge(t('dev.merged'), 'ok'));
   if (w.changes) tags.append(badge(t('dev.changes', { n: w.changes }), 'warn'));
   if (w.inUse.length) tags.append(badge(t('dev.inUse', { n: w.inUse.length }), 'warn'));
+  if (w.claude) tags.append(badge(t('dev.claude'), 'info'));
   if (w.locked) tags.append(badge(t('dev.locked'), 'warn'));
   if (w.main) tags.append(badge(t('dev.main'), 'info'));
   else if (!w.removable && w.keep.length) tags.append(badge(t('dev.keep', { reasons: w.keep.join(', ') })));

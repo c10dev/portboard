@@ -25,7 +25,7 @@ test('marketplace → plugin → hooks, MCP server and skill all resolve inside 
   assert.equal(plugin.version, m.plugins[0].version);
 
   const hooks = json('claude-plugin/hooks/hooks.json').hooks;
-  assert.deepEqual(Object.keys(hooks).sort(), ['PreToolUse', 'SessionEnd']);
+  assert.deepEqual(Object.keys(hooks).sort(), ['CwdChanged', 'PreToolUse', 'SessionEnd', 'SessionStart']);
   assert.equal(hooks.PreToolUse[0].matcher, 'Bash');
   const files = (s: string) => [...s.matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^"\s]+)/g)].map((m) => m[1]);
   for (const ev of Object.values(hooks) as { hooks: { command: string }[] }[][]) {
@@ -200,4 +200,55 @@ test('run.sh --hook passes silently when no node can be found; without --hook it
   const mcp = await run([join(PLUGIN, 'bin/mcp.ts')]);
   assert.equal(mcp.code, 1);
   assert.match(mcp.out, /node not found/);
+});
+
+// ---- session-port.ts: SessionStart / CwdChanged ----
+
+test('session-port: SessionStart sets PORT in CLAUDE_ENV_FILE and returns the context; CwdChanged only touches the env', async () => {
+  const sp = await import('../claude-plugin/hooks/session-port.ts');
+  const { mkdtempSync, readFileSync: read, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'pb-envfile-'));
+  const envFile = join(dir, 'env.sh');
+  let port: number | null = 4100;
+  const fake = await fakePortboard(() => ({ body: { owner: 'shop@x', port, text: port ? '[portboard] 4100' : null } }));
+  try {
+    writeFileSync(envFile, 'export FOO=1');
+    const env = { PORTBOARD_URL: fake.url, CLAUDE_ENV_FILE: envFile };
+    const out = await sp.run({ hook_event_name: 'SessionStart', cwd: '/w/shop', session_id: 's' }, { env });
+    assert.deepEqual(JSON.parse(out!), { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: '[portboard] 4100' } });
+    assert.equal(fake.seen[0].pathname, '/api/claude/session-port');
+    assert.deepEqual(Object.fromEntries(fake.seen[0].searchParams), { cwd: '/w/shop', env: '1' });
+    assert.equal(read(envFile, 'utf8'), `export FOO=1\n${sp.ENV_TAG}\nexport PORT=4100\n`);
+
+    // into a worktree without a reservation: our PORT is unset, once
+    port = null;
+    assert.equal(await sp.run({ hook_event_name: 'CwdChanged', cwd: '/w/other' }, { env }), null);
+    await sp.run({ hook_event_name: 'CwdChanged', cwd: '/w/third' }, { env });
+    assert.equal(read(envFile, 'utf8'), `export FOO=1\n${sp.ENV_TAG}\nexport PORT=4100\n${sp.ENV_TAG}\nunset PORT\n`);
+  } finally {
+    fake.server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('session-port: never unsets a PORT it did not set, silent when off, down, or for other events', async () => {
+  const sp = await import('../claude-plugin/hooks/session-port.ts');
+  assert.equal(sp.envLines(null, 'export PORT=3000\n'), null);
+  assert.equal(sp.envLines(null, ''), null);
+  assert.equal(sp.disabled({ CLAUDE_PLUGIN_OPTION_SESSION_PORT: 'false' }), true);
+  assert.equal(sp.disabled({ PORTBOARD_SESSION_PORT: '0' }), true);
+  assert.equal(sp.disabled({}), false);
+  assert.equal(sp.TIMEOUT_MS, 500);
+  assert.equal(await sp.run({ hook_event_name: 'SessionStart', cwd: '/w' }, { env: { PORTBOARD_URL: 'http://127.0.0.1:9' } }), null, 'refused');
+  const fake = await fakePortboard(() => ({ body: { port: 4100, text: '[portboard] x' } }));
+  try {
+    const env = { PORTBOARD_URL: fake.url };
+    assert.equal(await sp.run({ hook_event_name: 'PreToolUse', cwd: '/w' }, { env }), null);
+    assert.equal(await sp.run({ hook_event_name: 'SessionStart', cwd: 'relative' }, { env }), null);
+    assert.equal(await sp.run({ hook_event_name: 'SessionStart', cwd: '/w' }, { env: { ...env, PORTBOARD_SESSION_PORT: '0' } }), null);
+    assert.equal(fake.seen.length, 0);
+  } finally {
+    fake.server.close();
+  }
 });

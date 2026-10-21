@@ -67,6 +67,7 @@ export function readOnlyCore(core: RemoteCore): Core {
     devServers: notRemote,
     startDevServer: notRemote,
     stopDevServer: notRemote,
+    writeLaunchConfig: notRemote,
     // local setup files and commands: nothing for the internet
     setupStatus: notRemote,
     digest: notRemote,
