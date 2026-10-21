@@ -459,21 +459,6 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
   .list .row .pin, .list .row .bell { transition: none; }
 }
 
-/* The Mac app (lib/macapp.js): no title bar, so this bar is the window's one bar. 78 px stay clear for the traffic
-   lights (the app centres them in the 48 px bar), the empty parts drag the window (the app hit-tests every mouse-down
-   against the controls lib/macapp.js reports), and ← → and the sidebar's views replace the native toolbar. */
-.app-back { display: none; }
-[data-app="mac"] .top {
-  box-sizing: border-box; min-height: 48px; padding: 6px 12px 5px 78px;
-  -webkit-user-select: none; user-select: none; cursor: default;
-}
-[data-app="mac"][data-fullscreen] .top { padding-left: 12px; }
-[data-app="mac"] .top input { -webkit-user-select: text; user-select: text; }
-/* a 36 px row: 6 + 36 + 5 + 1 px border = 48, its middle (24 px) level with the traffic lights */
-[data-app="mac"] .brand { min-height: 36px; }
-[data-app="mac"] .shell-side { -webkit-user-select: none; user-select: none; }
-
-
 /* ---- phone: the 서비스 list as one bordered list, not a stack of cards (the UI review, 2026-10) ----
    Rows are 10 px tall-padded with a divider, the port column is narrower, the buttons are the dense rows' size, and
    상세 sits at the end of the buttons' line (on a line of its own once open). Groups keep their header. Everything a
@@ -501,3 +486,17 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
 
 /* 기기 in the sidebar is the network tree the 기기 tab shows in full: on that tab the sidebar leaves it out */
 :root:has(.side-view[data-view="devices"][aria-current]) #sideDevices { display: none; }
+
+/* The Mac app (lib/macapp.js): no title bar, so this bar is the window's one bar. 78 px stay clear for the traffic
+   lights (the app centres them in the 48 px bar), the empty parts drag the window (the app hit-tests every mouse-down
+   against the controls lib/macapp.js reports), and ← → and the sidebar's views replace the native toolbar. */
+.app-back { display: none; }
+[data-app="mac"] .top {
+  box-sizing: border-box; min-height: 48px; padding: 6px 12px 5px 78px;
+  -webkit-user-select: none; user-select: none; cursor: default;
+}
+[data-app="mac"][data-fullscreen] .top { padding-left: 12px; }
+[data-app="mac"] .top input { -webkit-user-select: text; user-select: text; }
+/* a 36 px row: 6 + 36 + 5 + 1 px border = 48, its middle (24 px) level with the traffic lights */
+[data-app="mac"] .brand { min-height: 36px; }
+[data-app="mac"] .shell-side { -webkit-user-select: none; user-select: none; }
