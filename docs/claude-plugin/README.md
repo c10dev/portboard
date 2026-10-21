@@ -182,7 +182,7 @@ it. The preview then shares the port that `free_port`, the nudge and the dashboa
 Worktrees under `<repo>/.claude/worktrees/` (`claude --worktree`, Desktop's worktree sessions, subagents) are Claude
 Code's: it locks them while a session runs, checks them for unpushed work and removes them itself. The 개발 page marks
 them "Claude Code" and `remove_worktrees` never removes them. Servers left running in one after Claude removed it still
-show up as cleanup candidates (working directory deleted).
+show up as cleanup candidates, with the reason "its Claude Code worktree was removed".
 
 A service page's **Claude로 열기** opens Claude Code Desktop on its new-session page with an SSH connection to this
 server (`claude://code/new?ssh_host=<user>@<host>&ssh_folder=<project folder>&q=<prompt>`). Desktop asks before it

@@ -51,15 +51,21 @@ export interface Owner {
   scratchpad: boolean;
   /** The working directory was deleted (worktree or scratchpad removed) */
   cwdGone: boolean;
+  /** That deleted directory was a Claude Code worktree (<repo>/.claude/worktrees/<name>): Claude removed the worktree
+   * when its session ended or was archived, and left this process behind */
+  claudeWorktreeGone?: boolean;
   /** Re-parented to the user's systemd (its starter exited) */
   orphan: boolean;
 }
 
-export type CleanupReason = 'cwd-gone' | 'session-ended' | 'branch-merged' | 'session-ended-hook';
+export type CleanupReason = 'cwd-gone' | 'claude-worktree-gone' | 'session-ended' | 'branch-merged' | 'session-ended-hook';
 
 export const REASON_TEXT: Record<CleanupReason, string> = {
   get 'cwd-gone'() {
     return t('ownersMsg.reason.cwdGone');
+  },
+  get 'claude-worktree-gone'() {
+    return t('ownersMsg.reason.claudeWorktreeGone');
   },
   get 'session-ended'() {
     return t('ownersMsg.reason.sessionEnded');
@@ -104,9 +110,12 @@ export function mainRepoFromGitFile(text: string): string | null {
  * sessions whose SessionEnd hook fired (claude-sessions.ts, #43): their servers are candidates at once, even while the
  * Claude process is still exiting, unless the session came back since.
  */
+/** A path inside a Claude Code worktree: <repo>/.claude/worktrees/<name>[/…] */
+export const CLAUDE_WORKTREE_DIR = /\/\.claude\/worktrees\/[^/]+(\/|$)/;
+
 export function cleanupReasons(o: Owner, now: number, ended?: EndedLookup): CleanupReason[] {
   const reasons: CleanupReason[] = [];
-  if (o.cwdGone) reasons.push('cwd-gone');
+  if (o.cwdGone) reasons.push(o.claudeWorktreeGone ? 'claude-worktree-gone' : 'cwd-gone');
   const hook = o.session ? ended?.(o.session.id) : null;
   if (o.session && hook && stillEnded(hook, o.session.lastActive)) reasons.push('session-ended-hook');
   else if (o.session && !o.session.alive) {
@@ -256,7 +265,8 @@ export async function ownerOf(pid: number): Promise<Owner | null> {
     session = { id, title: info.title, alive, lastActive: info.lastActive, source: env.CLAUDE_CODE_SESSION_ID ? 'env' : 'scratchpad' };
   }
   const worktree = cwd && !cwdGone && !scratchId ? await worktreeOf(cwd) : null;
-  return { pid, session, worktree, scratchpad: !!scratchId, cwdGone, orphan };
+  const claudeWorktreeGone = cwdGone && !!cwd && CLAUDE_WORKTREE_DIR.test(cwd);
+  return { pid, session, worktree, scratchpad: !!scratchId, cwdGone, ...(claudeWorktreeGone ? { claudeWorktreeGone } : {}), orphan };
 }
 
 // ---- transient units ----
