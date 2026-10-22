@@ -83,6 +83,9 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
   background: var(--bg); color: var(--text); font: inherit; font-size: var(--fs-4);
 }
 .filter-panel .check { padding: 2px 2px; color: var(--text); }
+.filter-panel .filter-row { display: flex; align-items: center; gap: 8px; padding: 2px; color: var(--text); }
+.filter-panel .filter-row[hidden] { display: none; }
+.filter-panel .filter-row select { flex: 1; padding: 4px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
 
 /* today's tab strip: on a phone only (the sidebar has the views) */
 .shell-tabs { display: none; gap: 2px; padding: 2px; border-radius: 9px; background: var(--neutral-bg); }

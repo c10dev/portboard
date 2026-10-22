@@ -6,6 +6,8 @@
 //   GET /api/where-to-run    ?task, repo, branch, needs (comma list), prefer, exclude (comma list)
 //   GET /api/find-worktree   ?repo, branch, query, machine
 //   MCP machine_status, find_worktree, where_to_run (read-only, local only: the remote connector doesn't offer them)
+//   UI  the 기기 tab's machine strip (public/features/machines.js), the 개발 tab's other-machine rows and filter
+//       (public/dev.js), 어디서 돌릴까 (public/features/where.js, also in the palette)
 //   job machines             with agents listed, the list is read once a minute so the plugin's SessionStart line
 //                            (elsewhere(), GET /api/claude/session-port?machines=1) answers from memory, never waiting
 //
@@ -282,6 +284,8 @@ export const machinesFeature: FeatureModule = {
     },
   ],
   tools: [statusTool, findTool, whereTool],
+  // the 기기 tab's machine strip; the 개발 tab (dev.js) and the palette's 어디서 돌릴까 import what they need
+  ui: [{ pages: ['devices.html'], script: 'features/machines.js' }],
   mcpCore: () => ({
     machines: (fresh = false) => {
       if (fresh) stdioMachines.clear();

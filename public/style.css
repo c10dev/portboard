@@ -213,6 +213,37 @@ main { padding: 8px 16px 40px; max-width: 1100px; margin: 0 auto; }
 .device.bad .dot { background: var(--danger); }
 .device.off { opacity: .65; }
 
+/* 기기 tab · machines strip (features/machines.js) */
+.machines-head { display: flex; align-items: baseline; gap: 10px; }
+.machines-where { margin-left: auto; }
+.machine-strip { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 10px; margin-bottom: 8px; scrollbar-width: thin; }
+.device.machine { display: flex; flex-direction: column; align-items: stretch; gap: 0; height: auto; text-align: left; font: inherit; color: inherit; cursor: pointer; min-width: 200px; }
+.device.machine:hover { border-color: var(--accent); }
+.device.machine .device-line { white-space: normal; }
+.mbars { display: grid; gap: 2px; margin-top: 5px; }
+.mbar { display: grid; grid-template-columns: 34px 1fr 34px; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+.mbar-track { height: 5px; border-radius: 3px; background: var(--neutral-bg); overflow: hidden; }
+.mbar-fill { display: block; height: 100%; background: var(--ok); }
+.mbar-fill.hot { background: var(--warn); }
+.mbar-val { text-align: right; font-variant-numeric: tabular-nums; }
+.mach-list { list-style: none; margin: 0; padding: 0; font-size: 12.5px; }
+.mach-list li { padding: 3px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.mach-list li:first-child { border-top: 0; }
+.mach-list li.busy strong { color: var(--warn); }
+
+/* 어디서 돌릴까 (features/where.js) */
+.where-dlg { width: min(560px, calc(100vw - 32px)); }
+.where-form { display: flex; gap: 8px; margin: 10px 0; }
+.where-form input { flex: 1; min-width: 0; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+.where-out h4 { margin: 12px 0 4px; font-size: 13px; }
+.where-out ul { margin: 4px 0; padding-left: 18px; font-size: 13px; }
+.where-rec { padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px; }
+.where-head { display: flex; align-items: baseline; gap: 8px; font-size: 15px; }
+.where-caveats { color: var(--warn); }
+.where-how { margin-top: 6px; font-size: 13px; }
+.where-how code { display: block; margin-top: 3px; font-size: 12px; overflow-wrap: anywhere; }
+.where-none { color: var(--muted); }
+
 /* 사용 중: who is using this port right now */
 .users { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 5px; }
 .user-chip {

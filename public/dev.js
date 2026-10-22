@@ -1,8 +1,11 @@
 // 개발 tab (c10dev/portboard#36): git worktrees of every repo under ~/projects, which can safely go, and batch removal
 // (`git worktree remove`, never forced; branches kept). The scan runs in the background on the server.
+// With other machines listed (GET /api/machines, `portboard agent`), their checkouts show too, read-only, under the
+// same repo, each row says which machine it is on, the filter picks one machine, and a checkout whose repo@branch is
+// also on another machine gets a badge (warn when there are changes or a session there).
 
 import { done } from './lib/shell.js'; // first: the bar, sidebar and inspector are wired before anything looks them up
-import { errorText, post, readJSON } from './lib/api.js';
+import { errorText, post, readJSON, tryJSON } from './lib/api.js';
 import { badge } from './lib/badge.js';
 import { initCommandPalette } from './features/palette.js';
 import { $, el } from './lib/dom.js';
@@ -13,6 +16,7 @@ import { toast as show } from './lib/toast.js';
 import { showAccess } from './lib/access.js';
 import { isSettingsHash } from './lib/settings-route.js';
 import { locale, t } from './lib/i18n.js';
+import { alsoOn, elsewhereByOwner, machineOptions, remoteRepos, sameRepo } from './lib/machines.js';
 
 let doc = null;
 let devDoc = { running: [], startable: {} };
@@ -20,10 +24,27 @@ const selected = new Map(); // repo path → Set(worktree path)
 let onlyRemovable = false;
 try { onlyRemovable = localStorage.getItem('pb.dev.onlyRemovable') === '1'; } catch {}
 $('onlyRemovable').checked = onlyRemovable;
+/** GET /api/machines' list ([] until it answers, or without other machines) */
+let machines = [];
+/** the machine filter: '' = every machine */
+let machineFilter = '';
+try { machineFilter = localStorage.getItem('pb.dev.machine') ?? ''; } catch {}
 
 const toast = (text, error = false) => show(text, error, { ms: error ? 8000 : 3500 });
 
-function row(repo, w) {
+const lc = (s) => String(s ?? '').toLowerCase();
+const multi = () => machines.some((m) => m.reach === 'agent');
+const selfName = () => machines.find((m) => m.reach === 'local')?.name ?? '';
+
+/** The branch line, with the machine it is on when there are several */
+function branchLine(machine, text) {
+  const br = el('div', 'br');
+  if (multi()) br.append(el('span', 'wt-mach', machine), ' ');
+  br.append(text);
+  return br;
+}
+
+function row(repo, w, elsewhere) {
   const li = el('li', `wt-row${w.removable ? '' : ' keep'}`);
   li.dataset.path = w.path;
   const cb = el('input');
@@ -37,8 +58,14 @@ function row(repo, w) {
     render();
   });
   const main = el('div');
-  main.append(el('div', 'br', w.branch ?? (w.detached ? `(${t('dev.detached')})` : '?')), el('div', 'path', w.short));
+  main.append(branchLine(selfName(), w.branch ?? (w.detached ? `(${t('dev.detached')})` : '?')), el('div', 'path', w.short));
   const tags = el('div', 'tags');
+  const also = w.branch ? alsoOn(elsewhere.get(lc(`${repo.name}@${w.branch}`))) : null;
+  if (also) {
+    const b = badge(also[0], also[1]);
+    b.title = also[2];
+    tags.append(b);
+  }
   if (w.pr) tags.append(badge(t(w.pr.state === 'MERGED' ? 'dev.pr.merged' : w.pr.state === 'OPEN' ? 'dev.pr.open' : 'dev.pr.closed', { n: w.pr.number }), w.pr.state === 'MERGED' ? 'ok' : w.pr.state === 'OPEN' ? 'info' : ''));
   else if (w.mergedByAncestry) tags.append(badge(t('dev.merged'), 'ok'));
   if (w.changes) tags.append(badge(t('dev.changes', { n: w.changes }), 'warn'));
@@ -53,6 +80,47 @@ function row(repo, w) {
   side.append(devControls(w.path));
   li.append(cb, main, side);
   return li;
+}
+
+/** Another machine's checkout: read-only (no removal, no dev server controls), its path only when that agent shares paths */
+function remoteRow(machine, w) {
+  const li = el('li', 'wt-row keep wt-remote');
+  const cb = el('input');
+  cb.type = 'checkbox';
+  cb.disabled = true;
+  const main = el('div');
+  main.append(branchLine(machine, w.branch), el('div', 'path', w.path ?? t('dev.machines.noPath')));
+  const tags = el('div', 'tags');
+  if (w.dirty) tags.append(badge(t('dev.changes', { n: w.dirty }), 'warn'));
+  if (w.inUse) tags.append(badge(t('dev.machines.inUse'), 'warn'));
+  if (w.claude) tags.append(badge(t('dev.claude'), 'info'));
+  if (w.main) tags.append(badge(t('dev.main'), 'info'));
+  if (w.reservedPort) tags.append(badge(`:${w.reservedPort}`));
+  main.append(tags);
+  li.append(cb, main, el('div', 'side', ago(w.lastCommit) ?? ''));
+  return li;
+}
+
+/** The machine filter in the filter menu: shown once another machine has checkouts */
+function paintMachineFilter() {
+  const sel = $('machineFilter');
+  const opts = machineOptions(machines);
+  $('machineFilterRow').hidden = opts.length < 2;
+  if (machineFilter && !opts.some((o) => o.value === machineFilter)) machineFilter = '';
+  sel.replaceChildren(el('option', null, t('dev.machines.all')), ...opts.map((o) => {
+    const op = el('option', null, o.label);
+    op.value = o.value;
+    return op;
+  }));
+  sel.firstChild.value = '';
+  sel.value = machineFilter;
+}
+
+async function loadMachines() {
+  const d = await tryJSON('/api/machines');
+  machines = d?.machines ?? [];
+  paintMachineFilter();
+  render();
 }
 
 // ---- dev servers (#28) ----
@@ -123,11 +191,23 @@ function render() {
   $('status').textContent = doc.scanning ? t('dev.rescanning') : doc.at ? t('dev.scanned', { time: new Date(doc.at).toLocaleTimeString(locale()), s: Math.round((doc.tookMs ?? 0) / 100) / 10 }) : '';
   const box = $('repos');
   box.replaceChildren();
+  const local = !machineFilter || machineFilter === selfName();
+  const elsewhere = elsewhereByOwner(machines);
+  // other machines' checkouts (never removable: hidden with 정리 가능만)
+  const remote = onlyRemovable ? [] : remoteRepos(machines, local ? null : machineFilter);
+  const used = new Set();
+  const remoteOf = (repo) => {
+    const mine = remote.filter((r) => sameRepo(repo, r));
+    for (const r of mine) used.add(r);
+    return mine;
+  };
   for (const repo of [...doc.repos].sort((a, b) => b.worktrees.filter((w) => w.removable).length - a.worktrees.filter((w) => w.removable).length)) {
     // The main checkout is listed too (its dev server can be started here), but never selectable for removal.
-    const wts = repo.worktrees.filter((w) => !onlyRemovable || w.removable);
-    const removable = repo.worktrees.filter((w) => w.removable);
-    const prunable = repo.worktrees.filter((w) => w.prunable);
+    const wts = local ? repo.worktrees.filter((w) => !onlyRemovable || w.removable) : [];
+    const removable = local ? repo.worktrees.filter((w) => w.removable) : [];
+    const prunable = local ? repo.worktrees.filter((w) => w.prunable) : [];
+    const theirs = remoteOf(repo);
+    if (!local && !theirs.length) continue;
     if (onlyRemovable && !removable.length && !prunable.length) continue;
     const sec = el('section', 'wt-repo');
     const head = el('header');
@@ -139,12 +219,15 @@ function render() {
       head.append(all);
     }
     const sel = selected.get(repo.path)?.size ?? 0;
-    const rm = el('button', 'btn primary', t('dev.removeSel', { n: sel }));
-    rm.dataset.write = '1';
-    rm.type = 'button';
-    rm.disabled = sel === 0;
-    rm.addEventListener('click', () => removeSelected(repo));
-    head.append(rm);
+    // another machine picked: this repo's local rows are hidden, so is removing them
+    if (local) {
+      const rm = el('button', 'btn primary', t('dev.removeSel', { n: sel }));
+      rm.dataset.write = '1';
+      rm.type = 'button';
+      rm.disabled = sel === 0;
+      rm.addEventListener('click', () => removeSelected(repo));
+      head.append(rm);
+    }
     if (prunable.length) {
       const pr = el('button', null, t('dev.prune', { n: prunable.length }));
       pr.dataset.write = '1';
@@ -153,7 +236,18 @@ function render() {
       head.append(pr);
     }
     const ul = el('ul', 'wt-list');
-    for (const w of wts) ul.append(row(repo, w));
+    for (const w of wts) ul.append(row(repo, w, elsewhere));
+    for (const r of theirs) for (const w of r.worktrees) ul.append(remoteRow(r.machine, w));
+    sec.append(head, ul);
+    box.append(sec);
+  }
+  // repos that are only on other machines
+  for (const r of remote.filter((x) => !used.has(x))) {
+    const sec = el('section', 'wt-repo wt-remote');
+    const head = el('header');
+    head.append(el('h3', null, r.repo), el('span', 'meta', t('dev.machines.onlyOn', { machine: r.machine })));
+    const ul = el('ul', 'wt-list');
+    for (const w of r.worktrees) ul.append(remoteRow(r.machine, w));
     sec.append(head, ul);
     box.append(sec);
   }
@@ -257,10 +351,16 @@ loadResv();
 
 $('rescan').addEventListener('click', () => load(true));
 initCommandPalette({ refresh: () => load(true), showWorktree });
+$('machineFilter').addEventListener('change', (e) => {
+  machineFilter = e.target.value;
+  try { localStorage.setItem('pb.dev.machine', machineFilter); } catch {}
+  render();
+});
 $('onlyRemovable').addEventListener('change', (e) => {
   onlyRemovable = e.target.checked;
   try { localStorage.setItem('pb.dev.onlyRemovable', onlyRemovable ? '1' : '0'); } catch {}
   render();
 });
 load();
+loadMachines();
 void showAccess();

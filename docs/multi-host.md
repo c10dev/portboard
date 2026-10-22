@@ -101,6 +101,8 @@ The board's stdio MCP server (and `GET /api/machines`, `/api/where-to-run`, `/ap
 
 **Portboard never starts anything on another machine.** The answer says where; a person opens the session.
 
+On the dashboard: the 기기 (Devices) tab has a **Machines** strip above the map, one card per machine with CPU and memory bars, sessions against `maxSessions`, checkouts with work in them and how old the data is; a card opens a panel with its sessions and checkouts. The 개발 (Dev) tab lists the other machines' checkouts under the same repo, read-only and marked with their machine, has a machine filter in its filter menu, and badges a checkout whose `repo@branch` is also on another machine (amber when there are changes or a session there). **Where to run…** (on the strip and in the ⌘K palette) asks `where_to_run` with a sentence. The strip stays hidden while no other machine is listed.
+
 The Claude Code plugin brings these into sessions: the `where-to-run` skill, the `/portboard:where`, `/portboard:machines` and `/portboard:wt` commands, and, with its `multi_machine_hint` option, a session-start line when the session's `repo@branch` has uncommitted files or an active session on another machine. With agents listed, the dashboard reads the list once a minute for that line, so the hook never waits for an agent ([claude-plugin/](claude-plugin/README.md#the-same-branch-on-another-machine)).
 
 ### Where the data comes from

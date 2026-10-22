@@ -1,0 +1,61 @@
+{
+  "repo": "shop-web",
+  "recommendation": {
+    "machine": "devbox",
+    "score": 0.78,
+    "why": [
+      "shop-web@redesign is checked out here (3 uncommitted)",
+      "port 4105 is reserved for it",
+      "load 3.4 on 16 cores",
+      "2 of 4 sessions"
+    ],
+    "caveats": [
+      "an active session already works in shop-web@redesign"
+    ],
+    "how": {
+      "via": "desktop-ssh",
+      "cwd": "~/projects/shop-web/.worktrees/redesign",
+      "steps": [
+        "Desktop app \u2192 New session \u2192 SSH \u2192 devbox",
+        "folder ~/projects/shop-web/.worktrees/redesign",
+        "start_dev_server {path} (port 4105)"
+      ]
+    }
+  },
+  "alternatives": [
+    {
+      "machine": "cloud",
+      "score": 0.52,
+      "why": [
+        "isolated sandbox"
+      ],
+      "caveats": [
+        "no tailnet: the dev server isn't reachable from your devices"
+      ]
+    },
+    {
+      "machine": "dev-mac",
+      "score": 0.31,
+      "why": [
+        "shop-web is checked out here"
+      ],
+      "caveats": [
+        "the Mac is the control seat",
+        "1 of 2 sessions"
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "machine": "desktop-pc",
+      "reason": "no status for 5 minutes"
+    }
+  ],
+  "dataAge": {
+    "devbox": 1,
+    "dev-mac": 9,
+    "desktop-pc": 240,
+    "cloud": null
+  },
+  "note": "Portboard does not start anything: open the session yourself (Desktop app SSH, cloud, Remote Control or --teleport)."
+}

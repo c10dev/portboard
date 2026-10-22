@@ -1,0 +1,322 @@
+{
+  "at": "2026-10-17T12:32:24.356Z",
+  "machines": [
+    {
+      "id": "devbox",
+      "name": "devbox",
+      "kind": "linux",
+      "reach": "local",
+      "online": true,
+      "checkedAt": "2026-10-17T12:32:23.356Z",
+      "stale": false,
+      "error": null,
+      "load": {
+        "cores": 16,
+        "load1": 3.4,
+        "memTotalMb": 64000,
+        "memAvailMb": 38000,
+        "diskFreePct": 41,
+        "uptimeSec": 864000
+      },
+      "claude": {
+        "cliVersion": "2.1.299",
+        "active": 2,
+        "idle": 1,
+        "source": "proc",
+        "sessions": [
+          {
+            "id": "0f0e0d0c",
+            "project": "shop-web/redesign",
+            "worktree": "shop-web@redesign",
+            "idleMin": 1,
+            "cpuPct": 18,
+            "mb": 820,
+            "startedAt": "2026-10-17T11:02:24.356Z",
+            "idle": false
+          },
+          {
+            "id": "4b3a2918",
+            "project": "webapp",
+            "worktree": "webapp@main",
+            "idleMin": 3,
+            "cpuPct": 6,
+            "mb": 640,
+            "startedAt": "2026-10-17T10:02:24.356Z",
+            "idle": false
+          },
+          {
+            "id": "7c6b5a49",
+            "project": "portboard",
+            "worktree": "portboard@main",
+            "idleMin": 95,
+            "cpuPct": 0.3,
+            "mb": 410,
+            "startedAt": "2026-10-17T04:12:24.356Z",
+            "idle": true
+          }
+        ]
+      },
+      "worktrees": [
+        {
+          "owner": "shop-web@main",
+          "repo": "shop-web",
+          "remote": "example/shop-web",
+          "branch": "main",
+          "path": "~/projects/shop-web",
+          "main": true,
+          "dirty": 0,
+          "lastCommit": "2026-10-16T12:32:24.356Z",
+          "inUse": false,
+          "claude": false,
+          "reservedPort": 3000
+        },
+        {
+          "owner": "shop-web@redesign",
+          "repo": "shop-web",
+          "remote": "example/shop-web",
+          "branch": "redesign",
+          "path": "~/projects/shop-web/.worktrees/redesign",
+          "main": false,
+          "dirty": 3,
+          "lastCommit": "2026-10-17T11:32:24.356Z",
+          "inUse": true,
+          "claude": true,
+          "reservedPort": 4105
+        },
+        {
+          "owner": "shop-web@fix/checkout-total",
+          "repo": "shop-web",
+          "remote": "example/shop-web",
+          "branch": "fix/checkout-total",
+          "path": "~/projects/shop-web/.worktrees/checkout-fix",
+          "main": false,
+          "dirty": 0,
+          "lastCommit": "2026-10-10T12:32:24.356Z",
+          "inUse": false,
+          "claude": false,
+          "reservedPort": null
+        },
+        {
+          "owner": "webapp@main",
+          "repo": "webapp",
+          "remote": "example/webapp",
+          "branch": "main",
+          "path": "~/projects/webapp",
+          "main": true,
+          "dirty": 1,
+          "lastCommit": "2026-10-16T12:32:24.356Z",
+          "inUse": true,
+          "claude": false,
+          "reservedPort": 5173
+        },
+        {
+          "owner": "webapp@auth-refactor",
+          "repo": "webapp",
+          "remote": "example/webapp",
+          "branch": "auth-refactor",
+          "path": "~/projects/webapp/.worktrees/auth-refactor",
+          "main": false,
+          "dirty": 0,
+          "lastCommit": "2026-10-15T12:32:24.356Z",
+          "inUse": false,
+          "claude": false,
+          "reservedPort": null
+        },
+        {
+          "owner": "portboard@main",
+          "repo": "portboard",
+          "remote": "c10dev/portboard",
+          "branch": "main",
+          "path": "~/projects/portboard",
+          "main": true,
+          "dirty": 0,
+          "lastCommit": "2026-10-16T12:32:24.356Z",
+          "inUse": false,
+          "claude": false,
+          "reservedPort": 8790
+        }
+      ],
+      "ports": {
+        "listening": 31,
+        "devServers": 3
+      },
+      "capabilities": [
+        "linux",
+        "systemd",
+        "dev-servers",
+        "docker",
+        "always-on"
+      ],
+      "maxSessions": 4,
+      "launch": [
+        {
+          "via": "local",
+          "note": "claude in a terminal on devbox"
+        },
+        {
+          "via": "desktop-ssh",
+          "note": "Desktop app \u2192 SSH \u2192 devbox"
+        }
+      ]
+    },
+    {
+      "id": "dev-mac",
+      "name": "dev-mac",
+      "kind": "mac",
+      "reach": "agent",
+      "online": true,
+      "checkedAt": "2026-10-17T12:32:15.356Z",
+      "stale": false,
+      "error": null,
+      "load": {
+        "cores": 10,
+        "load1": 4.1,
+        "memTotalMb": 32768,
+        "memAvailMb": 9800,
+        "diskFreePct": 28,
+        "uptimeSec": 302000
+      },
+      "claude": {
+        "cliVersion": "2.1.299",
+        "active": 1,
+        "idle": 0,
+        "source": "ps",
+        "sessions": [
+          {
+            "id": "9f8e7d6c",
+            "project": "shop-web",
+            "worktree": "shop-web@fix/checkout-total",
+            "idleMin": 0,
+            "cpuPct": null,
+            "mb": null,
+            "startedAt": "2026-10-17T11:52:24.356Z",
+            "idle": false
+          }
+        ]
+      },
+      "worktrees": [
+        {
+          "owner": "shop-web@fix/checkout-total",
+          "repo": "shop-web",
+          "remote": "example/shop-web",
+          "branch": "fix/checkout-total",
+          "path": null,
+          "main": true,
+          "dirty": 5,
+          "lastCommit": "2026-10-17T12:02:24.356Z",
+          "inUse": true,
+          "claude": false,
+          "reservedPort": null
+        },
+        {
+          "owner": "ios-app@main",
+          "repo": "ios-app",
+          "remote": "example/ios-app",
+          "branch": "main",
+          "path": null,
+          "main": true,
+          "dirty": 0,
+          "lastCommit": "2026-10-14T12:32:24.356Z",
+          "inUse": false,
+          "claude": false,
+          "reservedPort": null
+        }
+      ],
+      "ports": {
+        "listening": 9,
+        "devServers": 1
+      },
+      "capabilities": [
+        "macos"
+      ],
+      "maxSessions": 2,
+      "launch": [
+        {
+          "via": "remote-control",
+          "note": "Remote Control on dev-mac"
+        }
+      ]
+    },
+    {
+      "id": "desktop-pc",
+      "name": "desktop-pc",
+      "kind": "wsl",
+      "reach": "agent",
+      "online": true,
+      "checkedAt": "2026-10-17T12:28:24.356Z",
+      "stale": true,
+      "error": "timeout",
+      "load": {
+        "cores": 24,
+        "load1": 0.4,
+        "memTotalMb": 65536,
+        "memAvailMb": 52000,
+        "diskFreePct": 63,
+        "uptimeSec": 40000
+      },
+      "claude": {
+        "cliVersion": "2.1.290",
+        "active": 0,
+        "idle": 0,
+        "source": "proc",
+        "sessions": []
+      },
+      "worktrees": [
+        {
+          "owner": "webapp@main",
+          "repo": "webapp",
+          "remote": "example/webapp",
+          "branch": "main",
+          "path": null,
+          "main": true,
+          "dirty": 0,
+          "lastCommit": "2026-10-12T12:32:24.356Z",
+          "inUse": false,
+          "claude": false,
+          "reservedPort": null
+        }
+      ],
+      "ports": {
+        "listening": 12,
+        "devServers": 0
+      },
+      "capabilities": [
+        "linux",
+        "gpu"
+      ],
+      "maxSessions": 3,
+      "launch": [
+        {
+          "via": "desktop-ssh",
+          "note": "Desktop app \u2192 SSH \u2192 desktop-pc"
+        }
+      ]
+    },
+    {
+      "id": "cloud",
+      "name": "cloud",
+      "kind": "cloud",
+      "reach": "none",
+      "online": true,
+      "checkedAt": null,
+      "stale": false,
+      "error": null,
+      "load": null,
+      "claude": null,
+      "worktrees": null,
+      "ports": null,
+      "capabilities": [
+        "sandbox",
+        "parallel",
+        "isolated"
+      ],
+      "maxSessions": null,
+      "launch": [
+        {
+          "via": "cloud",
+          "note": "claude.ai/code"
+        }
+      ]
+    }
+  ]
+}
