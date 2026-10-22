@@ -89,7 +89,7 @@ test('demoAnswers: what the pages read is there, computed at the capture time', 
   for (const p of ['/api/ports?fresh', '/api/usage', '/api/devices', '/api/whoami', '/api/health', '/api/health?detail', '/api/onboarding', '/api/worktrees',
     '/api/alerts', '/api/settings', '/api/settings/write-devices', '/api/suggestions', '/api/new-ports', '/api/claude/sessions', '/api/owners', '/api/adoption',
     '/api/digest', '/api/digest/preview', '/api/memory', '/api/port-rules', '/api/reservations', '/api/dev-servers', '/api/remote/clients', '/api/audit',
-    '/api/proxmox/trends?timeframe=hour']) {
+    '/api/proxmox/trends?timeframe=hour', '/api/machines', '/api/where-to-run?task=x']) {
     assert.ok(files.has(apiFile(p)!), p);
   }
   // each port has its page and its audit lines; groups, history and the network map are joined in

@@ -14,6 +14,10 @@
 .wt-row .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
 .wt-row .side { color: var(--muted); font-size: 12px; text-align: right; white-space: nowrap; }
 .wt-row.keep { opacity: .78; }
+/* another machine's checkout (GET /api/machines): read-only */
+.wt-row.wt-remote { background: var(--neutral-bg); }
+.wt-mach { display: inline-block; margin-right: 2px; padding: 0 6px; border-radius: 6px; background: var(--neutral-bg); color: var(--text-2); font-size: 11px; font-weight: 500; vertical-align: 1px; }
+.wt-row.wt-remote .wt-mach { background: var(--surface); }
 .wt-row input[disabled] { visibility: hidden; }
 .wt-more { padding: 6px 14px 10px; }
 .wt-more summary { cursor: pointer; color: var(--muted); font-size: 12px; }

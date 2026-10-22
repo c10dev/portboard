@@ -1,6 +1,6 @@
 // The command palette's Portboard side (c10dev/portboard#35): what it lists and what each item can do. The dialog,
 // matching and keys are lib/palette.js; this file has no src/features/ twin, it only reads the existing GET APIs
-// (/api/ports, /api/devices, /api/worktrees, /api/alerts) when the palette opens.
+// (/api/ports, /api/devices, /api/worktrees, /api/alerts) when the palette opens. 어디서 돌릴까 opens features/where.js.
 //
 // The actions are the ones the pages already have: 열기 and the restart/stop questions from features/control.js,
 // 🔔 from features/alerts.js, ★ is the same prefs POST as the row's ☆. A page passes hooks so an action on its own
@@ -12,6 +12,7 @@
 import { canWatchDevice, setDeviceAlert, setPortAlert } from './alerts.js';
 import { controlText, openUrlOf, portAction, restartQuestion, stopQuestion } from './control.js';
 import { haystack } from './ports.js';
+import { openWhere } from './where.js';
 import { errorText, post, tryJSON } from '../lib/api.js';
 import { deviceHref } from '../lib/badge.js';
 import { $ } from '../lib/dom.js';
@@ -163,6 +164,8 @@ export function paletteCommands(page = {}) {
       actions: [{ key: 'go', label: t('palette.act.run'), run: () => (page.refresh ? page.refresh() : location.reload()) }],
     },
   ];
+  // 어디서 돌릴까: GET /api/where-to-run in a dialog (features/where.js)
+  out.push({ id: 'cmd:where', kind: 'cmd', weight: 15, title: t('palette.where'), text: t('palette.find.where'), actions: [{ key: 'go', label: t('palette.act.show'), run: () => openWhere() }] });
   if ($('alertsBtn')) {
     out.push({ id: 'cmd:alerts', kind: 'cmd', weight: 15, title: t('palette.alerts'), text: t('palette.find.alerts'), actions: [{ key: 'go', label: t('palette.act.show'), run: () => $('alertsBtn').click() }] });
   }
