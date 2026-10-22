@@ -6,6 +6,9 @@
 //   GET /agent/v1/ports   listening sockets as the board's host-port lists take them (port, bind address, process
 //                         name) and the redacted port list the remote connector gives (names, kinds, HTTP titles, URLs)
 //   GET /agent/v1/usage   who uses what on this machine, redacted like the remote connector's who_uses_what
+//   GET /agent/v1/status  load, Claude Code sessions (8-character ids, project, repo@branch, idle, CPU, MB), checkouts
+//                         (repo@branch, dirty, in use, reserved port; paths only with agent.showPaths), port counts and
+//                         capabilities: what the board's machine_status and where_to_run read (its own STATUS_SCHEMA)
 //
 // Nothing else: no write route in v1. Per-host writes (restart, stop, expose) are a follow-up and will stay owner-only.
 //
@@ -33,11 +36,18 @@ import type { PortEntry, Snapshot } from '../core/index.ts';
 import type { ListenPort } from '../core/pool.ts';
 import { classify } from '../core/ss.ts';
 import type { Usage } from '../core/usage.ts';
+import type { ClaudeSummary } from '../core/claude-status.ts';
+import type { WorktreeBrief } from '../core/worktrees.ts';
 import { redactPorts, redactUsage, scrubText, type RedactPolicy } from '../remote/redact.ts';
 
 export const AGENT_API = '/agent/v1';
 /** The version of the JSON the routes answer; the board refuses another */
 export const AGENT_SCHEMA = 1;
+/**
+ * /agent/v1/status's own version. A route of its own instead of AGENT_SCHEMA 2: boards that only know info and ports
+ * keep reading a newer agent, and a board reading an older agent gets a 404 here and shows no status.
+ */
+export const STATUS_SCHEMA = 1;
 
 // ---- who may read ----
 
@@ -205,18 +215,63 @@ export function projectUsage(u: Usage, policy: RedactPolicy) {
   return { schema: AGENT_SCHEMA, ...redactUsage(u, policy) };
 }
 
+/** What /agent/v1/status is made from, before redaction (src/core/machines.ts localStatus) */
+export interface StatusParts {
+  /** ms */
+  at: number;
+  host: string;
+  load: HostLoad;
+  claude: ClaudeSummary | null;
+  worktrees: WorktreeBrief[] | null;
+  ports: { listening: number; devServers: number } | null;
+  capabilities: string[];
+}
+
+export interface AgentReport extends StatusParts {
+  schema: number;
+}
+
+/**
+ * What leaves for /agent/v1/status: session ids cut to 8 characters, no titles (they never get here), names scrubbed
+ * like every other projection, and worktree paths only with showPaths (else null: repo@branch is the name the board
+ * matches on).
+ */
+export function projectStatus(p: StatusParts, policy: RedactPolicy & { showPaths?: boolean }): AgentReport {
+  const s = (v: string | null) => (v === null ? null : scrubText(v, policy));
+  return {
+    schema: STATUS_SCHEMA,
+    at: p.at,
+    host: scrubText(p.host, policy),
+    load: p.load,
+    claude: p.claude && {
+      cliVersion: p.claude.cliVersion,
+      active: p.claude.active,
+      idle: p.claude.idle,
+      source: p.claude.source,
+      sessions: p.claude.sessions.map((x) => ({ ...x, id: x.id ? x.id.slice(0, 8) : null, project: s(x.project), worktree: s(x.worktree) })),
+    },
+    worktrees:
+      p.worktrees &&
+      p.worktrees.map((w) => ({ ...w, owner: scrubText(w.owner, policy), repo: scrubText(w.repo, policy), branch: s(w.branch), path: policy.showPaths && w.path ? w.path : null })),
+    ports: p.ports,
+    capabilities: p.capabilities.map((c) => scrubText(c, policy)),
+  };
+}
+
 // ---- HTTP ----
 
 export interface AgentSources {
   snapshot(): Promise<Snapshot>;
   usage(): Promise<Usage>;
   info(): Promise<AgentInfo>;
+  /** /agent/v1/status (absent: 404, as an older agent answers) */
+  status?(): Promise<StatusParts>;
 }
 
 export interface AgentHandlerOptions {
   sources: AgentSources;
   auth: AuthOptions;
-  policy: RedactPolicy;
+  policy: RedactPolicy & { showPaths?: boolean };
   /** Host header names this machine answers to (DNS-rebinding guard); null: any */
   hosts: Set<string> | null;
   log?: (line: string) => void;
@@ -247,6 +302,8 @@ export function createAgentHandler(o: AgentHandlerOptions) {
     [`${AGENT_API}/ports`]: async () => projectPorts(await o.sources.snapshot(), o.policy),
     [`${AGENT_API}/usage`]: async () => projectUsage(await o.sources.usage(), o.policy),
   };
+  const status = o.sources.status;
+  if (status) routes[`${AGENT_API}/status`] = async () => projectStatus(await status(), o.policy);
   return async (req: IncomingMessage, res: ServerResponse) => {
     try {
       if (o.hosts && !o.hosts.has(hostOf(req))) return send(res, 421, { error: 'unknown host' });

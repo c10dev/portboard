@@ -66,6 +66,16 @@ export interface RepoInfo {
   worktrees: WorktreeInfo[];
   prsKnown: boolean;
   error: string | null;
+  /** A repo without linked worktrees: the branch its main checkout is on, read from .git/HEAD (no git run) */
+  checkoutBranch?: string | null;
+}
+
+/** A repo without linked worktrees (left out of repos): only its main checkout and the branch it is on */
+export interface CheckoutInfo {
+  name: string;
+  path: string;
+  short: string;
+  branch: string | null;
 }
 
 export interface WorktreesDoc {
@@ -74,6 +84,8 @@ export interface WorktreesDoc {
   tookMs: number | null;
   repos: RepoInfo[];
   totals: { repos: number; worktrees: number; removable: number; prunable: number; removableKb: number };
+  /** The repos without linked worktrees, for machine_status / find_worktree (absent in scans saved before it) */
+  checkouts?: CheckoutInfo[];
   /** What the last scan cost: its mode and the subprocesses it started per command */
   scan?: { mode: ScanMode; spawns: Record<string, number> };
 }
@@ -123,6 +135,11 @@ export function githubRepo(url: string): string | null {
 
 /** A worktree Claude Code made (`claude --worktree`, Desktop's worktree sessions, subagents): .claude/worktrees/<name> */
 export const isClaudeWorktree = (path: string): boolean => /\/\.claude\/worktrees\/[^/]+\/?$/.test(path);
+
+/** .git/HEAD's text → the branch it names ("ref: refs/heads/feat-map" → feat-map); null when detached or unreadable */
+export function branchOfHead(text: string): string | null {
+  return /^ref:\s*refs\/heads\/(.+?)\s*$/m.exec(text)?.[1] ?? null;
+}
 
 export function keepReasons(w: Omit<WorktreeInfo, 'keep' | 'removable'>): string[] {
   const keep: string[] = [];
@@ -400,7 +417,10 @@ async function scanRepo(repo: string, ctx: ScanCtx, prev: RepoCache | undefined)
   const info: RepoInfo = { name: repo.split('/').pop()!, path: repo, short: short(repo), remote: null, defaultBranch: null, worktrees: [], prsKnown: false, error: null };
   const next: RepoCache = { metaSig: null, remote: null, defaultBranch: null, commits: new Map(), ancestry: new Map(), worktrees: new Map() };
   // Without linked worktrees a repo can't be listed (only its main checkout, nothing prunable): no git at all
-  if (!(await readdir(join(common, 'worktrees')).catch(() => [] as string[])).length) return { info, next };
+  if (!(await readdir(join(common, 'worktrees')).catch(() => [] as string[])).length) {
+    info.checkoutBranch = branchOfHead(await readFile(join(common, 'HEAD'), 'utf8').catch(() => ''));
+    return { info, next };
+  }
 
   const listP = git(['worktree', 'list', '--porcelain']);
   const metaSig = (await Promise.all(['config', 'packed-refs', 'refs/remotes/origin/HEAD', 'refs/heads', 'refs/heads/main', 'refs/heads/master'].map((f) => lstatSig(join(common, f))))).join('|');
@@ -625,6 +645,7 @@ export async function scanWorktrees(opts: ScanOptions = {}): Promise<WorktreesDo
   }
   const scanned = results.map((x) => x.info);
   const withWt = scanned.filter((r) => r.worktrees.length > 1 || r.worktrees.some((w) => w.prunable));
+  const checkouts = scanned.filter((r) => !withWt.includes(r)).map((r) => ({ name: r.name, path: r.path, short: r.short, branch: r.checkoutBranch ?? null }));
   const all = withWt.flatMap((r) => r.worktrees.filter((w) => !w.main));
   return {
     at: new Date().toISOString(),
@@ -638,6 +659,7 @@ export async function scanWorktrees(opts: ScanOptions = {}): Promise<WorktreesDo
       prunable: all.filter((w) => w.prunable).length,
       removableKb: all.filter((w) => w.removable).reduce((a, w) => a + (w.sizeKb ?? 0), 0),
     },
+    checkouts,
     scan: { mode, spawns },
   };
 }
@@ -677,4 +699,59 @@ export async function removeWorktrees(repo: string, paths: string[], opts: { run
 export async function pruneWorktrees(repo: string): Promise<{ ok: boolean; message: string }> {
   const res = await execRun('git', ['-C', repo, 'worktree', 'prune', '--verbose'], 30_000);
   return { ok: res.ok, message: (res.ok ? res.stdout || res.stderr || t('worktrees.prune.nothing') : res.stderr).trim().slice(0, 500) };
+}
+
+// ---- briefs (machine_status, find_worktree; docs/multi-host.md) ----
+
+/** One checkout as machine_status and find_worktree show it, and as `portboard agent` sends it to the board */
+export interface WorktreeBrief {
+  /** repo@branch: the name reservations, dev servers and the plugin's session port use */
+  owner: string;
+  repo: string;
+  /** owner/name of its GitHub remote: the same repository under another folder name on another machine */
+  remote: string | null;
+  branch: string | null;
+  /** ~-short; null when it must not leave the machine (the agent's showPaths off) */
+  path: string | null;
+  /** the main checkout, not a linked worktree */
+  main: boolean;
+  /** changed or untracked files; null when unknown (a repo without linked worktrees isn't git-status'ed) */
+  dirty: number | null;
+  lastCommit: string | null;
+  /** a process has its working directory inside */
+  inUse: boolean;
+  /** Claude Code made it (.claude/worktrees/) */
+  claude: boolean;
+  /** the port reserved for this owner (or for its path) */
+  reservedPort: number | null;
+}
+
+export const ownerName = (repo: string, branch: string | null) => `${repo}@${branch ?? 'detached'}`;
+
+/** Every checkout in a scan as briefs: linked worktrees, main checkouts, and repos without worktrees (doc.checkouts). Pure. */
+export function briefOf(doc: Pick<WorktreesDoc, 'repos' | 'checkouts'>, reservations: { port: number; owner: string }[] = []): WorktreeBrief[] {
+  const reserved = (owner: string, path: string, shortPath: string) => reservations.find((r) => r.owner === owner || r.owner === path || r.owner === shortPath)?.port ?? null;
+  const out: WorktreeBrief[] = [];
+  for (const r of doc.repos) {
+    const remote = r.remote ? githubRepo(r.remote) : null;
+    for (const w of r.worktrees) {
+      if (w.prunable) continue;
+      const owner = ownerName(r.name, w.branch);
+      out.push({ owner, repo: r.name, remote, branch: w.branch, path: w.short, main: w.main, dirty: w.changes, lastCommit: w.lastCommit, inUse: w.inUse.length > 0, claude: !!w.claude, reservedPort: reserved(owner, w.path, w.short) });
+    }
+  }
+  for (const c of doc.checkouts ?? []) {
+    const owner = ownerName(c.name, c.branch);
+    out.push({ owner, repo: c.name, remote: null, branch: c.branch, path: c.short, main: true, dirty: null, lastCommit: null, inUse: false, claude: false, reservedPort: reserved(owner, c.path, c.short) });
+  }
+  return out;
+}
+
+/** cwd → repo@branch of the checkout it is in (the deepest one: a linked worktree inside its main checkout wins). Pure. */
+export function worktreeOwnerOf(doc: Pick<WorktreesDoc, 'repos' | 'checkouts'>): (cwd: string) => string | null {
+  const dirs: { path: string; owner: string }[] = [];
+  for (const r of doc.repos) for (const w of r.worktrees) if (!w.prunable) dirs.push({ path: w.path, owner: ownerName(r.name, w.branch) });
+  for (const c of doc.checkouts ?? []) dirs.push({ path: c.path, owner: ownerName(c.name, c.branch) });
+  dirs.sort((a, b) => b.path.length - a.path.length);
+  return (cwd) => dirs.find((d) => cwd === d.path || cwd.startsWith(`${d.path}/`))?.owner ?? null;
 }
