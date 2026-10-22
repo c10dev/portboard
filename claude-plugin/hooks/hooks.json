@@ -1,5 +1,5 @@
 {
-  "description": "Portboard: port nudge before Bash (adds context, never blocks), the worktree's reserved port as PORT at session start and on cwd change, and session-end cleanup",
+  "description": "Portboard: port nudge before Bash (adds context, never blocks), the worktree's reserved port as PORT at session start and on cwd change, session start/end records and session-end cleanup",
   "hooks": {
     "PreToolUse": [
       {
@@ -9,7 +9,10 @@
     ],
     "SessionStart": [
       {
-        "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/run.sh\" --hook \"${CLAUDE_PLUGIN_ROOT}/hooks/session-port.ts\"", "timeout": 5 }]
+        "hooks": [
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/run.sh\" --hook \"${CLAUDE_PLUGIN_ROOT}/hooks/session-port.ts\"", "timeout": 5 },
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/run.sh\" --hook \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.ts\"", "timeout": 5 }
+        ]
       }
     ],
     "CwdChanged": [

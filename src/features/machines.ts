@@ -6,6 +6,8 @@
 //   GET /api/where-to-run    ?task, repo, branch, needs (comma list), prefer, exclude (comma list)
 //   GET /api/find-worktree   ?repo, branch, query, machine
 //   MCP machine_status, find_worktree, where_to_run (read-only, local only: the remote connector doesn't offer them)
+//   job machines             with agents listed, the list is read once a minute so the plugin's SessionStart line
+//                            (elsewhere(), GET /api/claude/session-port?machines=1) answers from memory, never waiting
 //
 // Read-only on purpose: nothing here starts a session or a server. where_to_run says where and how a person does it.
 
@@ -13,7 +15,7 @@ import { agents } from '../core/agents.ts';
 import { devices, type Devices } from '../core/devices.ts';
 import { snapshot } from '../core/index.ts';
 import { buildMachines, dataAge, localStatus, type MachineStatus } from '../core/machines.ts';
-import { findWorktree, NEEDS, whereToRun, type FindQuery, type Need, type RunRequest } from '../core/recommend.ts';
+import { elsewhereOf, findWorktree, NEEDS, whereToRun, type Elsewhere, type FindQuery, type Need, type RunRequest } from '../core/recommend.ts';
 import { loadReservations } from '../core/reservations.ts';
 import { SITE } from '../core/site.ts';
 import { gate } from '../core/throttle.ts';
@@ -53,6 +55,9 @@ interface Sources {
   devices(): Promise<Devices>;
 }
 
+/** The dashboard's last list (any route or the job), for elsewhere() */
+let last: MachineStatus[] = [];
+
 async function collect(src: Sources, fresh: boolean): Promise<MachineStatus[]> {
   if (fresh && freshGate.ask(false) === 'started') agents().refresh();
   const [self, devs, reads] = await Promise.all([
@@ -61,7 +66,19 @@ async function collect(src: Sources, fresh: boolean): Promise<MachineStatus[]> {
     agents().get(),
   ]);
   const list = devs?.devices ?? [];
-  return buildMachines({ site: SITE, self, selfId: list.find((d) => d.self)?.id ?? null, agents: reads, targets: SITE.agents, devices: list });
+  last = buildMachines({ site: SITE, self, selfId: list.find((d) => d.self)?.id ?? null, agents: reads, targets: SITE.agents, devices: list });
+  return last;
+}
+
+/** How often the job reads the list (agents listed only) */
+export const JOB_EVERY_MS = 60_000;
+
+/**
+ * The other machines where owner (repo@branch) has changes, a working process or an active session, from the last
+ * list (data at most 5 minutes old). Never reads anything: [] until the job or a route has run.
+ */
+export function elsewhere(owner: string, now = Date.now()): Elsewhere[] {
+  return elsewhereOf(owner, last, { now });
 }
 
 // The local sessions read is a /proc pass when the dashboard's sample is stale: reuse one list for a few seconds
@@ -249,6 +266,18 @@ export const machinesFeature: FeatureModule = {
         const q = parseFindQuery(query(url));
         if (!q.ok) return reply(400, { error: q.error });
         return ok(findWorktree(q.value, await collect({ snapshot: () => ctx.snapshot(), devices: () => devices() }, false)));
+      },
+    },
+  ],
+  jobs: [
+    {
+      name: 'machines',
+      everyMs: JOB_EVERY_MS,
+      // once the snapshot and the worktree scan have had a go
+      firstAfterMs: 20_000,
+      run: async (ctx) => {
+        if (!SITE.agents.length) return;
+        await collect({ snapshot: () => ctx.snapshot(), devices: () => devices() }, false).catch((err) => console.error(`[portboard] machines: ${(err as Error).message}`));
       },
     },
   ],

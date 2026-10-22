@@ -15,6 +15,7 @@ import { stat } from 'node:fs/promises';
 import { basename, dirname, isAbsolute } from 'node:path';
 import { GIT_NO_HOOKS, run } from './exec.ts';
 import { t } from './i18n.ts';
+import type { Elsewhere } from './recommend.ts';
 
 export const ADVICE_MARKER = '[portboard]';
 
@@ -188,18 +189,40 @@ export interface SessionFacts {
   port: number | null;
   /** The hook put PORT=<port> into the session's Bash environment */
   env: boolean;
+  /** Other machines where this repo@branch has changes or an active session (the plugin's multi_machine_hint) */
+  elsewhere?: Elsewhere[];
 }
 
-/** The SessionStart context, or null when there is nothing worth a line (no reservation, nothing to start). */
+/** One machine of the elsewhere line: its quoted name and what is going on there */
+function elsewhereItem(e: Elsewhere): string {
+  const what = [
+    e.dirty ? t('portadvice.session.elsewhereDirty', { n: e.dirty }) : null,
+    e.sessions ? t('portadvice.session.elsewhereSessions', { n: e.sessions }) : null,
+    !e.dirty && !e.sessions && e.inUse ? t('portadvice.session.elsewhereInUse') : null,
+  ].filter(Boolean);
+  return `${data(e.machine, 60)} (${what.join(', ')})`;
+}
+
+/**
+ * The SessionStart context, or null when there is nothing worth a line (no reservation, nothing to start, no other
+ * machine working on this repo@branch).
+ */
 export function sessionText(f: SessionFacts): string | null {
   const { here, port } = f;
-  if (!port && !here.startable) return null;
+  const others = (f.elsewhere ?? []).slice(0, 4);
+  const portLine = port || here.startable;
+  if (!portLine && !others.length) return null;
   const owner = data(here.owner);
-  const lines = [`${ADVICE_MARKER} ${port ? t('portadvice.session.reserved', { owner, port }) : t('portadvice.session.none', { owner, args: data(here.owner, 120) })}`, DATA_LINE];
-  if (port && f.env) lines.push(t('portadvice.session.env', { port }));
-  if (port && here.launchPort && here.launchPort !== port) lines.push(t('portadvice.session.launchDiffers', { launch: here.launchPort, port }));
-  else if (port && here.startable && !here.launchPort) lines.push(t('portadvice.session.launchNone'));
-  return lines.join('\n');
+  const lines: string[] = [];
+  if (portLine) {
+    lines.push(port ? t('portadvice.session.reserved', { owner, port }) : t('portadvice.session.none', { owner, args: data(here.owner, 120) }));
+    if (port && f.env) lines.push(t('portadvice.session.env', { port }));
+    if (port && here.launchPort && here.launchPort !== port) lines.push(t('portadvice.session.launchDiffers', { launch: here.launchPort, port }));
+    else if (port && here.startable && !here.launchPort) lines.push(t('portadvice.session.launchNone'));
+  }
+  if (others.length) lines.push(t('portadvice.session.elsewhere', { owner, list: others.map(elsewhereItem).join('; ') }));
+  // the marker opens the first line; the data note follows it, as before
+  return [`${ADVICE_MARKER} ${lines[0]}`, DATA_LINE, ...lines.slice(1)].join('\n');
 }
 
 // ---- the asking cwd → repo@branch ----

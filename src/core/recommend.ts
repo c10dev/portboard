@@ -302,3 +302,36 @@ export function findWorktree(q: FindQuery, machines: MachineStatus[]): { matches
   }
   return { matches, conflict };
 }
+
+// ---- the same checkout on another machine (the plugin's SessionStart line) ----
+
+export interface Elsewhere {
+  machine: string;
+  /** uncommitted files there */
+  dirty: number;
+  /** Claude Code sessions there that aren't idle */
+  sessions: number;
+  /** a process works in that checkout */
+  inUse: boolean;
+}
+
+/**
+ * The other machines (agents: not this one, not the cloud) where owner (repo@branch, repo as the folder name, any case)
+ * is checked out with uncommitted changes, a working process or an active Claude Code session, from data read within
+ * maxAgeMs. Pure.
+ */
+export function elsewhereOf(owner: string, machines: MachineStatus[], o: { now?: number; maxAgeMs?: number } = {}): Elsewhere[] {
+  const now = o.now ?? Date.now();
+  const maxAge = o.maxAgeMs ?? EXCLUDE_STALE_MS;
+  const want = lc(owner);
+  const out: Elsewhere[] = [];
+  for (const m of machines) {
+    if (m.reach !== 'agent' || !m.checkedAt || now - Date.parse(m.checkedAt) > maxAge) continue;
+    const wt = (m.worktrees ?? []).find((x) => lc(x.owner) === want);
+    const sessions = (m.claude?.sessions ?? []).filter((s) => !s.idle && s.worktree !== null && lc(s.worktree) === want).length;
+    const dirty = wt?.dirty ?? 0;
+    const inUse = !!wt?.inUse;
+    if (dirty > 0 || sessions > 0 || inUse) out.push({ machine: m.name, dirty, sessions, inUse });
+  }
+  return out;
+}

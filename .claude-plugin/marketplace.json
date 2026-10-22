@@ -9,8 +9,8 @@
     {
       "name": "portboard",
       "source": "./claude-plugin",
-      "description": "Portboard MCP server, a dev-servers-and-ports skill, a PreToolUse nudge when a Bash command hard-codes or kills a port, the worktree's reserved port as PORT in each session, and SessionEnd cleanup",
-      "version": "0.2.0"
+      "description": "Portboard MCP server, dev-servers-and-ports and where-to-run skills, /where, /machines and /wt commands, a PreToolUse nudge when a Bash command hard-codes or kills a port, the worktree's reserved port as PORT in each session, and SessionEnd cleanup",
+      "version": "0.3.0"
     }
   ]
 }

@@ -18,11 +18,12 @@ process.env.PORTBOARD_CLAUDE_SESSIONS = join(DIR, 'claude-sessions.json');
 
 const store = await import('../src/core/claude-sessions.ts');
 const { cleanupReasons, ownerOf } = await import('../src/core/owners.ts');
-const { autoStop, autoStopTargets, checkSessionEnd, localOnly, claudeSessionFeature } = await import('../src/features/claude-session.ts');
+const { autoStop, autoStopTargets, checkSessionEnd, checkSessionStart, localOnly, claudeSessionFeature } = await import('../src/features/claude-session.ts');
 const { loadPrefs, setClaudeCleanup, setPortPrefs } = await import('../src/core/prefs.ts');
 const { claudeEnvArgs, planStart } = await import('../src/core/devservers.ts');
 const { createRouter } = await import('../src/features/router.ts');
 const { onSessionEnd } = await import('../claude-plugin/hooks/session-end.ts');
+const { onSessionStart } = await import('../claude-plugin/hooks/session-start.ts');
 type Owner = import('../src/core/owners.ts').Owner;
 type OwnedPort = import('../src/features/owners.ts').OwnedPort;
 type EndedSession = import('../src/core/claude-sessions.ts').EndedSession;
@@ -84,6 +85,25 @@ test('loadEnded: a rewrite that keeps the mtime still invalidates the cache (ato
   await store.recordEnded({ id: 'same-tick-2', cwd: '', reason: 'other' }, NOW + 1, path);
   await sameTick();
   assert.deepEqual((await store.loadEnded(path, NOW + 1)).map((e) => e.id), ['same-tick-2', 'same-tick-1']);
+});
+
+test('recordStarted: kept next to the ended list; a start after an end cancels it, an older start does not', async () => {
+  const path = join(DIR, 'store-started.json');
+  await store.recordEnded({ id: 'came-back-1', cwd: '/w', reason: 'other' }, NOW - 60_000, path);
+  await store.recordEnded({ id: 'stays-ended', cwd: '/w', reason: 'other' }, NOW - 60_000, path);
+  await store.recordStarted({ id: 'stays-ended', cwd: '/w', source: 'startup' }, NOW - 120_000, path);
+  await store.recordStarted({ id: 'came-back-1', cwd: '/w', source: 'resume' }, NOW - 1000, path);
+  const raw = JSON.parse(await readFile(path, 'utf8'));
+  assert.deepEqual(raw.ended.map((e: EndedSession) => e.id).sort(), ['came-back-1', 'stays-ended']);
+  assert.deepEqual(raw.started.map((e: { id: string }) => e.id), ['came-back-1', 'stays-ended']);
+  const lookup = store.lookupOf(await store.loadEnded(path, NOW), await store.loadStarted(path, NOW));
+  assert.equal(lookup('came-back-1'), null);
+  assert.equal(lookup('stays-ended')?.id, 'stays-ended');
+  // an ended-only file from before keeps reading
+  const old = join(DIR, 'store-old.json');
+  await writeFile(old, JSON.stringify({ ended: [ended('from-before', NOW - 1000)] }));
+  assert.deepEqual((await store.loadEnded(old, NOW)).map((e) => e.id), ['from-before']);
+  assert.deepEqual(await store.loadStarted(old, NOW), []);
 });
 
 // ---------- the cleanup reason ----------
@@ -274,6 +294,38 @@ test('checkSessionEnd validates the hook JSON and ignores its other fields', () 
   assert.equal(typeof checkSessionEnd({ session_id: id, reason: 'x y; rm' }), 'string');
 });
 
+test('checkSessionStart: the session-end rules, source in place of reason', () => {
+  const id = randomUUID();
+  assert.deepEqual(checkSessionStart({ session_id: id, cwd: '/w', source: 'resume', model: 'x' }), { id, cwd: '/w', source: 'resume' });
+  assert.deepEqual(checkSessionStart({ session_id: id }), { id, cwd: '', source: 'other' });
+  assert.equal(checkSessionStart({ session_id: id, source: 'x y; rm' }), 'source must be a short word');
+  assert.equal(typeof checkSessionStart({ session_id: '../x' }), 'string');
+  assert.equal(typeof checkSessionStart(null), 'string');
+});
+
+test('POST /api/claude/session-start: X-Portboard and loopback only, then records', async () => {
+  const route = createRouter(claudeSessionFeature.routes!);
+  const ctx = { invalidate: () => {}, snapshot: async () => assert.fail('no snapshot') } as any;
+  const body = (b: unknown) => {
+    const r = req('POST', '127.0.0.1');
+    r.on = (ev: string, fn: (x?: unknown) => void) => {
+      if (ev === 'data') fn(Buffer.from(JSON.stringify(b)));
+      if (ev === 'end') fn();
+      return r;
+    };
+    return r;
+  };
+  const url = new URL('http://x/api/claude/session-start');
+  const id = randomUUID();
+  assert.equal((await route({ ...body({ session_id: id }), headers: {} }, url, ctx))!.status, 403);
+  const viaServe = body({ session_id: id });
+  viaServe.headers['tailscale-user-login'] = 'someone@example.com';
+  assert.deepEqual(await route(viaServe, url, ctx), { status: 403, body: { error: 'loopback only' } });
+  assert.equal((await route(body({ session_id: id, source: '; rm' }), url, ctx))!.status, 400);
+  assert.deepEqual(await route(body({ session_id: id, cwd: '/w', source: 'resume' }), url, ctx), { status: 200, body: { recorded: true } });
+  assert.deepEqual((await store.loadStarted())[0], { id, cwd: '/w', source: 'resume', at: (await store.loadStarted())[0].at });
+});
+
 test('POST /api/claude/session-end: guard, loopback, then records; settings route validates', async () => {
   const route = createRouter(claudeSessionFeature.routes!);
   const invalidated: string[] = [];
@@ -346,9 +398,9 @@ test('start_dev_server from a Claude session passes its id to the unit; the dash
 
 // Records only the hook's POST. The live Portboard on this machine probes every new loopback listener with GET / for
 // its <title>, and that probe used to land here as an empty body (JSON.parse threw, an uncaught flake under load).
-async function listen(handler: (req: IncomingMessage, body: string) => void, answer = true): Promise<{ server: Server; url: string }> {
+async function listen(handler: (req: IncomingMessage, body: string) => void, answer = true, path = '/api/claude/session-end'): Promise<{ server: Server; url: string }> {
   const server = createServer((q, s) => {
-    if (q.method !== 'POST' || q.url !== '/api/claude/session-end') return void s.writeHead(404).end();
+    if (q.method !== 'POST' || q.url !== path) return void s.writeHead(404).end();
     let b = '';
     q.on('data', (c) => (b += c));
     q.on('end', () => {
@@ -369,6 +421,23 @@ test('onSessionEnd: POSTs {session_id, cwd, reason} with X-Portboard', async () 
   } finally {
     server.close();
   }
+});
+
+test('onSessionStart: POSTs {session_id, cwd, source} with X-Portboard; never throws', async () => {
+  const got: { path: string; header: unknown; body: unknown }[] = [];
+  const { server, url } = await listen((q, b) => got.push({ path: q.url!, header: q.headers['x-portboard'], body: JSON.parse(b) }), true, '/api/claude/session-start');
+  try {
+    await onSessionStart({ session_id: 'abcd-1234-ef', cwd: '/w', source: 'resume' }, { url });
+    await onSessionStart({ session_id: 'abcd-1234-ff', cwd: '/w' }, { url });
+    assert.deepEqual(got, [
+      { path: '/api/claude/session-start', header: '1', body: { session_id: 'abcd-1234-ef', cwd: '/w', source: 'resume' } },
+      { path: '/api/claude/session-start', header: '1', body: { session_id: 'abcd-1234-ff', cwd: '/w' } },
+    ]);
+  } finally {
+    server.close();
+  }
+  await onSessionStart({ session_id: 'abcd-1234-ef', cwd: '/w' }, { url: 'http://127.0.0.1:1' });
+  await onSessionStart(null as any);
 });
 
 test('onSessionEnd never throws and gives up after 500 ms', async () => {

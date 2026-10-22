@@ -44,6 +44,19 @@ test('marketplace → plugin → hooks, MCP server and skill all resolve inside 
   const skill = readFileSync(join(PLUGIN, 'skills/dev-servers-and-ports/SKILL.md'), 'utf8');
   assert.match(skill, /^---\nname: dev-servers-and-ports\ndescription: .+\n---\n/);
   for (const t of ['list_ports', 'free_port', 'reserve_port', 'start_dev_server', 'list_cleanup_candidates', 'cleanup_servers', 'stop_dev_server']) assert.ok(skill.includes(t), t);
+  const where = readFileSync(join(PLUGIN, 'skills/where-to-run/SKILL.md'), 'utf8');
+  assert.match(where, /^---\nname: where-to-run\ndescription: .+\n---\n/);
+  for (const t of ['machine_status', 'find_worktree', 'where_to_run']) assert.ok(where.includes(t), t);
+  // the slash commands: frontmatter with a description, and the one tool each runs
+  for (const [cmd, tool] of [['where', 'where_to_run'], ['machines', 'machine_status'], ['wt', 'find_worktree']]) {
+    const md = readFileSync(join(PLUGIN, `commands/${cmd}.md`), 'utf8');
+    assert.match(md, /^---\ndescription: .+\n(argument-hint: .+\n)?---\n/, cmd);
+    assert.ok(md.includes(`\`${tool}\``), cmd);
+  }
+  // every option the hooks read is declared, and the cross-machine hint is opt-in
+  assert.deepEqual(Object.keys(plugin.userConfig).sort(), ['multi_machine_hint', 'port_nudge', 'session_port']);
+  assert.equal(plugin.userConfig.multi_machine_hint.default, false);
+  assert.ok(hooks.SessionStart[0].hooks.some((h: { command: string }) => h.command.includes('hooks/session-start.ts')));
 });
 
 test("session-end.ts keeps #43's agreed export", async () => {
@@ -248,6 +261,24 @@ test('session-port: never unsets a PORT it did not set, silent when off, down, o
     assert.equal(await sp.run({ hook_event_name: 'SessionStart', cwd: 'relative' }, { env }), null);
     assert.equal(await sp.run({ hook_event_name: 'SessionStart', cwd: '/w' }, { env: { ...env, PORTBOARD_SESSION_PORT: '0' } }), null);
     assert.equal(fake.seen.length, 0);
+  } finally {
+    fake.server.close();
+  }
+});
+
+test('session-port: machines=1 only with the multi_machine_hint option (or PORTBOARD_MULTI_MACHINE_HINT=1)', async () => {
+  const sp = await import('../claude-plugin/hooks/session-port.ts');
+  assert.equal(sp.multiMachine({}), false);
+  assert.equal(sp.multiMachine({ CLAUDE_PLUGIN_OPTION_MULTI_MACHINE_HINT: 'true' }), true);
+  assert.equal(sp.multiMachine({ CLAUDE_PLUGIN_OPTION_MULTI_MACHINE_HINT: 'false' }), false);
+  assert.equal(sp.multiMachine({ PORTBOARD_MULTI_MACHINE_HINT: '1' }), true);
+  const fake = await fakePortboard(() => ({ body: { owner: 'shop@x', port: null, text: '[portboard] elsewhere' } }));
+  try {
+    const out = await sp.run({ hook_event_name: 'SessionStart', cwd: '/w/shop' }, { env: { PORTBOARD_URL: fake.url, CLAUDE_PLUGIN_OPTION_MULTI_MACHINE_HINT: 'true' } });
+    assert.equal(JSON.parse(out!).hookSpecificOutput.additionalContext, '[portboard] elsewhere');
+    assert.deepEqual(Object.fromEntries(fake.seen[0].searchParams), { cwd: '/w/shop', machines: '1' });
+    await sp.run({ hook_event_name: 'SessionStart', cwd: '/w/shop' }, { env: { PORTBOARD_URL: fake.url } });
+    assert.deepEqual(Object.fromEntries(fake.seen[1].searchParams), { cwd: '/w/shop' });
   } finally {
     fake.server.close();
   }
