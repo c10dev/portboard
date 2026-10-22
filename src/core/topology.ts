@@ -15,6 +15,8 @@ import { classify, type BindScope } from './ss.ts';
 import { parsePeers } from './devices.ts';
 import { servedUrl } from './tailscale.ts';
 import { t } from './i18n.ts';
+import { isPortboardCommand } from './selfunit.ts';
+import { isPortboardCheckout } from './checkout.ts';
 
 export type Peer = ReturnType<typeof parsePeers>[number];
 
@@ -131,16 +133,10 @@ async function otherPortboards(conns: Connection[]): Promise<number[]> {
         readFile(`/proc/${pid}/cmdline`, 'utf8').then((s) => s.split('\0').join(' ')).catch(() => ''),
         readlink(`/proc/${pid}/cwd`).catch(() => ''),
       ]);
-      return isPortboard(cmd, cwd) ? pid : null;
+      return isPortboardCommand(cmd, cwd || null, isPortboardCheckout) ? pid : null;
     }),
   );
   return hits.filter((p): p is number => p !== null);
-}
-
-export function isPortboard(cmdline: string, cwd: string): boolean {
-  const m = /(?:^|\s)(\S*?)src\/(server|mcp)\.ts(?:\s|$)/.exec(cmdline);
-  if (!m) return false;
-  return /portboard/i.test(m[1] || cwd);
 }
 
 const connKey = (c: Connection) => `${c.local.address}:${c.local.port}>${c.peer.address}:${c.peer.port}`;

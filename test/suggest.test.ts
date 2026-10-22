@@ -299,6 +299,7 @@ test('idle: pinned, hidden, system, stopped and Portboard\'s own ports are left 
     svc({ port: 7778 }, 'portboard-remote.service', 1),
     svc({ port: 7779 }, 'pb-preview-x.service', 1),
     svc({ port: 7780 }, null, 4242),
+    svc({ port: 7781, isPortboard: true }, null, 1),
     svc({ port: 9000 }, 'two-ports.service', 1),
     svc({ port: 9001, pinned: true }, 'two-ports.service', 1),
     svc({ port: 9100 }, 'busy.service', 1),

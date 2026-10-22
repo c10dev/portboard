@@ -359,6 +359,8 @@ export interface IdleCandidate {
   pinned: boolean;
   container: string | null;
   processes: { pid: number; unit: string | null; cmdline: string }[];
+  /** The snapshot's PortEntry.isPortboard; the unit and pid checks below cover a candidate without it */
+  isPortboard?: boolean;
 }
 
 /** The parts of a usage-history entry (history.ts HistEntry) this needs: one per (device, port) */
@@ -415,6 +417,7 @@ export function idleSuggestions(ports: IdleCandidate[], inp: IdleInputs): IdleSu
     const shown = group.filter((p) => !p.hidden);
     if (!shown.length) continue;
     const procs = group.flatMap((p) => p.processes);
+    if (group.some((p) => p.isPortboard)) continue;
     if (procs.some((x) => x.pid === inp.selfPid || (!!x.unit && (inp.selfUnits.has(x.unit) || isPortboardUnit(x.unit))))) continue;
     const unit = unitOf(shown[0]);
     const container = shown[0].container;

@@ -40,7 +40,7 @@ Auto-stop always goes through the existing cleanup path (`cleanupPorts`): each p
 - installed systemd services, docker containers, other users' processes (they are never candidates)
 - pinned ports (never candidates)
 - servers of any other session
-- Portboard itself, or a Portboard preview (`src/server.ts` / `remote.ts` / `mcp.ts` from a portboard directory), or this Portboard's own port
+- Portboard itself, or a Portboard preview (`bin/portboard …`, or `src/server.ts` / `remote.ts` / `agent.ts` / `mcp.ts` of a folder whose `package.json` is Portboard's), or this Portboard's own port
 - anything when the reason is `clear`: `/clear` ends the conversation but the Claude process keeps running
 
 Port reservations are left alone. The last run (mode, ports, results) is in `GET /api/claude/sessions` as `lastAutoStop`.

@@ -43,6 +43,8 @@ export interface NewPortView {
   container: string | null;
   urls: { direct: string | null; served: string | null };
   canExpose: boolean;
+  /** The snapshot's PortEntry.isPortboard; a view without it falls back to the units and this pid */
+  isPortboard?: boolean;
 }
 
 export type NoticeAction = Extract<OnNew, 'notify' | 'openBrowserOnce'>;
@@ -70,8 +72,8 @@ export interface NewPortsFeed {
   events: NewPortEvent[];
 }
 
-export function isSelf(p: Pick<NewPortView, 'processes'>, selfPid = process.pid): boolean {
-  return isPortboardProcess(p.processes, selfPid);
+export function isSelf(p: Pick<NewPortView, 'processes' | 'isPortboard'>, selfPid = process.pid): boolean {
+  return p.isPortboard ?? isPortboardProcess(p.processes, { selfPid });
 }
 
 export function commandOf(p: Pick<NewPortView, 'processes' | 'container'>): string | null {

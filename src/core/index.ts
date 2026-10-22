@@ -22,6 +22,7 @@ import { probe, probeKey, pruneProbes, type Probe } from './probe.ts';
 import type { BindScope } from './ss.ts';
 import { loadReservations, reservedFor, type Reservation } from './reservations.ts';
 import { isPortboardProcess } from './selfunit.ts';
+import { isPortboardCheckout } from './checkout.ts';
 import {
   exposedEntry,
   serveOff,
@@ -87,6 +88,8 @@ export interface PortEntry {
   control: Control | null;
   canRestart: boolean;
   canStop: boolean;
+  /** Portboard's own port (isPortboardProcess): stop and cleanup refuse it; new-port notices and idle suggestions leave it out */
+  isPortboard: boolean;
 }
 
 export interface Snapshot {
@@ -167,7 +170,7 @@ export async function snapshot(): Promise<Snapshot> {
       const detectedName = container ? `docker: ${container}` : (known?.name ?? labelFor(processes, [...procNames.values()], pr));
       const kind = kindOf({ port, owned, container, processes });
       const control = controlFor({ container, processes });
-      const isSelf = isPortboardProcess(processes);
+      const isSelf = isPortboardProcess(processes, { isCheckout: isPortboardCheckout });
 
       return {
         port,
@@ -196,6 +199,7 @@ export async function snapshot(): Promise<Snapshot> {
         control,
         canRestart: !readOnly && ((control?.type === 'systemd' && unitsManaged) || control?.type === 'docker'),
         canStop: !readOnly && control !== null && !isSelf && (control.type !== 'systemd' || unitsManaged),
+        isPortboard: isSelf,
       };
     }),
   );
@@ -229,6 +233,7 @@ export async function snapshot(): Promise<Snapshot> {
       control: null,
       canRestart: false,
       canStop: false,
+      isPortboard: false,
     });
   }
 
