@@ -132,7 +132,7 @@ To add or change a feature:
 - Commit subjects are short English sentences with an optional area prefix (`Mac app:`, `Docs:`).
   Do not use `feat:` or `fix:`. A UI label may stay in Korean.
 - Keep the commit trailers that your harness adds. Do not invent or remove them.
-- Fill in [.github/pull_request_template.md](.github/pull_request_template.md). Report all four commands from section 6, not only the two in the template.
+- Fill in [.github/pull_request_template.md](.github/pull_request_template.md). Report each of the four commands from section 6.
 - Under "How it was checked", give each check its result: `- [x] npm test: pass (fixtures)`.
   Give each check that did not run with its reason: `- [ ] swift test: not run (no Swift toolchain)`.
 
