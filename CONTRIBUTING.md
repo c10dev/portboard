@@ -15,7 +15,7 @@ npm test              # node --test, no network, no root, no Tailscale needed (i
 npm run test:en       # the same suite in English, minus the files that assert Korean wording
 npm run typecheck
 npm run typecheck:public   # public/ JS files that start with // @ts-check
-PORTBOARD_PORT=8797 npm start   # a preview: its own state dir, alerts off (docs/setup.md#preview-instances)
+PORTBOARD_PORT=8800 npm start   # a preview: its own state dir, alerts off (docs/setup.md#preview-instances)
 ```
 
 **Languages in tests.** `npm test` runs in Korean. `npm run test:en` ([scripts/test-en.ts](scripts/test-en.ts)) runs
