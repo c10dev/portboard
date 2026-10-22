@@ -6,7 +6,7 @@
 |---|---|---|
 | `list_ports` | `query?` (filters on port, name, container, HTTP title, project or unit), `include_system?` (default `false`) | Compact per-port summary: `port`, `name`, `scope`, `http` status, `directUrl` / `servedUrl`, `canExpose` / `exposeBlocker` |
 | `expose_port` | `port` | The core `ActionResult` (`ok`, `message`, and `enableUrl` while Serve is not enabled on the tailnet) |
-| `unexpose_port` | `port` | The same `ActionResult` |
+| `unexpose_port` | `port` | The same `ActionResult`. Turns off only the entry `expose_port` makes (`https:<port>` → `127.0.0.1:<port>`, not Funnel); another entry for the port is refused with its address |
 | `restart_service` | `port` | Restarts the owning systemd user unit or docker container |
 | `stop_service` | `port` | Stops the owning unit/container, or SIGTERMs a plain process; refuses portboard itself |
 | `tail_logs` | `port`, `lines?` (default 100, max 1000) | `{ok, source, lines[], message?}` |

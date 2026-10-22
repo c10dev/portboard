@@ -90,6 +90,15 @@ function localPort(upstream: string): number | null {
   }
 }
 
+/**
+ * The entry expose_port makes for `port` (serveOn: https:<port> → 127.0.0.1:<port>, tailnet only), or null.
+ * unexpose turns off only this one, so an entry someone set up by hand (the dashboard's own https:443, a Funnel)
+ * stays.
+ */
+export function exposedEntry(serve: ServeEntry[], port: number): ServeEntry | null {
+  return serve.find((e) => e.httpsPort === port && e.upstreamPort === port && !e.funnel) ?? null;
+}
+
 /** Public URL for a serve entry; :443 is left out. */
 export function servedUrl(dnsName: string, httpsPort: number): string {
   return httpsPort === 443 ? `https://${dnsName}/` : `https://${dnsName}:${httpsPort}`;

@@ -22,6 +22,7 @@ import { probe, probeKey, pruneProbes, type Probe } from './probe.ts';
 import type { BindScope } from './ss.ts';
 import { loadReservations, reservedFor, type Reservation } from './reservations.ts';
 import {
+  exposedEntry,
   serveOff,
   serveOn,
   servedUrl,
@@ -80,6 +81,8 @@ export interface PortEntry {
   urls: { direct: string | null; served: string | null; ssh: string };
   canExpose: boolean;
   exposeBlocker: string | null;
+  /** The port has the serve entry expose_port makes, so unexpose can turn it off (exposedEntry) */
+  canUnexpose: boolean;
   control: Control | null;
   canRestart: boolean;
   canStop: boolean;
@@ -188,6 +191,7 @@ export async function snapshot(): Promise<Snapshot> {
         },
         canExpose: exposeBlocker === null,
         exposeBlocker,
+        canUnexpose: exposedEntry(serve, port) !== null,
         control,
         canRestart: !readOnly && ((control?.type === 'systemd' && unitsManaged) || control?.type === 'docker'),
         canStop: !readOnly && control !== null && !isSelf && (control.type !== 'systemd' || unitsManaged),
@@ -220,6 +224,7 @@ export async function snapshot(): Promise<Snapshot> {
       urls: { direct: null, served: dns ? servedUrl(dns, e.httpsPort) : null, ssh: '' },
       canExpose: false,
       exposeBlocker: 'not listening',
+      canUnexpose: exposedEntry([e], e.upstreamPort ?? e.httpsPort) !== null,
       control: null,
       canRestart: false,
       canStop: false,
@@ -293,9 +298,14 @@ export async function expose(port: number): Promise<ActionResult> {
 
 export async function unexpose(port: number): Promise<ActionResult> {
   const serve = await serveStatus();
-  const e = serve.find((x) => x.upstreamPort === port && x.httpsPort === port) ?? serve.find((x) => x.upstreamPort === port);
-  if (!e) return { ok: false, message: `${port} is not served` };
-  return serveOff(e.httpsPort);
+  const e = exposedEntry(serve, port);
+  if (e) return serveOff(e.httpsPort);
+  const other = serve.find((x) => x.upstreamPort === port);
+  if (other) {
+    const how = other.funnel ? 'Funnel' : `https:${other.httpsPort}`;
+    return { ok: false, message: `${port} is served by ${how}, which expose_port did not make; turn it off with tailscale serve` };
+  }
+  return { ok: false, message: `${port} is not served` };
 }
 
 export async function setPrefs(port: number, patch: PrefsPatch): Promise<PortPrefs> {

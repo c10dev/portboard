@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { classify, parseSs } from '../src/core/ss.ts';
-import { parseServe, servedUrl } from '../src/core/tailscale.ts';
+import { exposedEntry, parseServe, servedUrl } from '../src/core/tailscale.ts';
 import { parseDockerPs } from '../src/core/docker.ts';
 import { extractTitle } from '../src/core/probe.ts';
 import { projectOf, unitOf } from '../src/core/proc.ts';
@@ -38,6 +38,21 @@ test('classify', () => {
   assert.equal(classify('100.200.1.1'), 'other');
   assert.equal(classify('192.168.0.5'), 'other');
   assert.equal(classify('::1'), 'loopback');
+});
+
+test('exposedEntry: only the https:<port> → 127.0.0.1:<port> entry expose_port makes, never another entry or a Funnel', () => {
+  const serve = [
+    { httpsPort: 443, upstream: 'http://127.0.0.1:8790', upstreamPort: 8790 },
+    { httpsPort: 8443, upstream: 'http://127.0.0.1:8794', upstreamPort: 8794, funnel: true },
+    { httpsPort: 8794, upstream: 'http://127.0.0.1:8794', upstreamPort: 8794, funnel: true },
+    { httpsPort: 8780, upstream: 'http://127.0.0.1:8780', upstreamPort: 8780 },
+    { httpsPort: 9000, upstream: 'http://10.0.0.5:9000', upstreamPort: null },
+  ];
+  assert.deepEqual(exposedEntry(serve, 8780), { httpsPort: 8780, upstream: 'http://127.0.0.1:8780', upstreamPort: 8780 });
+  assert.equal(exposedEntry(serve, 8790), null, 'the dashboard\'s own https:443 entry is not one expose_port made');
+  assert.equal(exposedEntry(serve, 8794), null, 'a Funnel entry stays, even on the same https port');
+  assert.equal(exposedEntry(serve, 9000), null);
+  assert.equal(exposedEntry(serve, 5173), null);
 });
 
 test('parseServe reads Web handlers and the upstream port', () => {

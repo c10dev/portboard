@@ -40,7 +40,7 @@ Live connections are forgotten as soon as they close, so the server samples who 
 - who is connected right now, and since when
 - the last-used history: every device that used it, when it was last seen, and minutes in use over 7 and 30 days
 - for 🔔 ports: uptime over 24 h / 7 d / 30 d, the last 30 checks, a 24 h bar (48 × 30 min) and a 30-day bar, the outages with their length and reason, and the alerts that were sent
-- the row's actions with the same guards: 열기, tailnet 공개 / 공개 해제, SSH 복사, 로그 보기, 재시작 and 중지 (both ask first), 🔔
+- the row's actions with the same guards: 열기, tailnet 공개 / 공개 해제 (only for the entry tailnet 공개 made), SSH 복사, 로그 보기, 재시작 and 중지 (both ask first), 🔔
 
 It works at 390 px, for a watched port that is down, and for a port only the history knows.
 
