@@ -128,6 +128,8 @@ export interface SessionRow {
   id: string | null;
   title: string | null;
   project: string | null;
+  /** the CLI's working directory (stays on this machine: machine_status maps it to a worktree) */
+  cwd: string | null;
   version: string | null;
   /** older than the newest version running */
   stale: boolean;
@@ -375,6 +377,7 @@ export function buildSample(input: SampleInput): MemorySample {
       id: meta.id,
       title: meta.title,
       project: cwd ? projectName(cwd) : null,
+      cwd,
       version,
       stale: !!(version && newest && versionCmp(version, newest) < 0),
       startedAt: new Date(started).toISOString(),

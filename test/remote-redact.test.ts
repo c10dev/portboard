@@ -265,6 +265,7 @@ const session = (over: Partial<SessionRow>): SessionRow => ({
   id: '0f0e0d0c-0b0a-4908-8706-050403020100',
   title: 'Secret project plan',
   project: 'acme-secret',
+  cwd: '/home/dev/projects/acme-secret',
   version: '2.1.299',
   stale: false,
   startedAt: '2026-10-17T08:00:00.000Z',

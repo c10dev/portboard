@@ -84,14 +84,35 @@ export const SITE_DEFAULTS = {
   /** Other machines' `portboard agent`s the board reads (c10dev/portboard#10): none until listed */
   agents: [] as AgentTarget[],
   /** `portboard agent` on this machine: its port, who may read it (Tailscale identities) and an optional shared token */
-  agent: { port: 8797, allow: [] as string[], token: null as string | null, showAddresses: false },
+  agent: { port: 8797, allow: [] as string[], token: null as string | null, showAddresses: false, showPaths: false },
+  /** machine_status / where_to_run (docs/multi-host.md): this machine's kind and tags, and the cloud as a candidate */
+  machines: {
+    self: { kind: null as MachineKind | null, tags: [] as string[], maxSessions: null as number | null },
+    cloud: { enabled: false, tags: ['sandbox', 'parallel', 'isolated'] as string[] },
+  },
+  /** where_to_run's score weights over recommend.ts DEFAULT_WEIGHTS (only numbers between -1 and 1 are taken) */
+  recommend: { weights: {} as Record<string, number> },
 };
+
+export const MACHINE_KINDS = ['linux', 'mac', 'windows', 'wsl', 'cloud'] as const;
+export type MachineKind = (typeof MACHINE_KINDS)[number];
+const isKind = (v: unknown): v is MachineKind => typeof v === 'string' && (MACHINE_KINDS as readonly string[]).includes(v);
+const TAG = /^[a-z0-9][a-z0-9:._-]{0,31}$/;
+/** Tags as given, lower-cased; anything that isn't a short word is dropped. At most 16. */
+const tagsOf = (v: unknown): string[] => (Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string').map((x) => x.trim().toLowerCase()).filter((x) => TAG.test(x)))].slice(0, 16) : []);
+const sessionsOf = (v: unknown): number | null => (Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 64 ? (v as number) : null);
 
 /** One agent the board reads: a name (matched to a tailnet device), its base URL and, optionally, a bearer token */
 export interface AgentTarget {
   name: string;
   url: string;
   token?: string;
+  /** what the machine is (where_to_run: macos needs a mac, windows a windows or wsl one) */
+  kind?: MachineKind;
+  /** capabilities the agent can't see itself: gpu, xcode, always-on… */
+  tags?: string[];
+  /** Claude Code sessions it should run at once (where_to_run's session slots) */
+  maxSessions?: number;
 }
 
 const AGENT_NAME = /^[A-Za-z0-9][\w.-]{0,62}$/;
@@ -110,8 +131,38 @@ export function checkAgentTarget(raw: unknown): AgentTarget | string {
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return `${r.name}: url must be http or https`;
   if (u.username || u.password) return `${r.name}: url must not carry credentials (use token)`;
   if (r.token !== undefined && (typeof r.token !== 'string' || !r.token)) return `${r.name}: token must be a non-empty string`;
+  if (r.kind !== undefined && !isKind(r.kind)) return `${r.name}: kind must be one of ${MACHINE_KINDS.join(', ')}`;
   const url = `${u.origin}${u.pathname.replace(/\/+$/, '')}`;
-  return r.token ? { name: r.name, url, token: r.token as string } : { name: r.name, url };
+  const tags = tagsOf(r.tags);
+  const maxSessions = sessionsOf(r.maxSessions);
+  return {
+    name: r.name,
+    url,
+    ...(r.token ? { token: r.token as string } : {}),
+    ...(isKind(r.kind) ? { kind: r.kind } : {}),
+    ...(tags.length ? { tags } : {}),
+    ...(maxSessions ? { maxSessions } : {}),
+  };
+}
+
+/** portboard.json `machines` over the defaults: self's kind, tags and maxSessions; whether the cloud is a candidate */
+export function machinesConfig(raw: Record<string, unknown> | undefined): typeof SITE_DEFAULTS.machines {
+  const D = SITE_DEFAULTS.machines;
+  const obj = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+  const self = obj(raw?.self);
+  const cloud = obj(raw?.cloud);
+  return {
+    self: { kind: isKind(self.kind) ? self.kind : D.self.kind, tags: tagsOf(self.tags), maxSessions: sessionsOf(self.maxSessions) },
+    cloud: { enabled: cloud.enabled === true, tags: Array.isArray(cloud.tags) ? tagsOf(cloud.tags) : D.cloud.tags },
+  };
+}
+
+/** portboard.json `recommend`: weights between -1 and 1 by name (recommend.ts says which names it knows) */
+export function recommendConfig(raw: Record<string, unknown> | undefined): typeof SITE_DEFAULTS.recommend {
+  const w = raw?.weights && typeof raw.weights === 'object' && !Array.isArray(raw.weights) ? (raw.weights as Record<string, unknown>) : {};
+  const weights: Record<string, number> = {};
+  for (const [k, v] of Object.entries(w)) if (/^\w{1,32}$/.test(k) && typeof v === 'number' && Number.isFinite(v) && v >= -1 && v <= 1) weights[k] = v;
+  return { weights };
 }
 
 /** portboard.json `agent` over the defaults; a wrong field falls back to its default */
@@ -121,7 +172,7 @@ export function agentServeConfig(raw: Record<string, unknown> | undefined): type
   const port = Number.isInteger(r.port) && (r.port as number) > 0 && (r.port as number) < 65536 ? (r.port as number) : D.port;
   const allow = Array.isArray(r.allow) ? r.allow.filter((x): x is string => typeof x === 'string' && !!x.trim()).map((x) => x.trim()) : D.allow;
   const token = typeof r.token === 'string' && r.token ? r.token : D.token;
-  return { port, allow, token, showAddresses: r.showAddresses === true };
+  return { port, allow, token, showAddresses: r.showAddresses === true, showPaths: r.showPaths === true };
 }
 
 /** portboard.json: every key optional. pve/windows are partial defaults; pveports.json and winports.json still win. */
@@ -140,6 +191,8 @@ export interface SiteFile {
   windows?: Record<string, unknown>;
   agents?: AgentTarget[];
   agent?: Record<string, unknown>;
+  machines?: Record<string, unknown>;
+  recommend?: Record<string, unknown>;
 }
 
 /** What the machine said; null/undefined: not asked (SITE) or couldn't tell. */
@@ -186,6 +239,10 @@ export interface Site {
   agents: AgentTarget[];
   /** this machine's `portboard agent` settings (portboard.json `agent`) */
   agent: typeof SITE_DEFAULTS.agent;
+  /** portboard.json `machines` (machine_status, where_to_run) */
+  machines: typeof SITE_DEFAULTS.machines;
+  /** portboard.json `recommend` (where_to_run's weights) */
+  recommend: typeof SITE_DEFAULTS.recommend;
   /** where each value came from */
   sources: Record<'host' | 'tailnet' | 'dnsName' | 'user' | 'checkout' | 'reposRoots' | 'poolUrl' | 'dashboardUrl' | 'publicUrl' | 'locale' | 'utcOffset', SiteSource>;
   /** the portboard.json path read (whether or not it exists) */
@@ -201,7 +258,7 @@ export interface Site {
 type Env = Record<string, string | undefined>;
 
 const STRING_KEYS = ['host', 'tailnet', 'user', 'checkout', 'poolUrl', 'dashboardUrl', 'publicUrl', 'locale', 'utcOffset'] as const;
-const OBJECT_KEYS = ['pve', 'windows', 'agent'] as const;
+const OBJECT_KEYS = ['pve', 'windows', 'agent', 'machines', 'recommend'] as const;
 
 /** Parses portboard.json. A key of the wrong type is dropped (and reported); the rest still apply. */
 export function parseSiteFile(text: string | null): { file: SiteFile; found: boolean; error: string | null } {
@@ -330,6 +387,8 @@ export function resolveSite(input: ResolveInput = {}): Site {
     windows: { ...D.windows, ...(f.windows as Partial<typeof D.windows>) },
     agents: f.agents ?? D.agents,
     agent: agentServeConfig(f.agent),
+    machines: machinesConfig(f.machines),
+    recommend: recommendConfig(f.recommend),
     sources: {
       host: hostSrc,
       tailnet: tailnetSrc,

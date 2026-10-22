@@ -43,15 +43,15 @@ test('AgentsCollector: reads info and ports with the token, caches for ttlMs', a
   assert.equal(a.pending, false);
   assert.equal(a.info?.version, '1.2.0');
   assert.deepEqual(a.ports?.listening.map((p) => p.port), [3000, 5432]);
-  assert.deepEqual(calls.map((x) => x.url).sort(), ['http://100.64.0.2:8797/agent/v1/info', 'http://100.64.0.2:8797/agent/v1/ports']);
+  assert.deepEqual(calls.map((x) => x.url).sort(), ['http://100.64.0.2:8797/agent/v1/info', 'http://100.64.0.2:8797/agent/v1/ports', 'http://100.64.0.2:8797/agent/v1/status']);
   assert.ok(calls.every((x) => x.headers.authorization === 'Bearer tok'));
   assert.ok(!JSON.stringify(a).includes('tok"'), 'the token is not in the status');
   now = 5_000;
   await c.get();
-  assert.equal(calls.length, 2, 'cached');
+  assert.equal(calls.length, 3, 'cached');
   now = 11_000;
   await c.get();
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 6);
 });
 
 test('AgentsCollector: a failing agent backs off, keeps its last good ports, and reports a fixed code', async () => {
@@ -183,9 +183,9 @@ test('portboard.json agents and agent: valid entries kept, bad ones reported wit
   assert.ok(!(r.error ?? '').includes('shh') && !(r.error ?? '').includes('zzz'));
   const site = resolveSite({ file: r.file });
   assert.equal(site.agents.length, 2);
-  assert.deepEqual(site.agent, { port: 9000, allow: ['board'], token: 't', showAddresses: false });
+  assert.deepEqual(site.agent, { port: 9000, allow: ['board'], token: 't', showAddresses: false, showPaths: false });
   assert.equal(parseSiteFile(JSON.stringify({ agents: {} })).error?.includes('agents'), true);
   assert.deepEqual(resolveSite({}).agents, []);
-  assert.deepEqual(agentServeConfig({ port: 'x', allow: 'board' }), { port: 8797, allow: [], token: null, showAddresses: false });
+  assert.deepEqual(agentServeConfig({ port: 'x', allow: 'board' }), { port: 8797, allow: [], token: null, showAddresses: false, showPaths: false });
   assert.equal(typeof checkAgentTarget(null), 'string');
 });
