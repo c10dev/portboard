@@ -7,7 +7,7 @@
 //   MCP  list_reservations (read), reserve_port, release_port (local only)
 
 import { freePorts, snapshot, type Snapshot } from '../core/index.ts';
-import { loadReservations, normalizeOwner, release, reserve, type Reservation, type ReserveResult } from '../core/reservations.ts';
+import { loadReservations, normalizeOwner, release, reserve, type ReleaseResult, type Reservation, type ReserveResult } from '../core/reservations.ts';
 import { parseOptionalInt, parsePort, text, type Core } from '../mcp/kit.ts';
 import { ok, reply } from './router.ts';
 import type { FeatureModule, Tool } from './types.ts';
@@ -21,7 +21,7 @@ declare module '../mcp/kit.ts' {
   interface Core {
     reservations(): Promise<ReservationStatus[]>;
     reservePort(owner: string, port?: number, note?: string): Promise<ReserveResult>;
-    releasePort(port: number): Promise<{ ok: boolean; released: Reservation | null }>;
+    releasePort(port: number, owner: string): Promise<ReleaseResult>;
   }
 }
 
@@ -105,14 +105,27 @@ const releaseTool: Tool = {
   def: {
     name: 'release_port',
     title: 'Release a reserved port',
-    description: 'Remove the reservation of a port so free_port may offer it again. Does not stop anything.',
-    inputSchema: { type: 'object', properties: { port: { type: 'integer', minimum: 1, maximum: 65535 } }, required: ['port'], additionalProperties: false },
+    description:
+      'Remove your reservation of a port so free_port may offer it again. `owner` must be the owner it was reserved ' +
+      'for (see list_reservations); another owner\'s reservation stays. Does not stop anything.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        port: { type: 'integer', minimum: 1, maximum: 65535 },
+        owner: { type: 'string', description: 'The owner the port was reserved for, exactly as list_reservations shows it' },
+      },
+      required: ['port', 'owner'],
+      additionalProperties: false,
+    },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   async call(args, core) {
     const p = parsePort(args);
     if (!p.ok) return text(p.error, true);
-    const r = await core.releasePort(p.value);
+    const owner = normalizeOwner((args as { owner?: unknown } | undefined)?.owner);
+    if (!owner) return text('owner must be 1–120 characters', true);
+    const r = await core.releasePort(p.value, owner);
+    if (r.heldBy) return text(`${p.value} is reserved for ${r.heldBy}, not ${owner}`, true);
     return text(r, !r.ok);
   },
 };
@@ -144,7 +157,7 @@ export const reservationsFeature: FeatureModule = {
       path: '/api/reservations/:port/release',
       write: true,
       async handler({ params }) {
-        const r = await release(params.port);
+        const r = await release(params.port, null);
         return reply(r.ok ? 200 : 404, r.ok ? r : { error: `${params.port} is not reserved` });
       },
     },
@@ -156,6 +169,6 @@ export const reservationsFeature: FeatureModule = {
       const r = await doReserve(owner, port, note);
       return r.ok ? r : { ok: false as const, error: r.error };
     },
-    releasePort: (port: number) => release(port),
+    releasePort: (port: number, owner: string) => release(port, owner),
   }),
 };

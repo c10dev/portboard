@@ -72,9 +72,21 @@ export async function reserve(owner: string, port: number | undefined, note: str
   }, path);
 }
 
-export async function release(port: number, path = PATHS.reservations): Promise<{ ok: boolean; released: Reservation | null }> {
-  return update((list) => {
+export interface ReleaseResult {
+  ok: boolean;
+  released: Reservation | null;
+  /** Set when `owner` was given and the port is reserved for someone else: nothing was released */
+  heldBy?: string;
+}
+
+/**
+ * Remove the reservation of `port`. With `owner`, only that owner's reservation goes; another owner's stays and
+ * comes back as `heldBy`. Without it (the dashboard's button, a person), any reservation of the port goes.
+ */
+export async function release(port: number, owner: string | null, path = PATHS.reservations): Promise<ReleaseResult> {
+  return update<ReleaseResult>((list) => {
     const r = list.find((x) => x.port === port) ?? null;
+    if (r && owner !== null && r.owner !== owner) return { list, result: { ok: false, released: null, heldBy: r.owner } };
     return { list: list.filter((x) => x.port !== port), result: { ok: !!r, released: r } };
   }, path);
 }
