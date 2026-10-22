@@ -4,7 +4,7 @@
 
 ## How it was checked
 
-- [ ] `npm test` and `npm run typecheck` pass
+- [ ] `npm test`, `npm run test:en`, `npm run typecheck` and `npm run typecheck:public` pass (CI runs all four)
 - [ ] New behaviour has a test
 - [ ] Docs updated (`docs/…`), and a `changelog.d/<topic>.md` entry added
 - [ ] Screenshots for UI changes, from a preview with example data (no real hosts, addresses or tokens)
