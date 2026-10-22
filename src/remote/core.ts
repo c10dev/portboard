@@ -89,6 +89,9 @@ export function readOnlyCore(core: RemoteCore): Core {
     // session titles, project dirs and process names: never through shared code (the remote memory_usage reads
     // RemoteCore.memory and redacts; portboard://status carries a numbers-only line)
     memory: notRemote,
+    // machine_status / where_to_run: session projects, worktree names and paths of every machine; local only until a
+    // redacted remote version is reviewed (docs/multi-host.md)
+    machines: notRemote,
   };
   return ro;
 }

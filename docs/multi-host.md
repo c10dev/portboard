@@ -54,10 +54,13 @@ The Host header must be a name of the machine (its host name, MagicDNS name, Tai
 | GET | `/agent/v1/info` | `{schema: 1, version, host, dnsName, at, load: {cores, load1, memTotalMb, memAvailMb, diskFreePct, uptimeSec}}` |
 | GET | `/agent/v1/ports` | `{schema: 1, at, host, listening, services}`: `listening` is one row per bind address, `{port, address, process?}`, the shape compute-pool's `/api/hosts` uses; `services` is the remote connector's `list_ports` projection (names, kinds, HTTP titles, tailnet URLs), system ports included |
 | GET | `/agent/v1/usage` | Who uses what on that machine, the remote connector's `who_uses_what` projection, plus `schema` |
+| GET | `/agent/v1/status` | What [machine_status](#machines-machine_status-and-where_to_run) shows of that machine: `{schema: 1, at, host, load, claude, worktrees, ports: {listening, devServers}, capabilities}`. Its `schema` is its own (info, ports and usage stay at 1), so an older board keeps reading a newer agent and a newer board gets a `404` from an older agent and shows load only |
 
 Any other method is `405` (the agent is read-only); any other path `404`. Answers are `no-store`.
 
 What never leaves the machine: pids, command lines, working directories, unit descriptions, ssh commands, MAC addresses, and LAN or docker addresses (they become `[lan-ip]` / `[ip]`). Bind addresses keep their class: `0.0.0.0`, `::`, loopback and the machine's own Tailscale IPs, which the board needs to tell "every interface" from "only on that device". `agent.showAddresses: true` keeps LAN addresses too, for a board that should link to them. A process is named by its container, its systemd unit or the first word of its command line without the path (`node`, never `node /home/…/server.js --token=…`).
+
+`/agent/v1/status` carries Claude Code sessions as an 8-character id, the project folder, the `repo@branch` worktree, idle minutes, CPU and MB (never titles or transcript text), and checkouts as `repo@branch`, GitHub `owner/name`, dirty file count, in use, Claude Code worktree and reserved port. Worktree paths are `null` unless `agent.showPaths: true`. Its checkouts come from the dashboard's saved worktree scan on that machine while it is under an hour old, else from a scan the agent runs itself every 15 minutes (never while a request waits).
 
 The agent reads the snapshot and usage from that machine's own dashboard over loopback when one runs there (as the remote MCP server does, #5); otherwise it computes them itself, cached for 2 s (usage 5 s).
 
@@ -79,13 +82,80 @@ In the board's `portboard.json`:
 - `url`: `http` or `https`, no credentials in it; a trailing `/` is dropped.
 - `token`: optional; sent only as `Authorization: Bearer` to that agent. Keep the file `0600` (it is under `~/.config/portboard/` by default). Without a token the board authenticates by its own Tailscale identity: put the board's node name in each agent's `agent.allow`.
 
-The board reads `/agent/v1/info` and `/agent/v1/ports` from every agent at most every 10 s, when `/api/devices` or `/api/usage` is asked (새로고침 reads again at once). Each agent is independent:
+The board reads `/agent/v1/info`, `/agent/v1/ports` and `/agent/v1/status` from every agent at most every 10 s, when `/api/devices` or `/api/usage` is asked (새로고침 reads again at once). Each agent is independent:
 
 - A failure is a fixed code, never the agent's own text: `unreachable`, `timeout`, `auth` (401/403), `http` (another status), `bad-answer` (not JSON, another `schema`, a missing field, over 4 MB).
 - A failing agent backs off: 15 s, 30 s, 1 min … up to 5 min between tries.
 - Its last good ports stay on its card, with the time they were read; the host picker marks the host 에이전트 응답 없음 / "agent not answering".
+- `/agent/v1/status` is optional: a `404` (an agent older than machine_status) leaves the status empty, and any other failure keeps the last good one, without failing the agent.
 
 `/api/devices` carries each device's `agent` (`name`, `url`, `ok`, `pending`, `error`, `checkedAt`, `lastOk`, `failures`, `nextAt`, `info`) and `portsSource: "agent"`, plus `agents[]` with the device each agent went to. The remote connector's `list_devices` gets the state and version only, never the URL or the load numbers.
+
+## Machines: machine_status and where_to_run
+
+The board's stdio MCP server (and `GET /api/machines`, `/api/where-to-run`, `/api/find-worktree`) puts every machine work can run on in one list: this machine, each agent above, and the cloud when you turn it on. Three read-only tools use it, on the local stdio server only ([mcp.md](mcp.md)):
+
+- `machine_status`: per machine its kind, online, data age (stale after 60 s), load, Claude Code sessions (active and idle), checkouts, port counts, capabilities, `maxSessions` and how to open a session there (`launch`).
+- `find_worktree`: which machines have a repo or branch checked out, and a `conflict` note when one branch is on two machines and one side has changes or an active session.
+- `where_to_run`: the machine to run a task on, why, the caveats, how to open the session there (the Desktop app's SSH session, a cloud session, Remote Control, `--teleport`), alternatives and the machines left out.
+
+**Portboard never starts anything on another machine.** The answer says where; a person opens the session.
+
+### Where the data comes from
+
+| Machine | Sessions | Checkouts | Load |
+|---|---|---|---|
+| this one (Linux) | the memory view's sessions (its last sample when fresh, else one `/proc` read): the session id from a descendant's `CLAUDE_CODE_SESSION_ID`, never a whole environ | the worktree scan (main checkouts and worktrees; repos without worktrees only with the branch from `.git/HEAD`) | `/proc/meminfo`, load average, disk |
+| this one (macOS) | `ps` + `classify()`, cwds from `lsof`, the id and idle time from the newest transcript in `~/.claude/projects/<cwd with every non-alphanumeric as ->` | same | `os.totalmem` / `os.freemem` (free memory counts less than Linux's available) |
+| an agent | its `/agent/v1/status` | same, from its scan | same |
+| cloud | none: there is no public API for cloud sessions | none | none |
+
+A session's worktree is the deepest checkout its cwd is in, named `repo@branch` (the name reservations, dev servers and the plugin's session port use). Helper CLIs (`--no-session-persistence`) are left out. A session is idle when the memory view says so (transcript quiet for `idleMin` and CPU under 3 %), or, without a CPU reading, when its transcript has been quiet for `idleMin` (60 minutes by default).
+
+### Configuration
+
+On the board, in `portboard.json` (every key optional):
+
+```json
+{
+  "agents": [
+    { "name": "mac", "url": "http://mac.example.ts.net:8797", "kind": "mac", "tags": ["xcode"], "maxSessions": 2 },
+    { "name": "desktop", "url": "http://desktop.example.ts.net:8797", "kind": "wsl", "tags": ["gpu"] }
+  ],
+  "machines": {
+    "self": { "kind": "linux", "tags": ["always-on"], "maxSessions": 4 },
+    "cloud": { "enabled": true, "tags": ["sandbox", "parallel", "isolated"] }
+  },
+  "recommend": { "weights": { "mac": -0.1 } }
+}
+```
+
+- `kind`: `linux`, `mac`, `windows`, `wsl` or `cloud`. Without it: the agent's capabilities (`macos`, `linux`), then the tailnet device's OS, then `linux`.
+- `tags`: capabilities the machine can't see itself (`gpu`, `xcode`, `always-on`, …), lower-case words, at most 16. A machine reports `linux` or `macos`, `systemd` and `dev-servers` (start_dev_server needs systemd), `memory-view` and `docker` (a docker socket) itself.
+- `maxSessions`: Claude Code sessions it should run at once, 1–64. Default by kind: mac 2, windows and wsl 3, others 4.
+- `machines.cloud.enabled`: list the cloud as a candidate (off by default). It has no readable state; it is the isolated, parallel option that takes nothing from your machines.
+- `recommend.weights`: numbers between -1 and 1 over the defaults below.
+
+On each agent, `agent.showPaths: true` also sends worktree paths (the recommendation's `cwd`); without it the board knows checkouts by `repo@branch`.
+
+### How where_to_run decides
+
+1. **Left out:** offline, no status for 5 minutes (the cloud has none and stays), named in `exclude`, or missing a need: `macos` needs a mac, `windows` a windows or wsl machine, `docker` and `gpu` that capability or tag, `dev-server` the `dev-servers` capability (the cloud stays, with a caveat: a dev server there can't be reached over the tailnet).
+2. **Score** (0–1):
+
+| Term | Weight | |
+|---|---|---|
+| `locality` | 0.35 | the `repo@branch` is checked out there 1, the repo only 0.5, else 0; the cloud 0.3 (it clones). A repo matches by folder name or GitHub `owner/name`. Without `repo`, a repo the task text names is used |
+| `conflict` | −0.4 | an active session or a process already works in that checkout; a quarter of it when the branch has uncommitted changes on another machine |
+| `headroom` | 0.25 | the mean of `1 − load1/cores` and available/total memory; the cloud 0.6 |
+| `sessionSlots` | 0.15 | `1 − active/maxSessions`; unknown 0.5, the cloud 1 |
+| `fit` | 0.15 | `long-running` on an `always-on` machine, `parallel` / `isolated` in the cloud; half of it off for a dev server in the cloud |
+| `mac` | −0.1 | added on the Mac: it is the control seat |
+| `prefer` | 0.2 | added on the machine asked for |
+
+3. **Ties:** fresher data first, then list order (this machine, the agents in `portboard.json` order, the cloud).
+
+Each term leaves a reason (`why`) or a `caveat` in the server's language.
 
 ## Not in v1
 

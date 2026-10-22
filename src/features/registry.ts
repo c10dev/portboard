@@ -29,6 +29,7 @@ import { digestFeature } from './digest.ts';
 import { freePortsFeature } from './free-ports.ts';
 import { hostPortsFeature } from './host-ports.ts';
 import { knownFeature } from './known.ts';
+import { machinesFeature } from './machines.ts';
 import { memoryFeature } from './memory.ts';
 import { newPortsFeature } from './newports.ts';
 import { onboardingFeature } from './onboarding.ts';
@@ -62,6 +63,7 @@ export const MODULES: FeatureModule[] = [
   freePortsFeature,
   hostPortsFeature,
   knownFeature,
+  machinesFeature,
   memoryFeature,
   newPortsFeature,
   onboardingFeature,

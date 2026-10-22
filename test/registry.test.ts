@@ -141,6 +141,7 @@ test('a preview never starts the alert checker; production does unless PORTBOARD
 test('local tools/list order (FEATURES order) is the order clients have always seen', () => {
   assert.deepEqual(TOOLS.map((t) => t.name), [
     'list_ports', 'expose_port', 'unexpose_port', 'restart_service', 'stop_service', 'tail_logs', 'list_devices',
+    'machine_status', 'find_worktree', 'where_to_run',
     'who_uses', 'list_usage', 'name_device', 'free_port', 'set_alert', 'list_new_devices', 'service_detail',
     'list_cleanup_candidates', 'cleanup_servers', 'list_worktrees', 'remove_worktrees',
     'list_reservations', 'reserve_port', 'release_port', 'list_dev_servers', 'start_dev_server', 'stop_dev_server', 'write_launch_config',
@@ -185,7 +186,7 @@ test('each health.ts collector is declared by exactly one feature, and nothing e
 test('the stdio server gets every Core method from some feature', () => {
   const core = Object.assign({}, ...FEATURES.map((f: FeatureModule) => f.mcpCore?.() ?? {}));
   assert.deepEqual(Object.keys(core).sort(), [
-    'adoption', 'alerts', 'cleanup', 'collection', 'devServers', 'devices', 'digest', 'expose', 'freePorts', 'history', 'logs', 'memory', 'newDevices', 'owners', 'portRules', 'releasePort', 'removeWorktrees', 'reservations', 'reservePort',
+    'adoption', 'alerts', 'cleanup', 'collection', 'devServers', 'devices', 'digest', 'expose', 'freePorts', 'history', 'logs', 'machines', 'memory', 'newDevices', 'owners', 'portRules', 'releasePort', 'removeWorktrees', 'reservations', 'reservePort',
     'restart', 'serviceDetail', 'setAlert', 'setClientName', 'setDigest', 'setPortRule', 'setupStatus', 'snapshot', 'startDevServer', 'stop', 'stopDevServer', 'suggestions', 'unexpose', 'usage', 'worktrees', 'writeLaunchConfig',
   ]);
 });
