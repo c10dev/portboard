@@ -9,7 +9,7 @@
 //   freePorts(count, preferred)                   → ports a new dev server can use
 
 import { hostname, userInfo } from 'node:os';
-import { controlFor, logsFor, pickFreePorts, restartTarget, SELF_UNIT, stopTarget, type Control, type Logs } from './control.ts';
+import { controlFor, logsFor, pickFreePorts, restartTarget, stopTarget, type Control, type Logs } from './control.ts';
 import { dockerPs } from './docker.ts';
 import { assignGroups, type PortGroup } from './groups.ts';
 import { loadPrefs, setPortPrefs, type OnNew, type PortPrefs, type PrefsPatch } from './prefs.ts';
@@ -21,6 +21,7 @@ import { services } from './platform/services.ts';
 import { probe, probeKey, pruneProbes, type Probe } from './probe.ts';
 import type { BindScope } from './ss.ts';
 import { loadReservations, reservedFor, type Reservation } from './reservations.ts';
+import { isPortboardProcess } from './selfunit.ts';
 import {
   exposedEntry,
   serveOff,
@@ -166,7 +167,7 @@ export async function snapshot(): Promise<Snapshot> {
       const detectedName = container ? `docker: ${container}` : (known?.name ?? labelFor(processes, [...procNames.values()], pr));
       const kind = kindOf({ port, owned, container, processes });
       const control = controlFor({ container, processes });
-      const isSelf = processes.some((p) => p.pid === process.pid || p.unit === SELF_UNIT);
+      const isSelf = isPortboardProcess(processes);
 
       return {
         port,

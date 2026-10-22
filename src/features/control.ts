@@ -55,7 +55,8 @@ const tools: Tool[] = [
       title: 'Stop what owns a port',
       description:
         'Stop the systemd user unit or docker container that owns a port, or send SIGTERM to the owning process. ' +
-        'Confirm with the user first unless they asked for it explicitly. Refuses to stop portboard itself.',
+        'Confirm with the user first unless they asked for it explicitly. Refuses to stop portboard itself and its other ' +
+        'units (portboard-remote.service, portboard-agent.service).',
       inputSchema: PORT_ARG,
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },

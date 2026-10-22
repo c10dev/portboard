@@ -18,7 +18,7 @@
   - **숨기기 / 다시 보이기** (hide / show). Hiding, unpinning, clearing a label and turning 🔔 off apply at once with a **되돌리기** (undo) toast that puts the previous setting back.
   - **로그 보기** (logs): `journalctl --user` for systemd units, `docker logs` for containers, or the file a plain process writes stdout to. Output that goes to a terminal can't be shown.
   - **재시작** (restart): systemd user units and docker containers only.
-  - **중지** (stop): `systemctl --user stop`, `docker stop`, or SIGTERM to a plain process. Last, after a separator, in red. Asks first, and refuses to stop portboard itself.
+  - **중지** (stop): `systemctl --user stop`, `docker stop`, or SIGTERM to a plain process. Last, after a separator, in red. Asks first, and refuses to stop portboard itself and its other units (`portboard-remote.service`, `portboard-agent.service`).
 - Copy buttons: on a plain `http://` address (not a secure context) the browser blocks clipboard access, so a prompt with the text to copy appears instead.
 - The **전체** (all) checkbox also shows what's hidden by default: system ports (owner not visible to this user: sshd, DNS, tailscaled…), ephemeral helper ports (32768–60999 with no unit or container, e.g. VS Code server) and ports you hid. Pinned ports always show.
 

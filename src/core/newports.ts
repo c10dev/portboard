@@ -24,6 +24,7 @@
 import type { Message, NtfyAction } from './alerts.ts';
 import type { OnNew } from './prefs.ts';
 import { t } from './i18n.ts';
+import { isPortboardProcess } from './selfunit.ts';
 
 export const DEBOUNCE_MS = 10 * 60_000;
 export const MAX_EVENTS = 50;
@@ -69,10 +70,8 @@ export interface NewPortsFeed {
   events: NewPortEvent[];
 }
 
-const SELF_UNIT = /^portboard(?:-[a-z]+)?\.service$/;
-
 export function isSelf(p: Pick<NewPortView, 'processes'>, selfPid = process.pid): boolean {
-  return p.processes.some((x) => x.pid === selfPid || (!!x.unit && SELF_UNIT.test(x.unit)));
+  return isPortboardProcess(p.processes, selfPid);
 }
 
 export function commandOf(p: Pick<NewPortView, 'processes' | 'container'>): string | null {

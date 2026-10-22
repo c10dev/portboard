@@ -225,6 +225,24 @@ test('no service manager: units answer with a reason, dev servers are refused wi
   }
 });
 
+test('stopTarget: refuses every Portboard unit before it reaches the service manager, and still stops other units', async () => {
+  const calls: string[] = [];
+  setPlatform(detectPlatform({}, 'linux'));
+  setServiceManager(systemdManager(async (cmd, args) => (calls.push(`${cmd} ${args.join(' ')}`), { ok: true, stdout: '', stderr: '' })));
+  try {
+    for (const unit of ['portboard.service', 'portboard-remote.service', 'portboard-agent.service']) {
+      assert.deepEqual(await stopTarget({ type: 'systemd', unit }), { ok: false, message: 'refusing to stop portboard itself' }, unit);
+    }
+    assert.deepEqual(calls, [], 'no systemctl stop for a Portboard unit');
+    assert.equal((await stopTarget({ type: 'systemd', unit: 'portboard-x.timer' })).ok, true, 'only .service units of Portboard are protected');
+    assert.equal((await stopTarget({ type: 'systemd', unit: 'shop-web.service' })).ok, true);
+    assert.deepEqual(calls, ['systemctl --user --no-block stop portboard-x.timer', 'systemctl --user --no-block stop shop-web.service']);
+  } finally {
+    setPlatform(null);
+    setServiceManager(null);
+  }
+});
+
 // ---- read-only ----
 
 const request = (method: string, headers: Record<string, string> = {}) => ({ method, headers }) as any;
