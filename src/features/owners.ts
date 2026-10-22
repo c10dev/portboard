@@ -11,7 +11,7 @@
 
 import { snapshot, stop, type PortEntry, type Snapshot } from '../core/index.ts';
 import { quietly } from '../core/alerts.ts';
-import { loadEnded, lookupOf } from '../core/claude-sessions.ts';
+import { loadEnded, loadStarted, lookupOf } from '../core/claude-sessions.ts';
 import { cleanupReasons, ownerOf, REASON_TEXT, transientUnits, type CleanupReason, type Owner } from '../core/owners.ts';
 import { text, type Core } from '../mcp/kit.ts';
 import { ok, reply } from './router.ts';
@@ -58,7 +58,8 @@ export function eligible(p: PortEntry, transient: Set<string> = new Set()): bool
 export async function ownersOf(snap: Snapshot, now = Date.now()): Promise<OwnersDoc> {
   const units = snap.ports.flatMap((p) => (p.control?.type === 'systemd' ? [p.control.unit] : []));
   const transient = units.length ? await transientUnits(units, now) : new Set<string>();
-  const ended = lookupOf(await loadEnded(undefined, now).catch(() => []));
+  const [endedList, startedList] = await Promise.all([loadEnded(undefined, now).catch(() => []), loadStarted(undefined, now).catch(() => [])]);
+  const ended = lookupOf(endedList, startedList);
   const ports: OwnedPort[] = [];
   const seen = new Map<number, Owner | null>();
   for (const p of snap.ports) {

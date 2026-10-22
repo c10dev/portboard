@@ -6,6 +6,10 @@
 //       300 ms: the shared 2 s snapshot (free ports come from it too, no `ss`), reservations cached 2 s, and the cwd's
 //       repo@branch cached 10 s per cwd (docs/security-review/v1.0.md L1). Names in `text` are quoted, sanitized
 //       data (L4, src/core/portadvice.ts).
+//   GET /api/claude/session-port?cwd=<dir>[&env=1][&machines=1]
+//       the SessionStart / CwdChanged context: cwd's repo@branch, its reserved port and, with machines=1 (the plugin's
+//       multi_machine_hint), the other machines where that repo@branch has changes or an active session, from the
+//       machines job's last list (src/features/machines.ts elsewhere(): never a live agent read).
 //
 // The hooks themselves live in claude-plugin/hooks/ (docs/claude-plugin/README.md).
 
@@ -19,7 +23,9 @@ import { devScripts, UNIT_PREFIX } from '../core/devservers.ts';
 import { launchPortOf, readLaunch } from '../core/launchjson.ts';
 import { loadReservations, type Reservation } from '../core/reservations.ts';
 import { discoverRepos } from '../core/worktrees.ts';
+import type { Elsewhere } from '../core/recommend.ts';
 import { adviceText, sessionText, worktreeOfCwd, type AdviceCmd, type AdviceFacts, type Here, type Holder } from '../core/portadvice.ts';
+import { elsewhere } from './machines.ts';
 import { eligible } from './owners.ts';
 import { ok, reply } from './router.ts';
 import type { FeatureModule } from './types.ts';
@@ -72,10 +78,12 @@ export function cachedHere(o: { run?: typeof run; now?(): number } = {}): (cwd: 
 export interface AdviceDeps {
   reservations(): Promise<Reservation[]>;
   here(cwd: string | null): Promise<Here | null>;
+  /** the other machines working on owner (machines.ts elsewhere()) */
+  elsewhere?(owner: string): Elsewhere[];
 }
 
 const reservationsCache = cachedValue(() => loadReservations(), { ttlMs: 2_000, freshMinMs: Infinity });
-const DEPS: AdviceDeps = { reservations: () => reservationsCache.get(), here: cachedHere() };
+const DEPS: AdviceDeps = { reservations: () => reservationsCache.get(), here: cachedHere(), elsewhere: (owner) => elsewhere(owner) };
 
 export async function portAdvice(
   q: { port: number; cmd: AdviceCmd; cwd: string | null; tool: string | null; session: string | null },
@@ -107,11 +115,21 @@ export async function portAdvice(
  * What the plugin's SessionStart / CwdChanged hook needs for cwd: its repo@branch, that owner's reserved port, and the
  * context line. null outside a git checkout.
  */
-export async function sessionPort(q: { cwd: string; env: boolean }, deps: AdviceDeps = DEPS): Promise<{ owner: string; port: number | null; launchPort: number | null; text: string | null } | null> {
+export async function sessionPort(
+  q: { cwd: string; env: boolean; machines?: boolean },
+  deps: AdviceDeps = DEPS,
+): Promise<{ owner: string; port: number | null; launchPort: number | null; elsewhere?: Elsewhere[]; text: string | null } | null> {
   const [here, reservations] = await Promise.all([deps.here(q.cwd), deps.reservations()]);
   if (!here) return null;
   const port = reservations.filter((r) => r.owner === here.owner).map((r) => r.port).sort((a, b) => a - b)[0] ?? null;
-  return { owner: here.owner, port, launchPort: here.launchPort ?? null, text: sessionText({ here, port, env: q.env && !!port }) };
+  const others = q.machines ? (deps.elsewhere?.(here.owner) ?? []) : undefined;
+  return {
+    owner: here.owner,
+    port,
+    launchPort: here.launchPort ?? null,
+    ...(others ? { elsewhere: others } : {}),
+    text: sessionText({ here, port, env: q.env && !!port, elsewhere: others }),
+  };
 }
 
 const validCwd = (cwd: string | null): cwd is string => cwd !== null && cwd.startsWith('/') && cwd.length <= 4096 && !/[\0\n]/.test(cwd);
@@ -145,14 +163,15 @@ export const claudeFeature: FeatureModule = {
       },
     },
     {
-      // GET /api/claude/session-port?cwd=<dir>[&env=1]: the plugin's SessionStart / CwdChanged hook. Read-only, cached
-      // like port-advice (the hook waits at most 500 ms).
+      // GET /api/claude/session-port?cwd=<dir>[&env=1][&machines=1]: the plugin's SessionStart / CwdChanged hook.
+      // Read-only, cached like port-advice (the hook waits at most 500 ms).
       method: 'GET',
       path: '/api/claude/session-port',
       async handler({ url }) {
         const cwd = url.searchParams.get('cwd');
         if (!validCwd(cwd)) return reply(400, { error: 'cwd must be an absolute path' });
-        return ok((await sessionPort({ cwd, env: url.searchParams.get('env') === '1' })) ?? { owner: null, port: null, launchPort: null, text: null });
+        const sp = url.searchParams;
+        return ok((await sessionPort({ cwd, env: sp.get('env') === '1', machines: sp.get('machines') === '1' })) ?? { owner: null, port: null, launchPort: null, text: null });
       },
     },
   ],

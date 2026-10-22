@@ -7,6 +7,8 @@
 // runs before every Bash command of the session: the preview, `npm run dev` and the user all land on the same port.
 // On SessionStart it also adds one short `[portboard]` context note (the reserved port, or how to get one).
 // CwdChanged (Claude entered another worktree) rewrites PORT for the new one, or unsets it when the new cwd has none.
+// With the plugin's `multi_machine_hint` option (off by default) or PORTBOARD_MULTI_MACHINE_HINT=1, the note also says
+// when the same repo@branch has uncommitted changes or an active session on another machine (`portboard agent`).
 //
 // Never blocks: one GET with a 500 ms timeout, every error swallowed, exit code always 0. Standalone (no imports from
 // Portboard's src/), like session-end.ts. Off: the plugin's `session_port` option or PORTBOARD_SESSION_PORT=0.
@@ -37,11 +39,18 @@ export function disabled(env: Env = process.env): boolean {
   return env.PORTBOARD_SESSION_PORT === '0' || /^(false|0|no|off)$/i.test(env.CLAUDE_PLUGIN_OPTION_SESSION_PORT ?? '');
 }
 
+const on = (v: string | undefined) => /^(true|1|yes|on)$/i.test(v ?? '');
+
+/** The cross-machine note: opt-in, since it names the other machines in the session's context */
+export function multiMachine(env: Env = process.env): boolean {
+  return on(env.PORTBOARD_MULTI_MACHINE_HINT) || on(env.CLAUDE_PLUGIN_OPTION_MULTI_MACHINE_HINT);
+}
+
 export async function lookup(cwd: string, withEnv: boolean, opts: { env?: Env; timeoutMs?: number } = {}): Promise<SessionPort | null> {
   try {
     const env = opts.env ?? process.env;
     const base = (env.PORTBOARD_URL || DEFAULT_URL).replace(/\/+$/, '');
-    const q = new URLSearchParams({ cwd, ...(withEnv ? { env: '1' } : {}) });
+    const q = new URLSearchParams({ cwd, ...(withEnv ? { env: '1' } : {}), ...(multiMachine(env) ? { machines: '1' } : {}) });
     const res = await fetch(`${base}/api/claude/session-port?${q}`, { signal: AbortSignal.timeout(opts.timeoutMs ?? TIMEOUT_MS) });
     if (!res.ok) {
       await res.body?.cancel().catch(() => {});

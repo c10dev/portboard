@@ -133,7 +133,7 @@ test('a preview never starts the alert checker; production does unless PORTBOARD
   assert.equal(at({ PORTBOARD_ALERTS: 'off' }), false, 'production with alerts off');
   // what a preview starts, so a new job that should be gated gets noticed here
   const preview = resolvePaths({ PORTBOARD_PORT: '8808' }, '/home/x');
-  assert.deepEqual(REGISTRY.jobs.filter((j) => isEnabled(j, preview)).map((j) => j.name), ['usage-sample', 'host-ports', 'selfwatch', 'worktrees-scan', 'adoption-scan', 'new-ports', 'memory', 'devhealth']);
+  assert.deepEqual(REGISTRY.jobs.filter((j) => isEnabled(j, preview)).map((j) => j.name), ['machines', 'usage-sample', 'host-ports', 'selfwatch', 'worktrees-scan', 'adoption-scan', 'new-ports', 'memory', 'devhealth']);
 });
 
 // ---- consistency ----
@@ -225,8 +225,9 @@ test('claude-session (#43): after the 0.9.0 features, no tools, ui or jobs; its 
   assert.equal(f.tools, undefined);
   assert.equal(f.ui, undefined);
   assert.equal(f.jobs, undefined);
-  assert.deepEqual(f.routes!.map((r) => `${r.method} ${r.path}`), ['POST /api/claude/session-end', 'GET /api/claude/sessions', 'POST /api/claude/settings']);
+  assert.deepEqual(f.routes!.map((r) => `${r.method} ${r.path}`), ['POST /api/claude/session-end', 'POST /api/claude/session-start', 'GET /api/claude/sessions', 'POST /api/claude/settings']);
   assert.ok(REGISTRY.routes.some((r) => r.path === '/api/claude/session-end' && r.write === true));
+  assert.ok(REGISTRY.routes.some((r) => r.path === '/api/claude/session-start' && r.write === true));
 });
 
 test('remote-connector (#31): no tools/jobs, its script only on the 설정 page, and its revokes and approval code are guarded writes', async () => {

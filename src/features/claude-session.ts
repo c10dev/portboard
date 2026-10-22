@@ -3,6 +3,7 @@
 // src/core/owners.ts) and, when the user opted in, are stopped.
 //
 //   POST /api/claude/session-end {session_id, cwd, reason}   X-Portboard + loopback only (never via tailscale serve)
+//   POST /api/claude/session-start {session_id, cwd, source}  the same; a start after an end cancels that end
 //   GET  /api/claude/sessions                                recent ended sessions, the autoStop setting, last auto-stop
 //   POST /api/claude/settings {autoStop}                     'off' (default) | 'scratchpad' | 'all'
 //
@@ -13,7 +14,7 @@
 
 import { readFile, readlink } from 'node:fs/promises';
 import { snapshot as liveSnapshot, type Snapshot } from '../core/index.ts';
-import { loadEnded, recordEnded, type EndedSession } from '../core/claude-sessions.ts';
+import { loadEnded, recordEnded, recordStarted, type EndedSession, type StartedSession } from '../core/claude-sessions.ts';
 import { AUTO_STOP, loadPrefs, setClaudeCleanup, type AutoStop } from '../core/prefs.ts';
 import { PATHS } from '../core/paths.ts';
 import { localOnly } from '../core/access.ts';
@@ -39,6 +40,13 @@ export function checkSessionEnd(body: unknown): SessionEndInput | string {
   if (b.cwd !== undefined && (typeof b.cwd !== 'string' || b.cwd.length > 4096)) return 'cwd must be a path';
   if (b.reason !== undefined && (typeof b.reason !== 'string' || !/^[A-Za-z0-9_-]{0,64}$/.test(b.reason))) return 'reason must be a short word';
   return { id: b.session_id, cwd: (b.cwd as string | undefined) ?? '', reason: (b.reason as string | undefined) || 'other' };
+}
+
+/** SessionStart's JSON: the same id and cwd rules as SessionEnd, `source` instead of `reason` */
+export function checkSessionStart(body: unknown): Omit<StartedSession, 'at'> | string {
+  const e = checkSessionEnd(body && typeof body === 'object' && !Array.isArray(body) ? { ...body, reason: (body as Record<string, unknown>).source } : body);
+  if (typeof e === 'string') return e === 'reason must be a short word' ? 'source must be a short word' : e;
+  return { id: e.id, cwd: e.cwd, source: e.reason };
 }
 
 const TRANSIENT_OURS = /^pb-(sd|dev)-/;
@@ -127,6 +135,19 @@ export const claudeSessionFeature: FeatureModule = {
             .finally(() => ctx.invalidate('snapshot'));
         }
         return ok({ recorded: true, autoStop: e.reason === 'clear' ? 'off' : mode });
+      },
+    },
+    {
+      method: 'POST',
+      path: '/api/claude/session-start',
+      write: true,
+      body: { limit: 8192 },
+      async handler({ body, req }) {
+        if (!localOnly(req)) return reply(403, { error: 'loopback only' });
+        const e = checkSessionStart(body);
+        if (typeof e === 'string') return reply(400, { error: e });
+        await recordStarted(e);
+        return ok({ recorded: true });
       },
     },
     {

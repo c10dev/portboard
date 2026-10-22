@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { MachineStatus } from '../src/core/machines.ts';
-import { DEFAULT_WEIGHTS, findWorktree, sameRepo, weightsOf, whereToRun } from '../src/core/recommend.ts';
+import { DEFAULT_WEIGHTS, elsewhereOf, findWorktree, sameRepo, weightsOf, whereToRun } from '../src/core/recommend.ts';
 import type { WorktreeBrief } from '../src/core/worktrees.ts';
 import { t } from '../src/core/i18n.ts';
 
@@ -141,4 +141,18 @@ test('findWorktree: exact matches first, then the query; conflict when one branc
   assert.deepEqual(q.matches.map((m) => m.owner), ['shop-web@main']);
   assert.equal(q.conflict, null);
   assert.deepEqual(findWorktree({ query: 'feat', machine: 'mac' }, ALL).matches.map((m) => m.machine), ['mac']);
+});
+
+test('elsewhereOf: other machines (agents) with changes, a process or an active session on that repo@branch; fresh data only', () => {
+  // the Mac: 5 uncommitted files, in use, one active session; vocado-dev is this machine, the desktop never answered
+  assert.deepEqual(elsewhereOf('Shop-Web@feat-map', ALL, { now: NOW }), [{ machine: 'mac', dirty: 5, sessions: 1, inUse: true }]);
+  assert.deepEqual(elsewhereOf('shop-web@main', ALL, { now: NOW }), []);
+  // a clean, idle checkout there is no reason to warn
+  const quiet = machine({ ...mac, worktrees: [wt({ dirty: 0, inUse: false })], claude: { ...mac.claude!, sessions: [{ ...mac.claude!.sessions[0], idle: true }] } });
+  assert.deepEqual(elsewhereOf('shop-web@feat-map', [quiet], { now: NOW }), []);
+  // an active session alone counts, with no checkout listed
+  const sessionOnly = machine({ ...mac, worktrees: null });
+  assert.deepEqual(elsewhereOf('shop-web@feat-map', [sessionOnly], { now: NOW }), [{ machine: 'mac', dirty: 0, sessions: 1, inUse: false }]);
+  // 10 minutes later the Mac's data is too old to warn about
+  assert.deepEqual(elsewhereOf('shop-web@feat-map', ALL, { now: NOW + 10 * 60_000 }), []);
 });

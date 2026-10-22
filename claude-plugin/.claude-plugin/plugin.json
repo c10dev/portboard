@@ -1,7 +1,7 @@
 {
   "name": "portboard",
-  "version": "0.2.0",
-  "description": "Portboard MCP server, a dev-servers-and-ports skill, a PreToolUse nudge when a Bash command hard-codes or kills a port, the worktree's reserved port as PORT in each session, and SessionEnd cleanup",
+  "version": "0.3.0",
+  "description": "Portboard MCP server, dev-servers-and-ports and where-to-run skills, /where, /machines and /wt commands, a PreToolUse nudge when a Bash command hard-codes or kills a port, the worktree's reserved port as PORT in each session, and SessionEnd cleanup",
   "author": {
     "name": "c10dev",
     "url": "https://github.com/c10dev"
@@ -20,6 +20,12 @@
       "title": "Worktree port as PORT",
       "description": "At session start and when Claude changes into another worktree, set PORT for Bash commands to the port Portboard reserved for that worktree, and add one line of context about it.",
       "default": true
+    },
+    "multi_machine_hint": {
+      "type": "boolean",
+      "title": "Other-machine hint",
+      "description": "At session start, add a line when this worktree's repo@branch has uncommitted changes or an active Claude Code session on another machine running `portboard agent`. Off by default: it names those machines in the session's context.",
+      "default": false
     }
   }
 }

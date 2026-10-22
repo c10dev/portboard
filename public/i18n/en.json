@@ -1097,6 +1097,16 @@
   "portadvice.resv.noteParen": " (note {note})",
   "portadvice.resv.other": "Port {port} is reserved by someone else (reservation: {owner}{note}).",
   "portadvice.resv.own": "Port {port} is reserved for this worktree ({owner}){note}.",
+  "portadvice.session.elsewhere": "{owner} is also being worked on elsewhere: {list}. Pull or hand off that work before editing the same files here (find_worktree shows where).",
+  "portadvice.session.elsewhereDirty": {
+    "one": "{n} uncommitted file",
+    "other": "{n} uncommitted files"
+  },
+  "portadvice.session.elsewhereInUse": "a process works there",
+  "portadvice.session.elsewhereSessions": {
+    "one": "{n} active Claude Code session",
+    "other": "{n} active Claude Code sessions"
+  },
   "portadvice.session.env": "PORT={port} is set for this session's Bash commands.",
   "portadvice.session.launchDiffers": ".claude/launch.json here gives the preview port {launch}, not the reserved {port}. MCP write_launch_config fixes it.",
   "portadvice.session.launchNone": "For Claude Code's preview, MCP write_launch_config puts the reserved port into .claude/launch.json.",

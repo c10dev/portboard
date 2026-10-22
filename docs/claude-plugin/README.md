@@ -8,8 +8,11 @@ Claude Code plugin marketplace, and the `portboard` plugin brings Portboard into
 |---|---|---|
 | MCP server | [`claude-plugin/.mcp.json`](../../claude-plugin/.mcp.json) → [`bin/mcp.ts`](../../claude-plugin/bin/mcp.ts) | the local stdio server ([mcp.md](../mcp.md)), run from the checkout |
 | Skill | [`skills/dev-servers-and-ports`](../../claude-plugin/skills/dev-servers-and-ports/SKILL.md) | when to call `list_ports`, `free_port` → `reserve_port` → `start_dev_server`, and `cleanup_servers` instead of kill (Korean and English triggers) |
+| Skill | [`skills/where-to-run`](../../claude-plugin/skills/where-to-run/SKILL.md) | when to call `where_to_run`, `find_worktree` and `machine_status` before suggesting a machine or creating a worktree ([multi-host.md](../multi-host.md#machines-machine_status-and-where_to_run)) |
+| Commands | [`commands/`](../../claude-plugin/commands/) | `/portboard:where <task>`, `/portboard:machines [name]`, `/portboard:wt <repo@branch>`: the three machine tools, answered in a few lines |
 | Port nudge | [`hooks/port-nudge.ts`](../../claude-plugin/hooks/port-nudge.ts) (PreToolUse, Bash) | adds `[portboard]` context when a command hard-codes a dev-server port or kills by port. Never blocks, never asks |
 | Worktree port | [`hooks/session-port.ts`](../../claude-plugin/hooks/session-port.ts) (SessionStart, CwdChanged) | exports `PORT=<reserved port>` for the session's Bash commands and adds one `[portboard]` line at session start ([below](#the-worktree-port-as-port)) |
+| Session start | [`hooks/session-start.ts`](../../claude-plugin/hooks/session-start.ts) (SessionStart) | tells Portboard the session started or resumed, so an earlier end record of the same id stops counting at once |
 | Session end | [`hooks/session-end.ts`](../../claude-plugin/hooks/session-end.ts) (SessionEnd) | tells Portboard the session ended (#43) |
 
 The marketplace is [`.claude-plugin/marketplace.json`](../../.claude-plugin/marketplace.json) at the repo root; the
@@ -168,6 +171,24 @@ set, and does nothing when Portboard can't be reached. Only reservations count: 
 (`reserve_port`, `start_dev_server` and `write_launch_config` do).
 
 Off: the plugin's `session_port` option, or `PORTBOARD_SESSION_PORT=0`.
+
+### The same branch on another machine
+
+With the plugin's `multi_machine_hint` option on (off by default) or `PORTBOARD_MULTI_MACHINE_HINT=1`, the hook asks
+with `machines=1`, and the line also says when the session's `repo@branch` has uncommitted files, a working process or
+an active Claude Code session on another machine that runs `portboard agent`, for example
+`"shop-web@feat-map" is also being worked on elsewhere: "mac" (5 uncommitted files, 1 active Claude Code session)`.
+Machine names are quoted data, at most four are named, and only data read in the last 5 minutes counts. The answer
+never waits for an agent: with agents listed, the dashboard reads the machine list once a minute and the hook is
+answered from that. It is opt-in because it puts the other machines' names into the session's context.
+
+## Session start and end records
+
+The SessionStart hook also POSTs `{session_id, cwd, source}` to `/api/claude/session-start` (loopback only,
+`X-Portboard: 1`, 500 ms, no output). Portboard keeps the last 200 starts for 7 days next to the ended list in
+`claude-sessions.json`; a start recorded after a session's end (the desktop app resumes the same id in a new process)
+cancels that end at once, so its servers stop being `session-ended-hook` cleanup candidates without waiting for the
+transcript to move. See [session-end.md](session-end.md) for the end side.
 
 ## Claude Code's preview
 

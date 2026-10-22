@@ -101,6 +101,8 @@ The board's stdio MCP server (and `GET /api/machines`, `/api/where-to-run`, `/ap
 
 **Portboard never starts anything on another machine.** The answer says where; a person opens the session.
 
+The Claude Code plugin brings these into sessions: the `where-to-run` skill, the `/portboard:where`, `/portboard:machines` and `/portboard:wt` commands, and, with its `multi_machine_hint` option, a session-start line when the session's `repo@branch` has uncommitted files or an active session on another machine. With agents listed, the dashboard reads the list once a minute for that line, so the hook never waits for an agent ([claude-plugin/](claude-plugin/README.md#the-same-branch-on-another-machine)).
+
 ### Where the data comes from
 
 | Machine | Sessions | Checkouts | Load |
