@@ -52,6 +52,9 @@ export interface WorktreeInfo {
   inUse: number[];
   /** Claude Code created it (under <repo>/.claude/worktrees/): Claude locks, archives and removes it, not Portboard */
   claude?: boolean;
+  /** Commits its branch has that its upstream lacks, and the other way, as of the last fetch; null: no upstream (or gone) */
+  ahead?: number | null;
+  behind?: number | null;
   /** Why it can't be removed (empty: it can) */
   keep: string[];
   removable: boolean;
@@ -68,7 +71,22 @@ export interface RepoInfo {
   error: string | null;
   /** A repo without linked worktrees: the branch its main checkout is on, read from .git/HEAD (no git run) */
   checkoutBranch?: string | null;
+  /**
+   * origin's claude/* branches with a commit in the last CLAUDE_BRANCH_WINDOW_MS that no worktree here has checked
+   * out: work a cloud session (or another machine) pushed, as of the last fetch; with its PR when gh knows one
+   */
+  claudeBranches?: ClaudeBranch[];
 }
+
+export interface ClaudeBranch {
+  branch: string;
+  /** committer date of the branch tip (ISO) */
+  at: string;
+  pr: { number: number; state: 'OPEN' | 'MERGED' | 'CLOSED' } | null;
+}
+
+/** A claude/* branch pushed within this long counts as work in progress (the cloud's estimated sessions) */
+export const CLAUDE_BRANCH_WINDOW_MS = 48 * 60 * 60_000;
 
 /** A repo without linked worktrees (left out of repos): only its main checkout and the branch it is on */
 export interface CheckoutInfo {
@@ -125,6 +143,34 @@ export function parsePorcelain(text: string): PorcelainEntry[] {
     });
   }
   return out;
+}
+
+export interface RefFacts {
+  /** local branch → its upstream and how far apart they are ("gone": the upstream was deleted) */
+  tracking: Map<string, { upstream: string; ahead: number; behind: number; gone: boolean }>;
+  /** origin's claude/* branches (without origin/) and their tip's committer date */
+  claude: { branch: string; at: string }[];
+}
+
+/** The for-each-ref line format parseRefs reads: refname, upstream, its track, committer date, NUL-separated */
+export const REFS_FORMAT = '%(refname)%00%(upstream:short)%00%(upstream:track,nobracket)%00%(committerdate:iso-strict)';
+
+/** `git for-each-ref --format=REFS_FORMAT refs/heads refs/remotes/origin/claude/` → tracking and claude/* branches. Pure. */
+export function parseRefs(text: string): RefFacts {
+  const tracking: RefFacts['tracking'] = new Map();
+  const claude: RefFacts['claude'] = [];
+  for (const line of text.split('\n')) {
+    const [ref, upstream, track, date] = line.split('\0');
+    if (!ref || date === undefined) continue;
+    if (ref.startsWith('refs/heads/')) {
+      if (!upstream) continue;
+      const n = (word: string) => Number(new RegExp(`${word} (\\d+)`).exec(track)?.[1] ?? 0);
+      tracking.set(ref.slice(11), { upstream, ahead: n('ahead'), behind: n('behind'), gone: track === 'gone' });
+    } else if (ref.startsWith('refs/remotes/origin/claude/') && Number.isFinite(Date.parse(date))) {
+      claude.push({ branch: ref.slice('refs/remotes/origin/'.length), at: new Date(Date.parse(date)).toISOString() });
+    }
+  }
+  return { tracking, claude };
 }
 
 /** "owner/name" from a GitHub remote URL, or null */
@@ -423,6 +469,8 @@ async function scanRepo(repo: string, ctx: ScanCtx, prev: RepoCache | undefined)
   }
 
   const listP = git(['worktree', 'list', '--porcelain']);
+  // One local read for every branch's ahead/behind and origin's claude/* branches (as of the last fetch; no network)
+  const refsP = git(['for-each-ref', `--format=${REFS_FORMAT}`, 'refs/heads', 'refs/remotes/origin/claude/']);
   const metaSig = (await Promise.all(['config', 'packed-refs', 'refs/remotes/origin/HEAD', 'refs/heads', 'refs/heads/main', 'refs/heads/master'].map((f) => lstatSig(join(common, f))))).join('|');
   if (prev && prev.metaSig === metaSig) {
     info.remote = prev.remote;
@@ -538,6 +586,8 @@ async function scanRepo(repo: string, ctx: ScanCtx, prev: RepoCache | undefined)
 
   const prs = await prsP;
   info.prsKnown = !!prs;
+  const refsR = await refsP;
+  const refs = refsR.ok ? parseRefs(refsR.stdout) : null;
   info.worktrees = await pool(entries, 6, async (e): Promise<WorktreeInfo> => {
     const main = e.path === repo;
     const pw = prev?.worktrees.get(e.path);
@@ -597,8 +647,20 @@ async function scanRepo(repo: string, ctx: ScanCtx, prev: RepoCache | undefined)
       claude: !main && isClaudeWorktree(e.path),
     };
     const keep = keepReasons(base);
-    return { ...base, keep, removable: !main && !e.prunable && keep.length === 0 };
+    const up = refs && e.branch ? refs.tracking.get(e.branch) : undefined;
+    const apart = refs ? { ahead: up && !up.gone ? up.ahead : null, behind: up && !up.gone ? up.behind : null } : {};
+    return { ...base, ...apart, keep, removable: !main && !e.prunable && keep.length === 0 };
   });
+  if (refs) {
+    const here = new Set(entries.map((e) => e.branch).filter(Boolean));
+    info.claudeBranches = refs.claude
+      .filter((b) => !here.has(b.branch) && ctx.now - Date.parse(b.at) <= CLAUDE_BRANCH_WINDOW_MS)
+      .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+      .map((b) => {
+        const pr = prs?.get(b.branch);
+        return { ...b, pr: pr ? { number: pr.number, state: pr.state } : null };
+      });
+  }
   return { info, next };
 }
 
@@ -724,6 +786,9 @@ export interface WorktreeBrief {
   claude: boolean;
   /** the port reserved for this owner (or for its path) */
   reservedPort: number | null;
+  /** commits not on its upstream / upstream commits not here, as of the last fetch; null: no upstream, or not read */
+  ahead: number | null;
+  behind: number | null;
 }
 
 export const ownerName = (repo: string, branch: string | null) => `${repo}@${branch ?? 'detached'}`;
@@ -737,12 +802,15 @@ export function briefOf(doc: Pick<WorktreesDoc, 'repos' | 'checkouts'>, reservat
     for (const w of r.worktrees) {
       if (w.prunable) continue;
       const owner = ownerName(r.name, w.branch);
-      out.push({ owner, repo: r.name, remote, branch: w.branch, path: w.short, main: w.main, dirty: w.changes, lastCommit: w.lastCommit, inUse: w.inUse.length > 0, claude: !!w.claude, reservedPort: reserved(owner, w.path, w.short) });
+      out.push({
+        owner, repo: r.name, remote, branch: w.branch, path: w.short, main: w.main, dirty: w.changes, lastCommit: w.lastCommit, inUse: w.inUse.length > 0, claude: !!w.claude,
+        reservedPort: reserved(owner, w.path, w.short), ahead: w.ahead ?? null, behind: w.behind ?? null,
+      });
     }
   }
   for (const c of doc.checkouts ?? []) {
     const owner = ownerName(c.name, c.branch);
-    out.push({ owner, repo: c.name, remote: null, branch: c.branch, path: c.short, main: true, dirty: null, lastCommit: null, inUse: false, claude: false, reservedPort: reserved(owner, c.path, c.short) });
+    out.push({ owner, repo: c.name, remote: null, branch: c.branch, path: c.short, main: true, dirty: null, lastCommit: null, inUse: false, claude: false, reservedPort: reserved(owner, c.path, c.short), ahead: null, behind: null });
   }
   return out;
 }

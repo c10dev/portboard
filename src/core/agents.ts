@@ -92,6 +92,8 @@ export function checkPorts(v: unknown): { at: number; listening: ListenPort[] } 
 
 const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
 const str = (x: unknown, max: number) => (typeof x === 'string' && x ? x.slice(0, max) : null);
+/** a commit count: a whole number 0 or more, else null */
+const count = (x: unknown) => (Number.isInteger(x) && (x as number) >= 0 && (x as number) < 1e7 ? (x as number) : null);
 const MAX_ROWS = 500;
 
 /** /agent/v1/status, checked field by field and capped (500 sessions, 500 worktrees); anything else is null */
@@ -124,6 +126,9 @@ export function checkStatus(v: unknown): AgentReport | null {
         inUse: w.inUse === true,
         claude: w.claude === true,
         reservedPort: Number.isInteger(w.reservedPort) && w.reservedPort > 0 && w.reservedPort < 65536 ? w.reservedPort : null,
+        // an agent before ahead/behind sends neither: null, as for a branch without an upstream
+        ahead: count(w.ahead),
+        behind: count(w.behind),
       }))
     : null;
   const p = isObj(v.ports) ? v.ports : null;

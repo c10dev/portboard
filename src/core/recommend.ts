@@ -120,6 +120,7 @@ function score(m: MachineStatus, req: RunRequest, all: MachineStatus[], w: Weigh
         cwd = exact.path;
         why.push(exact.dirty ? t('machinesMsg.why.worktreeDirty', { owner: exact.owner, n: exact.dirty }) : t('machinesMsg.why.worktreeHere', { owner: exact.owner }));
         if (exact.reservedPort) why.push(t('machinesMsg.why.reservedPort', { port: exact.reservedPort }));
+        if (exact.behind) caveats.push(t('machinesMsg.caveat.behind', { owner: exact.owner, n: exact.behind }));
       } else if (repoHere.length) {
         s += w.locality * 0.5;
         cwd = (repoHere.find((x) => x.main) ?? repoHere[0]).path;
@@ -147,6 +148,16 @@ function score(m: MachineStatus, req: RunRequest, all: MachineStatus[], w: Weigh
         caveats.push(t('machinesMsg.caveat.dirtyElsewhere', { machine: o.name, n: there.dirty }));
         break;
       }
+    }
+    // a cloud session pushed to this branch lately (the cloud's estimate; its project is the folder name): wherever it
+    // runs, it would race that one
+    const cloudSession = all
+      .filter((o) => o.kind === 'cloud')
+      .flatMap((o) => o.claude?.sessions ?? [])
+      .find((x) => !x.idle && x.project && x.worktree?.endsWith(`@${req.branch}`) && lc(x.project) === lc(req.repo!.split('/').at(-1)!));
+    if (cloudSession) {
+      s -= w.conflict / 4;
+      caveats.push(t('machinesMsg.caveat.cloudBranch', { branch: req.branch!, n: cloudSession.idleMin ?? 0 }));
     }
   }
 

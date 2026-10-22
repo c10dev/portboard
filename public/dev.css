@@ -18,6 +18,8 @@
 .wt-row.wt-remote { background: var(--neutral-bg); }
 .wt-mach { display: inline-block; margin-right: 2px; padding: 0 6px; border-radius: 6px; background: var(--neutral-bg); color: var(--text-2); font-size: 11px; font-weight: 500; vertical-align: 1px; }
 .wt-row.wt-remote .wt-mach { background: var(--surface); }
+/* origin claude/* branches pushed from elsewhere (a cloud session, as a rule) */
+.wt-cloud { margin: 0; padding: 6px 14px; border-bottom: 1px solid var(--line); color: var(--text-2); font-size: 12px; background: var(--info-bg); overflow-wrap: anywhere; }
 .wt-row input[disabled] { visibility: hidden; }
 .wt-more { padding: 6px 14px 10px; }
 .wt-more summary { cursor: pointer; color: var(--muted); font-size: 12px; }

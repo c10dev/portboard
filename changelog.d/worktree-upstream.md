@@ -1,0 +1,4 @@
+### Added
+- Worktrees: each checkout carries `ahead` and `behind`, its distance from its upstream as of the last fetch (`null` without one). It is read with one `git for-each-ref` per repo, and the 개발 tab and the machine panel show it as `↑n ↓m`.
+- Worktrees: a repo lists `claudeBranches`, the `claude/*` branches `origin` got in the last 48 hours that no checkout here has, each with its PR when `gh` knows one. The 개발 tab shows them under the repo.
+- Machines: the cloud's Claude Code sessions are estimated from those branches (`source: "github"`). Branches whose PR is merged or closed are left out, and a branch pushed within the hour counts as active. `where_to_run` adds a caveat, and a quarter of the conflict weight, when an active estimate is on the branch asked for. It also tells you to pull first when the checkout is behind its upstream.

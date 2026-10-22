@@ -27,6 +27,8 @@
      "mergedByAncestry": null,
      "pr": null,
      "inUse": [],
+     "ahead": 0,
+     "behind": 0,
      "keep": [
       "main worktree"
      ],
@@ -53,6 +55,8 @@
      "inUse": [
       831911
      ],
+     "ahead": 2,
+     "behind": 0,
      "keep": [
       "uncommitted changes",
       "in use (dev server on 5281)"
@@ -78,8 +82,25 @@
       "headMatches": true
      },
      "inUse": [],
+     "ahead": 0,
+     "behind": 3,
      "keep": [],
      "removable": true
+    }
+   ],
+   "claudeBranches": [
+    {
+     "branch": "claude/fix-coupon-rounding",
+     "at": "2026-10-17T12:14:02.000Z",
+     "pr": {
+      "number": 142,
+      "state": "OPEN"
+     }
+    },
+    {
+     "branch": "claude/a11y-sweep",
+     "at": "2026-10-17T09:05:40.000Z",
+     "pr": null
     }
    ]
   },
@@ -109,6 +130,8 @@
      "inUse": [
       2408824
      ],
+     "ahead": 0,
+     "behind": 0,
      "keep": [
       "main worktree"
      ],
@@ -129,12 +152,15 @@
      "mergedByAncestry": false,
      "pr": null,
      "inUse": [],
+     "ahead": null,
+     "behind": null,
      "keep": [
       "not merged"
      ],
      "removable": false
     }
-   ]
+   ],
+   "claudeBranches": []
   },
   {
    "name": "portboard",
@@ -162,12 +188,15 @@
      "inUse": [
       3690402
      ],
+     "ahead": 0,
+     "behind": 0,
      "keep": [
       "main worktree"
      ],
      "removable": false
     }
-   ]
+   ],
+   "claudeBranches": []
   }
  ],
  "totals": {

@@ -111,11 +111,11 @@ test('full scan: what the old scanner reported, with batched log and ancestry', 
   assert.deepEqual(full.scan, { mode: 'full', spawns: c.counts });
 });
 
-test('incremental scan with nothing changed: worktree list, the default tip and gh only', async () => {
+test('incremental scan with nothing changed: worktree list, the refs, the default tip and gh only', async () => {
   const c = counting();
   const doc = await scan(c, { mode: 'incremental' });
   assert.equal(norm(doc), norm(full));
-  assert.deepEqual(c.counts, { git: 2, gh: 1 });
+  assert.deepEqual(c.counts, { git: 3, gh: 1 });
 });
 
 test('an edit deep in a tracked file is seen (same size), and only that worktree gets a git status', async () => {
@@ -213,4 +213,40 @@ test('du again when the files changed and the size is older than SIZE_CHANGED_TT
   const doc = await scan(later, { mode: 'incremental', now: Date.now() + SIZE_CHANGED_TTL_MS });
   assert.equal(later.counts.du, 1);
   assert.ok(byPath(doc, wt('d1')).sizeKb! >= 128);
+});
+
+test('ahead/behind from the upstream as of the last fetch, and origin claude/* branches pushed lately, in the same refs read', async () => {
+  const commitOn = (parent: string, msg: string, date?: string) =>
+    execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-C', repo, 'commit-tree', `${parent}^{tree}`, '-p', parent, '-m', msg], {
+      encoding: 'utf8',
+      env: { ...process.env, ...(date ? { GIT_COMMITTER_DATE: date, GIT_AUTHOR_DATE: date } : {}) },
+    }).trim();
+  const track = (branch: string) => {
+    git(repo, 'config', `branch.${branch}.remote`, 'origin');
+    git(repo, 'config', `branch.${branch}.merge`, `refs/heads/${branch}`);
+  };
+  // feat has one commit origin/feat lacks; origin/m1 has one m1 lacks; m2's upstream was deleted
+  git(repo, 'update-ref', 'refs/remotes/origin/feat', 'feat~1');
+  track('feat');
+  git(repo, 'update-ref', 'refs/remotes/origin/m1', commitOn(git(repo, 'rev-parse', 'm1'), 'pushed from elsewhere'));
+  track('m1');
+  track('m2');
+  const tip = git(repo, 'rev-parse', 'main');
+  git(repo, 'update-ref', 'refs/remotes/origin/claude/fresh', commitOn(tip, 'cloud work'));
+  git(repo, 'update-ref', 'refs/remotes/origin/claude/old', commitOn(tip, 'old work', new Date(Date.now() - 3 * 24 * 3600_000).toISOString()));
+  prs.push({ number: 7, headRefName: 'claude/fresh', headRefOid: git(repo, 'rev-parse', 'origin/claude/fresh'), state: 'OPEN' });
+
+  await scan(counting(), { mode: 'incremental' }); // the config changed: remote and metadata read again
+  const c = counting();
+  const doc = await scan(c, { mode: 'incremental' });
+  assert.equal(c.counts.git, 3, 'still one for-each-ref, no rev-list per branch');
+  const apart = (p: string) => [byPath(doc, p).ahead, byPath(doc, p).behind];
+  assert.deepEqual(apart(wt('feat')), [1, 0]);
+  assert.deepEqual(apart(wt('m1')), [0, 1]);
+  assert.deepEqual(apart(wt('m2')), [null, null], 'upstream gone');
+  assert.deepEqual(apart(wt('m3')), [null, null], 'no upstream');
+  assert.deepEqual(doc.repos[0].claudeBranches!.map((b) => [b.branch, b.pr]), [['claude/fresh', { number: 7, state: 'OPEN' }]], 'claude/old is outside the window');
+  const full = await scan(counting(), { mode: 'full' });
+  assert.deepEqual(full.repos[0].worktrees.map((w) => [w.ahead, w.behind]), doc.repos[0].worktrees.map((w) => [w.ahead, w.behind]));
+  assert.deepEqual(full.repos[0].claudeBranches, doc.repos[0].claudeBranches);
 });
