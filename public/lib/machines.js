@@ -19,9 +19,9 @@ export function loadPct(m) {
   return { cpu, mem };
 }
 
-/** ok (fresh), warn (stale, or busy), bad (an agent that doesn't answer), off (offline, or the cloud: nothing to read) */
+/** ok (fresh), warn (stale, or busy), bad (an agent that doesn't answer), off (offline, or the cloud with nothing estimated) */
 export function machineTone(m) {
-  if (m.kind === 'cloud') return 'off';
+  if (m.kind === 'cloud') return m.claude?.active ? 'ok' : 'off';
   if (!m.online) return 'off';
   if (m.error && !m.checkedAt) return 'bad';
   if (m.stale) return 'warn';
@@ -34,7 +34,8 @@ export const busyCheckouts = (m) => (m.worktrees ?? []).filter((w) => (w.dirty ?
 
 /** The strip's line under the name: sessions, checkouts with work, data age when stale */
 export function machineBits(m, now = Date.now()) {
-  if (m.kind === 'cloud') return [t('machines.cloud.line')];
+  // the cloud's sessions are an estimate from claude/* branches (src/core/machines.ts cloudEstimate)
+  if (m.kind === 'cloud') return m.claude ? [t('machines.cloud.estimate', { n: m.claude.active }), ...(m.claude.idle ? [t('machines.idle', { n: m.claude.idle })] : [])] : [t('machines.cloud.line')];
   if (!m.online && !m.checkedAt) return [t('machines.offline')];
   const bits = [];
   if (m.claude) bits.push(m.maxSessions ? t('machines.sessions', { active: m.claude.active, max: m.maxSessions }) : t('machines.sessionsNoMax', { active: m.claude.active }));
@@ -111,4 +112,26 @@ export function remoteRepos(machines, machine = null) {
     out.push(...by.values());
   }
   return out;
+}
+
+/** A checkout's distance from its upstream, as of the last fetch: [text, tone, title], or null (no upstream, or level) */
+export function upstreamBadge(w) {
+  const ahead = w.ahead ?? 0;
+  const behind = w.behind ?? 0;
+  if (!ahead && !behind) return null;
+  const text = [ahead ? `↑${ahead}` : null, behind ? `↓${behind}` : null].filter(Boolean).join(' ');
+  return [text, behind ? 'warn' : 'info', t('machines.upstream', { ahead, behind })];
+}
+
+/** The 개발 tab's line under a repo: origin's claude/* branches pushed lately that no checkout here has (at most 3 named) */
+export function cloudBranchLine(repo, now = Date.now()) {
+  const list = repo.claudeBranches ?? [];
+  if (!list.length) return null;
+  const one = (b) => {
+    const min = Math.max(0, Math.round((now - Date.parse(b.at)) / 60_000));
+    const when = min < 60 ? t('machines.minAgo', { n: min }) : t('machines.hoursAgo', { n: Math.round(min / 60) });
+    return `${b.branch} (${[b.pr ? `PR #${b.pr.number}` : null, when].filter(Boolean).join(', ')})`;
+  };
+  const named = list.slice(0, 3).map(one).join(', ');
+  return t('dev.cloudWork', { list: list.length > 3 ? `${named} ${t('dev.cloudWork.more', { n: list.length - 3 })}` : named });
 }

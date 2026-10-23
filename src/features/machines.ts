@@ -16,7 +16,7 @@
 import { agents } from '../core/agents.ts';
 import { devices, type Devices } from '../core/devices.ts';
 import { snapshot } from '../core/index.ts';
-import { buildMachines, dataAge, localStatus, type MachineStatus } from '../core/machines.ts';
+import { buildMachines, cloudEstimate, dataAge, localStatus, type MachineStatus } from '../core/machines.ts';
 import { elsewhereOf, findWorktree, NEEDS, whereToRun, type Elsewhere, type FindQuery, type Need, type RunRequest } from '../core/recommend.ts';
 import { loadReservations } from '../core/reservations.ts';
 import { SITE } from '../core/site.ts';
@@ -62,13 +62,15 @@ let last: MachineStatus[] = [];
 
 async function collect(src: Sources, fresh: boolean): Promise<MachineStatus[]> {
   if (fresh && freshGate.ask(false) === 'started') agents().refresh();
+  let doc: WorktreesDoc | null = null;
   const [self, devs, reads] = await Promise.all([
-    localStatus({ host: SITE.host, snapshot: src.snapshot, worktrees: worktreesNow, reservations: () => loadReservations() }),
+    localStatus({ host: SITE.host, snapshot: src.snapshot, worktrees: async () => (doc = await worktreesNow()), reservations: () => loadReservations() }),
     src.devices().catch(() => null),
     agents().get(),
   ]);
   const list = devs?.devices ?? [];
-  last = buildMachines({ site: SITE, self, selfId: list.find((d) => d.self)?.id ?? null, agents: reads, targets: SITE.agents, devices: list });
+  const cloudWork = SITE.machines.cloud.enabled ? cloudEstimate(doc) : null;
+  last = buildMachines({ site: SITE, self, selfId: list.find((d) => d.self)?.id ?? null, agents: reads, targets: SITE.agents, devices: list, cloudWork });
   return last;
 }
 
@@ -149,9 +151,11 @@ const statusTool: Tool = {
       'and the cloud when portboard.json machines.cloud.enabled is on. Per machine: kind (linux, mac, windows, wsl, ' +
       'cloud), online, when its data was read (stale after 60 s), load (cores, load1, memory, disk), Claude Code ' +
       'sessions (8-character id, project, repo@branch worktree, idle minutes, CPU, MB; active vs idle), checkouts ' +
-      '(repo@branch, dirty file count, in use, Claude Code worktree, reserved port), listening port and dev server ' +
+      '(repo@branch, dirty file count, in use, Claude Code worktree, reserved port, commits ahead/behind its upstream ' +
+      'as of the last fetch), listening port and dev server ' +
       'counts, capabilities (systemd, dev-servers, docker, macos, tags from portboard.json), maxSessions and how a ' +
-      'person opens a session there (launch). The cloud has no readable state (reach none). Read-only.',
+      'person opens a session there (launch). The cloud has no readable state (reach none); its claude is an estimate ' +
+      '(source github) from the claude/* branches origin got lately with no merged or closed PR. Read-only.',
     inputSchema: {
       type: 'object',
       properties: {

@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FakeDocument } from './fixtures/fake-dom.ts';
-import { alsoOn, busyCheckouts, elsewhereByOwner, loadPct, machineBits, machineOptions, machineTone, remoteRepos, sameRepo } from '../public/lib/machines.js';
+import { alsoOn, busyCheckouts, cloudBranchLine, elsewhereByOwner, loadPct, machineBits, machineOptions, machineTone, remoteRepos, sameRepo, upstreamBadge } from '../public/lib/machines.js';
 import { t } from '../public/lib/i18n.js';
 
 const NOW = Date.parse('2026-10-22T05:00:00Z');
@@ -54,6 +54,26 @@ test('machineBits: sessions against maxSessions, idle, checkouts with work, data
   assert.deepEqual(machineBits(desktop, NOW), [t('machines.offline')]);
   assert.deepEqual(machineBits(cloud, NOW), [t('machines.cloud.line')]);
   assert.deepEqual(busyCheckouts(mac).map((w: any) => w.owner), ['shop-web@feat-map']);
+});
+
+test('the cloud with an estimate: tone on, active and idle from claude/* branches', () => {
+  const est = machine({ ...cloud, claude: { cliVersion: null, active: 2, idle: 1, source: 'github', sessions: [] } });
+  assert.equal(machineTone(est), 'ok');
+  assert.deepEqual(machineBits(est, NOW), [t('machines.cloud.estimate', { n: 2 }), t('machines.idle', { n: 1 })]);
+  assert.equal(machineTone(machine({ ...cloud, claude: { ...est.claude, active: 0 } })), 'off');
+});
+
+test('upstreamBadge and cloudBranchLine: ↑ahead ↓behind (warn when behind); the 개발 tab line names three branches', () => {
+  assert.equal(upstreamBadge(wt()), null, 'no upstream');
+  assert.equal(upstreamBadge(wt({ ahead: 0, behind: 0 })), null, 'level');
+  assert.deepEqual(upstreamBadge(wt({ ahead: 2, behind: 0 })), ['↑2', 'info', t('machines.upstream', { ahead: 2, behind: 0 })]);
+  assert.deepEqual(upstreamBadge(wt({ ahead: 1, behind: 4 })).slice(0, 2), ['↑1 ↓4', 'warn']);
+  assert.equal(cloudBranchLine({ claudeBranches: [] }, NOW), null);
+  const b = (branch: string, min: number, pr: number | null = null) => ({ branch, at: at(min * 60), pr: pr ? { number: pr, state: 'OPEN' } : null });
+  const line = cloudBranchLine({ claudeBranches: [b('claude/a', 12, 7), b('claude/b', 180), b('claude/c', 5), b('claude/d', 1)] }, NOW);
+  assert.equal(line, t('dev.cloudWork', {
+    list: `claude/a (PR #7, ${t('machines.minAgo', { n: 12 })}), claude/b (${t('machines.hoursAgo', { n: 3 })}), claude/c (${t('machines.minAgo', { n: 5 })}) ${t('dev.cloudWork.more', { n: 1 })}`,
+  }));
 });
 
 test('sameRepo: folder name or GitHub owner/name, any case', () => {

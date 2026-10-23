@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { githubRepo, isClaudeWorktree, keepReasons, parsePorcelain, pidsInside, type WorktreeInfo } from '../src/core/worktrees.ts';
+import { githubRepo, isClaudeWorktree, keepReasons, parsePorcelain, parseRefs, pidsInside, type WorktreeInfo } from '../src/core/worktrees.ts';
 import { L } from './fixtures/locale.ts';
 import { loadSavedWorktrees } from '../src/features/worktrees.ts';
 
@@ -75,4 +75,24 @@ test("Claude Code's own worktrees (.claude/worktrees/<name>) are Claude's to rem
   const keep = keepReasons(wt({ mergedByAncestry: true, claude: true }));
   assert.equal(keep.length, 1);
   assert.match(keep[0], /Claude/);
+});
+
+test('parseRefs: tracking (ahead, behind, both, gone, none) and origin claude/* branches; junk lines skipped', () => {
+  const line = (...f: string[]) => f.join('\0');
+  const r = parseRefs([
+    line('refs/heads/main', 'origin/main', '', '2026-10-21T09:00:00+09:00'),
+    line('refs/heads/a', 'origin/a', 'ahead 2', '2026-10-21T09:00:00+09:00'),
+    line('refs/heads/b', 'origin/b', 'behind 3', '2026-10-21T09:00:00+09:00'),
+    line('refs/heads/c', 'origin/c', 'ahead 1, behind 4', '2026-10-21T09:00:00+09:00'),
+    line('refs/heads/d', 'origin/d', 'gone', '2026-10-21T09:00:00+09:00'),
+    line('refs/heads/e', '', '', '2026-10-21T09:00:00+09:00'),
+    line('refs/remotes/origin/claude/x-1', '', '', '2026-10-21T09:00:00+09:00'),
+    line('refs/remotes/origin/claude/bad', '', '', 'not a date'),
+    'garbage',
+    '',
+  ].join('\n'));
+  assert.deepEqual([...r.tracking].map(([b, x]) => [b, x.ahead, x.behind, x.gone]), [
+    ['main', 0, 0, false], ['a', 2, 0, false], ['b', 0, 3, false], ['c', 1, 4, false], ['d', 0, 0, true],
+  ]);
+  assert.deepEqual(r.claude, [{ branch: 'claude/x-1', at: '2026-10-21T00:00:00.000Z' }]);
 });

@@ -231,6 +231,8 @@
     "other": "{n} changes"
   },
   "dev.claude": "Claude Code",
+  "dev.cloudWork": "claude/* branches pushed from elsewhere lately: {list}",
+  "dev.cloudWork.more": "+{n} more",
   "dev.detached": "detached HEAD",
   "dev.empty.removable": "No removable worktrees.",
   "dev.empty.repos": "No git repos found.",
@@ -719,7 +721,9 @@
   },
   "machines.checked": "read {ago}",
   "machines.clean": "clean",
+  "machines.cloud.estimate": "~{n} active, from claude/* branches",
   "machines.cloud.line": "cloud sessions: nothing to read",
+  "machines.cloud.note": "Estimated from the claude/* branches origin got in the last 48 hours, as of this machine's last fetch, leaving out those whose PR is merged or closed (PRs are known only for repos with worktrees). A branch pushed within the hour counts as active; a session that hasn't pushed yet isn't seen.",
   "machines.d.caps": "Can",
   "machines.d.checked": "Read",
   "machines.d.checkouts": {
@@ -748,6 +752,10 @@
     "other": "{n} uncommitted files"
   },
   "machines.error": "Error",
+  "machines.hoursAgo": {
+    "one": "{n} hour ago",
+    "other": "{n} hours ago"
+  },
   "machines.idle": {
     "one": "{n} idle",
     "other": "{n} idle"
@@ -756,6 +764,10 @@
   "machines.kind.cloud": "cloud",
   "machines.main": "main checkout",
   "machines.mem": "Mem",
+  "machines.minAgo": {
+    "one": "{n} minute ago",
+    "other": "{n} minutes ago"
+  },
   "machines.noData": "no data yet",
   "machines.noReading": "not read",
   "machines.offline": "offline",
@@ -765,6 +777,10 @@
   "machines.reach.none": "not readable",
   "machines.session.active": "active",
   "machines.session.idle": "idle",
+  "machines.session.pushed": {
+    "one": "pushed {n} minute ago",
+    "other": "pushed {n} minutes ago"
+  },
   "machines.session.quiet": {
     "one": "quiet {n} min",
     "other": "quiet {n} min"
@@ -778,7 +794,16 @@
   },
   "machines.thisOne": "{name} (here)",
   "machines.title": "Machines",
+  "machines.upstream": "{ahead} ahead, {behind} behind its upstream (as of the last fetch)",
+  "machinesMsg.caveat.behind": {
+    "one": "{owner} is {n} commit behind its upstream (as of the last fetch): pull first",
+    "other": "{owner} is {n} commits behind its upstream (as of the last fetch): pull first"
+  },
   "machinesMsg.caveat.busy": "its CPU is nearly full",
+  "machinesMsg.caveat.cloudBranch": {
+    "one": "a cloud session pushed to {branch} {n} minute ago",
+    "other": "a cloud session pushed to {branch} {n} minutes ago"
+  },
   "machinesMsg.caveat.cloudNoTailnet": "a dev server there can't be reached over your tailnet",
   "machinesMsg.caveat.controlSeat": "the Mac is your control seat",
   "machinesMsg.caveat.dirtyElsewhere": {

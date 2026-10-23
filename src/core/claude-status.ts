@@ -36,6 +36,8 @@ export interface SessionBrief {
   mb: number | null;
   startedAt: string | null;
   idle: boolean;
+  /** GitHub owner/name of its repo: only on the cloud's estimates (cloudEstimate), where there is no folder to go by */
+  remote?: string | null;
 }
 
 export interface ClaudeSummary {
@@ -44,8 +46,8 @@ export interface ClaudeSummary {
   sessions: SessionBrief[];
   active: number;
   idle: number;
-  /** proc: Linux /proc; ps: macOS ps + lsof; transcripts: only transcript times */
-  source: 'proc' | 'ps' | 'transcripts';
+  /** proc: Linux /proc; ps: macOS ps + lsof; transcripts: only transcript times; github: the cloud's estimate from claude/* branches */
+  source: 'proc' | 'ps' | 'transcripts' | 'github';
 }
 
 /** One CLI as the readers see it, before it is matched to a worktree */

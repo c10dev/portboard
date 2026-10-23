@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createAgentHandler, projectStatus, type AgentInfo, type StatusParts } from '../src/agent/server.ts';
 import { agentStatus, AgentsCollector, checkStatus, type AgentRead } from '../src/core/agents.ts';
-import { buildMachines, dataAge, defaultMaxSessions, localStatus, portCounts } from '../src/core/machines.ts';
+import { buildMachines, CLOUD_ACTIVE_MIN, cloudEstimate, dataAge, defaultMaxSessions, localStatus, portCounts } from '../src/core/machines.ts';
 import { checkAgentTarget, machinesConfig, recommendConfig, resolveSite, SITE_DEFAULTS } from '../src/core/site.ts';
 import { branchOfHead, briefOf, worktreeOwnerOf, type WorktreeInfo, type WorktreesDoc } from '../src/core/worktrees.ts';
 import { answerWhere, parseFindQuery, parseRunRequest, repoFromTask, shapeMachines, machinesFeature } from '../src/features/machines.ts';
@@ -133,6 +133,15 @@ test('projectStatus: ids cut to 8, paths only with showPaths; checkStatus reads 
   assert.deepEqual(back, out);
   assert.equal(checkStatus({ ...out, schema: 2 }), null);
   assert.equal(checkStatus({ ...out, load: null }), null);
+  // ahead/behind: whole counts survive; an older agent without them, or anything else, reads null
+  const row = out.worktrees![0];
+  const apart = (w: Record<string, unknown>) => checkStatus({ ...out, worktrees: [w] })!.worktrees!.map((x) => [x.ahead, x.behind])[0];
+  assert.deepEqual(apart({ ...row, ahead: 2, behind: 1 }), [2, 1]);
+  const { ahead: _a, behind: _b, ...older } = row;
+  assert.deepEqual(apart(older), [null, null]);
+  for (const bad of [-1, 1.5, '3', 1e7, null, true]) assert.deepEqual(apart({ ...row, ahead: bad, behind: bad }), [null, null], String(bad));
+  assert.deepEqual(apart({ ...row, ahead: 0, behind: 9_999_999 }), [0, 9_999_999], 'the edges');
+  assert.deepEqual(apart({ ...row, ahead: 4, behind: -2 }), [4, null], 'one field bad, the other kept');
   // bad rows are dropped, bad fields nulled
   const odd = checkStatus({ ...out, worktrees: [{ owner: 1 }, { ...out.worktrees![0], reservedPort: 99999 }], capabilities: ['ok', 'bad cap!'] });
   assert.equal(odd?.worktrees?.length, 1);
@@ -226,6 +235,50 @@ test('buildMachines: self first, agents by name with their tags, an old agent wi
   assert.deepEqual(list[3].launch.map((l) => l.via), ['cloud', 'teleport']);
   assert.deepEqual(dataAge(list, NOW), { 'vocado-dev': 0, mac: 3, desktop: 600, cloud: null });
   assert.equal(defaultMaxSessions('cloud'), null);
+  assert.equal(list[3].claude, null, 'no estimate passed');
+});
+
+test('cloudEstimate: claude/* branches as approximate sessions, open or no PR only, one per repo@branch; null without refs', () => {
+  const ago = (min: number) => new Date(NOW - min * 60_000).toISOString();
+  const repo = (name: string, remote: string | null, claudeBranches?: any[]) => ({ name, remote, claudeBranches }) as any;
+  const est = cloudEstimate({
+    repos: [
+      repo('shop-web', 'git@github.com:c10dev/shop-web.git', [
+        { branch: 'claude/fix-cart', at: ago(5), pr: { number: 9, state: 'OPEN' } },
+        { branch: 'claude/old-idea', at: ago(CLOUD_ACTIVE_MIN + 30), pr: null },
+        { branch: 'claude/shipped', at: ago(20), pr: { number: 8, state: 'MERGED' } },
+        { branch: 'claude/dropped', at: ago(20), pr: { number: 7, state: 'CLOSED' } },
+      ]),
+      // a second clone of the same GitHub repo: its branches are the same ones
+      repo('shop-web-2', 'https://github.com/c10dev/shop-web', [{ branch: 'claude/fix-cart', at: ago(5), pr: null }]),
+      repo('notes', null),
+    ],
+    checkouts: [
+      // a plain clone (no PRs read); a branch older than the window, from a saved scan
+      { name: 'api', path: '/x/api', short: '~/api', branch: 'main', remote: 'https://github.com/c10dev/api.git', claudeBranches: [{ branch: 'claude/x', at: ago(30), pr: null }, { branch: 'claude/stale', at: ago(49 * 60), pr: null }] },
+      { name: 'docs', path: '/x/docs', short: '~/docs', branch: 'main' },
+    ],
+  }, NOW)!;
+  assert.equal(est.source, 'github');
+  assert.deepEqual([est.active, est.idle], [2, 1]);
+  assert.deepEqual(est.sessions.map((x) => [x.id, x.project, x.worktree, x.remote, x.idleMin, x.idle]), [
+    [null, 'shop-web', 'shop-web@claude/fix-cart', 'c10dev/shop-web', 5, false],
+    [null, 'api', 'api@claude/x', 'c10dev/api', 30, false],
+    [null, 'shop-web', 'shop-web@claude/old-idea', 'c10dev/shop-web', CLOUD_ACTIVE_MIN + 30, true],
+  ]);
+  assert.equal(cloudEstimate({ repos: [repo('notes', null)], checkouts: [{ name: 'docs', path: '/x/docs', short: '~/docs', branch: 'main' }] }, NOW), null, 'no refs read');
+  assert.equal(cloudEstimate(null, NOW), null);
+  assert.deepEqual(cloudEstimate({ repos: [repo('notes', null, [])] }, NOW)?.sessions, []);
+  // clone A (worktrees, PRs known) and plain clone B of the same GitHub repo: what A leaves out stays out of B
+  const wtA = (branch: string) => ({ branch, prunable: false }) as any;
+  const cross = cloudEstimate({
+    repos: [{ ...repo('a', 'https://github.com/c10dev/app.git', [{ branch: 'claude/open', at: ago(5), pr: { number: 3, state: 'OPEN' } }, { branch: 'claude/done', at: ago(5), pr: { number: 2, state: 'MERGED' } }]), worktrees: [wtA('main'), wtA('claude/mine')] }],
+    checkouts: [{ name: 'b', path: '/x/b', short: '~/b', branch: 'main', remote: 'git@github.com:c10dev/app.git', claudeBranches: ['claude/open', 'claude/done', 'claude/mine', 'claude/new'].map((branch) => ({ branch, at: ago(5), pr: null })) }],
+  }, NOW)!;
+  assert.deepEqual(cross.sessions.map((x) => x.worktree).sort(), ['a@claude/open', 'b@claude/new'], 'merged in A, checked out in A: out of B too; open counted once');
+  const list = buildMachines({ site, self: { ...PARTS, host: 'vocado-dev' }, agents: [], targets: [], devices: [], cloudWork: est, now: NOW });
+  assert.equal(list.at(-1)!.claude, est);
+  assert.equal(list.at(-1)!.checkedAt, null, 'nothing was read from the cloud itself');
 });
 
 test('portboard.json: agents kind/tags/maxSessions, machines and recommend, bad values dropped', () => {
