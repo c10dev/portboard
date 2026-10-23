@@ -1,6 +1,6 @@
 {
   "name": "@c10dev/portboard",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Dashboard of the ports listening on a Linux server, its Tailscale devices and dev worktrees, with an MCP server and a Claude Code plugin",
   "keywords": [
     "ports",

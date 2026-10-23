@@ -1,4 +1,0 @@
-### Added
-- Claude Code plugin 0.3.0: a `where-to-run` skill and the `/portboard:where`, `/portboard:machines` and `/portboard:wt` commands for `where_to_run`, `machine_status` and `find_worktree`.
-- The plugin's `multi_machine_hint` option (off by default): the session-start `[portboard]` line also says when the session's `repo@branch` has uncommitted files, a working process or an active Claude Code session on another machine running `portboard agent` (`GET /api/claude/session-port?machines=1`). With agents listed, the dashboard reads the machine list once a minute for it, so the hook never waits for an agent.
-- The plugin's SessionStart hook records the session's start (`POST /api/claude/session-start`, loopback only): a resumed session's earlier end record stops counting at once, so its servers are no longer cleanup candidates.

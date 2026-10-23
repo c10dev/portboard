@@ -1,5 +1,64 @@
 # Changelog
 
+## 1.2.0 — 2026-10-23 (여러 머신, 맥 앱 업데이트 확인, 소유권 검사)
+
+### Added
+- `write_launch_config` (MCP) and `POST /api/dev-servers/launch-config`: point Claude Code Desktop's preview at a worktree's reserved port by writing a `portboard` entry into its `.claude/launch.json` (`autoPort: false`, or attach to the server Portboard already runs). Files with comments, tracked files and symlinks are left alone; the file is added to the repo's `info/exclude`.
+- Claude Code plugin 0.2.0: a SessionStart and CwdChanged hook exports the worktree's reserved port as `PORT` for the session's Bash commands (via `CLAUDE_ENV_FILE`) and adds one `[portboard]` line about it. Off with the `session_port` option or `PORTBOARD_SESSION_PORT=0`.
+- Service pages have **Claude로 열기**: a `claude://code/new` link that opens Claude Code Desktop on a new SSH session to this server, in the service's project folder, with a prompt about the port filled in (not sent). The Mac app opens only that `claude://` page and no other.
+- Mac app: a once-a-day check for a newer release on GitHub. The menu shows "New version 1.x available" with a link to the release page, and Check for Updates… checks at once. No Sparkle, nothing is downloaded or installed; the check can be turned off in Settings → Updates.
+- 기기 tab: a Machines strip (this server, each `portboard agent`, the cloud) with CPU and memory bars, Claude Code sessions against `maxSessions`, checkouts with work and data age; a card opens its sessions and checkouts. Hidden while no other machine is listed.
+- 개발 tab: other machines' checkouts under the same repo (read-only, marked with their machine), a machine filter, and a badge on a checkout whose repo@branch is also on another machine (amber when there are changes or an active session there).
+- "Where to run…" on the strip and in the ⌘K palette: asks `GET /api/where-to-run` with a sentence and shows the recommendation, how to open the session, alternatives and the machines left out. Nothing is started.
+- `machine_status`, `find_worktree` and `where_to_run` (local stdio MCP tools, and `GET /api/machines`, `/api/where-to-run`, `/api/find-worktree`): every machine work can run on (this one, each `portboard agent`, the cloud when `machines.cloud.enabled`) with load, Claude Code sessions, checkouts (repo@branch, dirty, in use, reserved port) and port counts; which machine has a branch checked out, with a conflict note when two do and one has work in it; and which machine a task should run on, with why, caveats, how to open the session there and alternatives. Nothing is started: a person opens the session (docs/multi-host.md).
+- `portboard agent` serves `GET /agent/v1/status` (its own schema, so older boards and agents keep working): sessions with 8-character ids, checkouts by repo@branch (paths only with `agent.showPaths`), port counts and capabilities. The board reads it with info and ports; an older agent's 404 leaves it empty.
+- `portboard.json`: `agents[].kind`, `tags` and `maxSessions`, `machines.self` / `machines.cloud`, `recommend.weights`, `agent.showPaths` (docs/config.md).
+- Claude Code plugin 0.3.0: a `where-to-run` skill and the `/portboard:where`, `/portboard:machines` and `/portboard:wt` commands for `where_to_run`, `machine_status` and `find_worktree`.
+- The plugin's `multi_machine_hint` option (off by default): the session-start `[portboard]` line also says when the session's `repo@branch` has uncommitted files, a working process or an active Claude Code session on another machine running `portboard agent` (`GET /api/claude/session-port?machines=1`). With agents listed, the dashboard reads the machine list once a minute for it, so the hook never waits for an agent.
+- The plugin's SessionStart hook records the session's start (`POST /api/claude/session-start`, loopback only): a resumed session's earlier end record stops counting at once, so its servers are no longer cleanup candidates.
+- 설정 › 화면 › 테마: 시스템, 라이트 or 다크 on this device (pb.theme), applied before the first paint; switching turns transitions off for that frame. Portboard.app follows it with its own appearance (menus, alerts, window background).
+
+### Changed
+- A server left running after Claude Code removed its worktree (`<repo>/.claude/worktrees/<name>`) is a cleanup candidate with its own reason, "its Claude Code worktree was removed", instead of the generic "working folder deleted".
+- When a worktree's `.claude/launch.json` gives Claude Code's preview a different port than the one reserved for it, the port nudge says so and points at `write_launch_config`.
+- Worktrees under `<repo>/.claude/worktrees/` are marked "Claude Code" on the 개발 page and are never offered for removal: Claude Code locks and removes its own worktrees.
+- The port nudge mentions the port a worktree's `.claude/launch.json` gives the preview, and the plugin's skill covers the preview, the `PORT` variable, and giving SSH-session users a tailnet URL (`expose_port`) instead of `ssh -L`.
+- MCP: the descriptions of `restart_service`, `unexpose_port` and `stop_dev_server` tell the model to confirm with the user first unless the user asked for the action, as `stop_service` already does. A test checks that every destructive local tool says this.
+- MCP: the stdio server's `initialize` instructions ask before `stop_service`, `restart_service`, `unexpose_port` or `stop_dev_server` unless the user asked for it. Before, they named only `stop_service`. The plugin's dev-servers-and-ports skill marks `stop_dev_server` "ask first" too.
+- The worktree scan also lists repos without linked worktrees (`checkouts`, with the branch read from `.git/HEAD`), and the memory view's sessions carry their cwd (local only; the remote `memory_usage` never shows it).
+- On macOS, the agent's load reports total and free memory instead of none.
+- On a phone the 서비스 list is one bordered list with dividers instead of separate cards, with smaller buttons and 상세 at the end of the buttons' line: about a third more ports fit on a screen. The devices strip above it snaps card by card.
+- The sidebar leaves out its 기기 tree on the 기기 tab, which shows the same tree in full.
+- The 서비스 list is quieter: ☆ and 🔔 that are off show only on hover, focus and the selected row (always on touch), the row's one action has a common width so the badges line up, and 열기 is an outlined button that fills on hover and on the selected row.
+- Badge colours mean one thing each: `tailnet HTTPS` is blue like the other ways a port is reached, and `local only` is neutral instead of the warning colour, which now marks only what wants a look.
+- With no port selected, the inspector shows 한눈에 (ports, in use now, on tailnet, this server only, down alerts) instead of an empty column.
+- 설정 moved from the sidebar's views to the top of its footer, with a gear, next to the setup and collector chips.
+
+### Fixed
+- Tests: the two tests that start the stdio MCP server give it a clean environment with `HOME` in a temp dir. The server can no longer use the real config and state dirs or the parent's `PORTBOARD_*` overrides.
+- Mac app: a plain `http://` server address with a host name (blocked by App Transport Security) now says so and suggests the `https://…ts.net` address or the Tailscale IP, instead of "Couldn't connect (error -1022)".
+- The Mac app builds on the release runner again: its Dashboard menu runs on the main actor, as macOS 14's compiler requires. The release workflow can also be run by hand to rebuild only the Mac app for an existing release.
+- A page shown in another language than the server's now relabels the markup inside `<template>`s too, so the 서비스 row's 상세 no longer stays in the server's language on a phone.
+- The `N procs` badge is translated (프로세스 N개), and the service page's `tailnet HTTPS` / `local only` badges use the list's colours.
+- Every text colour now meets WCAG AA (4.5:1) on the backgrounds it sits on, in light and dark mode, and a test keeps it that way (`test/contrast.test.ts`). The largest gaps were the third text level in light mode (sidebar headings and counts, 3.4:1 → 5.3:1) and white text on the primary button and error toasts in dark mode (3.2:1 and 2.5:1), which is now dark text. The light accent, ok and warn colours and the dark accent and third text level moved slightly.
+- The highlight on a worktree row the palette jumps to no longer animates under reduced motion.
+
+### Security
+- Mac app: the release build now fails if Portboard.app gains an entitlement, an `NSAppTransportSecurity` exception, or loses the hardened runtime, Developer ID signature or timestamp (`mac-app/scripts/check-bundle.sh`, also run by `build.sh`).
+- Portboard.app sends only `http`, `https` and `mailto` links from the dashboard to other apps; a `file://` path or another app's URL scheme is ignored.
+- Portboard.app's Web Inspector is off in release builds unless turned on with `defaults write … PortboardInspectable -bool YES`.
+- `unexpose_port` and `POST /api/ports/:port/unexpose` turn off only the entry that `expose_port` makes (`https:<port>` → `127.0.0.1:<port>`, not Funnel). Before, they could turn off another entry for the same upstream port, such as the dashboard's own `https:443`. The dashboard shows 공개 해제 only for that entry (`canUnexpose`).
+- `release_port` needs `owner` and releases a reservation only for that owner. A call with only `port` now fails: pass the owner that `list_reservations` shows. The dashboard's release button is unchanged.
+- Stop refuses every Portboard unit (`portboard-remote.service`, `portboard-agent.service`), not only `portboard.service`. Their ports show `canStop: false`.
+- Stop and cleanup also refuse a Portboard process without a unit: `bin/portboard …` from launchd on a Mac, from a shell or through npx, and `src/server.ts`, `remote.ts`, `agent.ts` or `mcp.ts` of a folder whose `package.json` is Portboard's, previews included. Before, stop and cleanup protected only the process that ran them, and the stdio MCP server is not the dashboard's process. The snapshot has `isPortboard`; new-port notices and idle suggestions leave these ports out too. The session-end auto-stop now decides a preview by its folder's `package.json`, not by `portboard` in its path, so a server in a folder only named like Portboard can be stopped.
+
+### Docs
+- `AGENTS.md`: rules for AI coding agents that change this repository. It covers what an agent may run, write paths, the pinned MCP contracts, test evidence levels and pull request reports.
+- docs/agents.md: step 6 says that the `stop_dev_server` description tells the agent to ask the user first.
+- CONTRIBUTING.md: the preview example uses port 8800. 8797 is the agent's default port.
+- The pull request template lists the four checks that CI runs: `npm test`, `npm run test:en`, `npm run typecheck` and `npm run typecheck:public`.
+- docs/architecture.md: MCP prompts and page labels come from the language catalogs (`public/i18n/en.json`, `ko.json`), not fixed Korean text.
+
 ## 1.1.0 — 2026-10-19 (공개 준비, 영어 UI, 맥 앱)
 
 ### Added
