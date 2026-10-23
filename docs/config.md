@@ -164,7 +164,7 @@ Every 15 s the server compares the listening ports with its last look. This runs
 The following never produce a notice:
 
 - Anything already listening at the server's first look after it starts, so restarting Portboard notifies about nothing.
-- Portboard's own ports (`portboard*.service`, its own process).
+- Portboard's own ports (`portboard*.service`, its own process, and its processes without a unit: `bin/portboard …`, also through npx, or `src/server.ts` and the other entry points of a folder whose `package.json` is Portboard's, previews included).
 - A port in its quiet window after `restart_service` or `stop_service` (`quiet.json`, 2 minutes).
 - The same port and command line again within 10 minutes, for example a dev server restarting on a file change.
 

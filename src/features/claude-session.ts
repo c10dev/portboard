@@ -21,6 +21,8 @@ import { localOnly } from '../core/access.ts';
 import { cleanupPorts, ownersOf, type OwnedPort, type OwnersDoc } from './owners.ts';
 import { ok, reply } from './router.ts';
 import type { FeatureModule } from './types.ts';
+import { isPortboardCommand } from '../core/selfunit.ts';
+import { isPortboardCheckout } from '../core/checkout.ts';
 
 // A local process talking to us directly, never one proxied by tailscale serve/funnel (src/core/access.ts, shared with
 // the owner check of every write).
@@ -67,7 +69,7 @@ export function autoStopTargets(doc: OwnersDoc, sessionId: string, mode: AutoSto
 /** A Portboard (a preview from a worktree or scratchpad looks like any other process to production). */
 async function isPortboard(pid: number): Promise<boolean> {
   const [cmd, cwd] = await Promise.all([readFile(`/proc/${pid}/cmdline`, 'utf8').catch(() => ''), readlink(`/proc/${pid}/cwd`).catch(() => '')]);
-  return /\bsrc\/(server|remote|mcp)\.ts\b/.test(cmd) && /portboard/i.test(`${cmd}\0${cwd}`);
+  return isPortboardCommand(cmd.split('\0').join(' '), cwd || null, isPortboardCheckout);
 }
 
 export interface AutoStopRun {

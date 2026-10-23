@@ -29,6 +29,7 @@
 
 import { shortVendor, type NameSource } from './clients.ts';
 import { t } from './i18n.ts';
+import { isPortboardUnit } from './selfunit.ts';
 
 /** Ids fit the router's generic `:device` segment ([A-Za-z0-9][A-Za-z0-9-]{0,62}) */
 export const SUGGESTION_ID = /^((alert|idle)-\d{1,5}|name-[a-z0-9][a-z0-9-]{0,57})$/;
@@ -358,6 +359,8 @@ export interface IdleCandidate {
   pinned: boolean;
   container: string | null;
   processes: { pid: number; unit: string | null; cmdline: string }[];
+  /** The snapshot's PortEntry.isPortboard; the unit and pid checks below cover a candidate without it */
+  isPortboard?: boolean;
 }
 
 /** The parts of a usage-history entry (history.ts HistEntry) this needs: one per (device, port) */
@@ -382,9 +385,6 @@ export interface IdleInputs {
   now: number;
   days?: number;
 }
-
-/** portboard.service, portboard-remote.service… (newports.ts isSelf) */
-const PORTBOARD_UNIT = /^portboard(?:-[a-z]+)?\.service$/;
 
 /** "/usr/bin/python3 -m http.server 8000" → "python3" */
 const commandName = (cmdline: string) => cmdline.trim().split(/\s+/)[0]?.split('/').pop() || null;
@@ -417,7 +417,8 @@ export function idleSuggestions(ports: IdleCandidate[], inp: IdleInputs): IdleSu
     const shown = group.filter((p) => !p.hidden);
     if (!shown.length) continue;
     const procs = group.flatMap((p) => p.processes);
-    if (procs.some((x) => x.pid === inp.selfPid || (!!x.unit && (inp.selfUnits.has(x.unit) || PORTBOARD_UNIT.test(x.unit))))) continue;
+    if (group.some((p) => p.isPortboard)) continue;
+    if (procs.some((x) => x.pid === inp.selfPid || (!!x.unit && (inp.selfUnits.has(x.unit) || isPortboardUnit(x.unit))))) continue;
     const unit = unitOf(shown[0]);
     const container = shown[0].container;
 

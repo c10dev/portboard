@@ -36,7 +36,7 @@ The tools are those of the local stdio MCP server ([mcp.md](mcp.md)); the plugin
    offered.
 3. **Keep it.** `reserve_port {owner: "shop-web@feat-map"}` returns the owner's existing reservation or reserves a free
    port (or the `port` you pass, with an optional `note`). From then on `free_port` hands it to that owner only.
-   `list_reservations` shows all of them; `release_port {port}` gives one back.
+   `list_reservations` shows all of them; `release_port {port, owner}` gives one of yours back.
 4. **Start the server.** `start_dev_server {path: "<worktree path>"}` runs the worktree's package.json `dev`, `start`,
    `preview` or `serve` script (`script` picks one) as a transient systemd user unit (`pb-dev-*`) on loopback, on the
    reserved port, reserving a free one first if there is none. It works for worktrees of the repos Portboard scans

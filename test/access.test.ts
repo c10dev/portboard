@@ -318,10 +318,10 @@ test('server.ts routes through appRouter (the owner check and the audit log), ne
 test('mcp: write tool calls go into the audit log as source mcp; read-only ones do not; no log without one', async () => {
   const log = new AuditLog(join(tmp(), 'audit.jsonl'));
   const core = { releasePort: async () => ({ ok: true }), reservations: async () => [], reservePort: async () => ({ ok: false, error: 'taken' }) } as any;
-  await callTool('release_port', { port: 4100 }, core, log);
+  await callTool('release_port', { port: 4100, owner: 'pb' }, core, log);
   await callTool('reserve_port', { owner: 'pb', port: 4101, note: 'my note' }, core, log);
   await callTool('list_reservations', {}, core, log);
-  await callTool('release_port', { port: 4102 }, core);
+  await callTool('release_port', { port: 4102, owner: 'pb' }, core);
   const got = await log.query();
   assert.deepEqual(got.map((e) => [e.route, e.who, e.source, e.target.port, e.result]), [
     ['mcp reserve_port', 'local', 'mcp', 4101, 'error'],
