@@ -621,7 +621,7 @@
   "machines.clean": "깨끗함",
   "machines.cloud.estimate": "추정 활성 {n}개 (claude/* 브랜치)",
   "machines.cloud.line": "클라우드 세션: 읽을 수 없음",
-  "machines.cloud.note": "이 머신의 마지막 fetch 기준으로 최근 48시간 안에 origin에 올라온 claude/* 브랜치에서 추정한 값입니다. PR이 머지되거나 닫힌 브랜치는 뺐습니다. 1시간 안에 push된 브랜치를 활성으로 셉니다. 아직 push하지 않은 세션은 보이지 않습니다.",
+  "machines.cloud.note": "이 머신의 마지막 fetch 기준으로 최근 48시간 안에 origin에 올라온 claude/* 브랜치에서 추정한 값입니다. PR이 머지되거나 닫힌 브랜치는 뺐습니다(PR은 워크트리가 있는 repo만 확인합니다). 1시간 안에 push된 브랜치를 활성으로 셉니다. 아직 push하지 않은 세션은 보이지 않습니다.",
   "machines.d.caps": "가능",
   "machines.d.checked": "읽은 시각",
   "machines.d.checkouts": "체크아웃 {n}개",

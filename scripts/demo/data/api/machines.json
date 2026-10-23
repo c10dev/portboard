@@ -331,7 +331,8 @@
             "cpuPct": null,
             "mb": null,
             "startedAt": null,
-            "idle": false
+            "idle": false,
+            "remote": "example/shop-web"
           },
           {
             "id": null,
@@ -341,7 +342,8 @@
             "cpuPct": null,
             "mb": null,
             "startedAt": null,
-            "idle": true
+            "idle": true,
+            "remote": "example/shop-web"
           }
         ],
         "active": 1,

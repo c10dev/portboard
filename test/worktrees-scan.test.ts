@@ -219,7 +219,8 @@ test('ahead/behind from the upstream as of the last fetch, and origin claude/* b
   const commitOn = (parent: string, msg: string, date?: string) =>
     execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-C', repo, 'commit-tree', `${parent}^{tree}`, '-p', parent, '-m', msg], {
       encoding: 'utf8',
-      env: { ...process.env, ...(date ? { GIT_COMMITTER_DATE: date, GIT_AUTHOR_DATE: date } : {}) },
+      // a clean environment: no parent GIT_DIR, global or system config
+      env: { PATH: process.env.PATH, HOME: root, GIT_CONFIG_NOSYSTEM: '1', ...(date ? { GIT_COMMITTER_DATE: date, GIT_AUTHOR_DATE: date } : {}) },
     }).trim();
   const track = (branch: string) => {
     git(repo, 'config', `branch.${branch}.remote`, 'origin');
@@ -249,4 +250,29 @@ test('ahead/behind from the upstream as of the last fetch, and origin claude/* b
   const full = await scan(counting(), { mode: 'full' });
   assert.deepEqual(full.repos[0].worktrees.map((w) => [w.ahead, w.behind]), doc.repos[0].worktrees.map((w) => [w.ahead, w.behind]));
   assert.deepEqual(full.repos[0].claudeBranches, doc.repos[0].claudeBranches);
+});
+
+test('a repo without linked worktrees: no git at all, unless origin has claude/* refs, then its recent ones (no gh)', async () => {
+  const plain = join(root, 'plain');
+  git(root, 'init', '-q', 'plain');
+  writeFileSync(join(plain, 'f'), 'x\n');
+  git(plain, 'add', 'f');
+  git(plain, 'commit', '-qm', 'init');
+  git(plain, 'remote', 'add', 'origin', 'https://github.com/x/plain.git');
+  const c = counting();
+  let doc = await scanWorktrees({ repos: [plain], cache: newScanCache(), run: c.runner, mode: 'incremental' });
+  assert.deepEqual(c.counts, {});
+  assert.deepEqual(doc.checkouts, [{ name: 'plain', path: plain, short: plain, branch: 'main' }]);
+  git(plain, 'update-ref', 'refs/remotes/origin/claude/loose', 'HEAD');
+  git(plain, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  const d = counting();
+  doc = await scanWorktrees({ repos: [plain], cache: newScanCache(), run: d.runner, mode: 'incremental' });
+  assert.deepEqual(d.counts, { git: 2 }, 'for-each-ref and the remote; gh is not asked');
+  assert.equal(doc.checkouts![0].remote, 'https://github.com/x/plain.git');
+  assert.deepEqual(doc.checkouts![0].claudeBranches!.map((b) => [b.branch, b.pr]), [['claude/loose', null]]);
+  // packed refs count too
+  git(plain, 'pack-refs', '--all');
+  assert.equal(git(plain, 'for-each-ref', 'refs/remotes/origin/claude/').length > 0, true);
+  doc = await scanWorktrees({ repos: [plain], cache: newScanCache(), run: counting().runner, mode: 'incremental' });
+  assert.deepEqual(doc.checkouts![0].claudeBranches!.map((b) => b.branch), ['claude/loose']);
 });

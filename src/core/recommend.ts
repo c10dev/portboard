@@ -149,12 +149,12 @@ function score(m: MachineStatus, req: RunRequest, all: MachineStatus[], w: Weigh
         break;
       }
     }
-    // a cloud session pushed to this branch lately (the cloud's estimate; its project is the folder name): wherever it
-    // runs, it would race that one
+    // a cloud session pushed to this branch lately (the cloud's estimate: worktree folder@branch, remote owner/name):
+    // wherever it runs, it would race that one
     const cloudSession = all
       .filter((o) => o.kind === 'cloud')
       .flatMap((o) => o.claude?.sessions ?? [])
-      .find((x) => !x.idle && x.project && x.worktree?.endsWith(`@${req.branch}`) && lc(x.project) === lc(req.repo!.split('/').at(-1)!));
+      .find((x) => !x.idle && x.worktree?.endsWith(`@${req.branch}`) && sameRepo({ repo: x.worktree.slice(0, -req.branch!.length - 1), remote: x.remote ?? null }, req.repo!));
     if (cloudSession) {
       s -= w.conflict / 4;
       caveats.push(t('machinesMsg.caveat.cloudBranch', { branch: req.branch!, n: cloudSession.idleMin ?? 0 }));

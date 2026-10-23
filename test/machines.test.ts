@@ -133,6 +133,13 @@ test('projectStatus: ids cut to 8, paths only with showPaths; checkStatus reads 
   assert.deepEqual(back, out);
   assert.equal(checkStatus({ ...out, schema: 2 }), null);
   assert.equal(checkStatus({ ...out, load: null }), null);
+  // ahead/behind: whole counts survive; an older agent without them, or anything else, reads null
+  const row = out.worktrees![0];
+  const apart = (w: Record<string, unknown>) => checkStatus({ ...out, worktrees: [w] })!.worktrees!.map((x) => [x.ahead, x.behind])[0];
+  assert.deepEqual(apart({ ...row, ahead: 2, behind: 1 }), [2, 1]);
+  const { ahead: _a, behind: _b, ...older } = row;
+  assert.deepEqual(apart(older), [null, null]);
+  for (const bad of [-1, 1.5, '3', 1e7, null, true]) assert.deepEqual(apart({ ...row, ahead: bad, behind: bad }), [null, null], String(bad));
   // bad rows are dropped, bad fields nulled
   const odd = checkStatus({ ...out, worktrees: [{ owner: 1 }, { ...out.worktrees![0], reservedPort: 99999 }], capabilities: ['ok', 'bad cap!'] });
   assert.equal(odd?.worktrees?.length, 1);
@@ -244,14 +251,20 @@ test('cloudEstimate: claude/* branches as approximate sessions, open or no PR on
       repo('shop-web-2', 'https://github.com/c10dev/shop-web', [{ branch: 'claude/fix-cart', at: ago(5), pr: null }]),
       repo('notes', null),
     ],
+    checkouts: [
+      // a plain clone (no PRs read); a branch older than the window, from a saved scan
+      { name: 'api', path: '/x/api', short: '~/api', branch: 'main', remote: 'https://github.com/c10dev/api.git', claudeBranches: [{ branch: 'claude/x', at: ago(30), pr: null }, { branch: 'claude/stale', at: ago(49 * 60), pr: null }] },
+      { name: 'docs', path: '/x/docs', short: '~/docs', branch: 'main' },
+    ],
   }, NOW)!;
   assert.equal(est.source, 'github');
-  assert.deepEqual([est.active, est.idle], [1, 1]);
-  assert.deepEqual(est.sessions.map((x) => [x.id, x.project, x.worktree, x.idleMin, x.idle]), [
-    [null, 'shop-web', 'shop-web@claude/fix-cart', 5, false],
-    [null, 'shop-web', 'shop-web@claude/old-idea', CLOUD_ACTIVE_MIN + 30, true],
+  assert.deepEqual([est.active, est.idle], [2, 1]);
+  assert.deepEqual(est.sessions.map((x) => [x.id, x.project, x.worktree, x.remote, x.idleMin, x.idle]), [
+    [null, 'shop-web', 'shop-web@claude/fix-cart', 'c10dev/shop-web', 5, false],
+    [null, 'api', 'api@claude/x', 'c10dev/api', 30, false],
+    [null, 'shop-web', 'shop-web@claude/old-idea', 'c10dev/shop-web', CLOUD_ACTIVE_MIN + 30, true],
   ]);
-  assert.equal(cloudEstimate({ repos: [repo('notes', null)] }, NOW), null, 'no refs read');
+  assert.equal(cloudEstimate({ repos: [repo('notes', null)], checkouts: [{ name: 'docs', path: '/x/docs', short: '~/docs', branch: 'main' }] }, NOW), null, 'no refs read');
   assert.equal(cloudEstimate(null, NOW), null);
   assert.deepEqual(cloudEstimate({ repos: [repo('notes', null, [])] }, NOW)?.sessions, []);
   const list = buildMachines({ site, self: { ...PARTS, host: 'vocado-dev' }, agents: [], targets: [], devices: [], cloudWork: est, now: NOW });

@@ -22,7 +22,7 @@ import { platform } from './platform/index.ts';
 import type { Reservation } from './reservations.ts';
 import { UNIT_PREFIX } from './devservers.ts';
 import type { AgentTarget, MachineKind, Site } from './site.ts';
-import { briefOf, githubRepo, ownerName, worktreeOwnerOf, type WorktreeBrief, type WorktreesDoc } from './worktrees.ts';
+import { briefOf, CLAUDE_BRANCH_WINDOW_MS, githubRepo, ownerName, worktreeOwnerOf, type WorktreeBrief, type WorktreesDoc } from './worktrees.ts';
 
 export type { MachineKind };
 export type Reach = 'local' | 'agent' | 'none';
@@ -139,23 +139,27 @@ export const CLOUD_ACTIVE_MIN = 60;
 
 /**
  * The cloud's sessions, estimated: each claude/* branch origin got within CLAUDE_BRANCH_WINDOW_MS that no checkout here
- * has, and whose PR (when gh knows one) is still open. Active when pushed within CLOUD_ACTIVE_MIN. These are branches,
- * not sessions: no id, and a session that hasn't pushed yet isn't seen. null when the scan has no refs. Pure.
+ * has, and whose PR (when gh knows one) is still open; from the repos with worktrees and the plain clones (checkouts,
+ * whose PRs aren't read). Active when pushed within CLOUD_ACTIVE_MIN. These are branches, not sessions: no id, and a
+ * session that hasn't pushed yet isn't seen. The window is applied again: a saved scan can be days old. null when the
+ * scan read no refs. Pure.
  */
-export function cloudEstimate(doc: Pick<WorktreesDoc, 'repos'> | null, now = Date.now()): ClaudeSummary | null {
-  const repos = (doc?.repos ?? []).filter((r) => r.claudeBranches);
+export function cloudEstimate(doc: Pick<WorktreesDoc, 'repos' | 'checkouts'> | null, now = Date.now()): ClaudeSummary | null {
+  const repos = [...(doc?.repos ?? []), ...(doc?.checkouts ?? [])].filter((r) => r.claudeBranches);
   if (!repos.length) return null;
   const sessions: SessionBrief[] = [];
   const seen = new Set<string>();
   for (const r of repos) {
-    const repoKey = (r.remote && githubRepo(r.remote)) || r.name;
+    const gh = r.remote ? githubRepo(r.remote) : null;
+    const repoKey = gh ?? r.name;
     for (const b of r.claudeBranches!) {
       if (b.pr && b.pr.state !== 'OPEN') continue;
+      if (now - Date.parse(b.at) > CLAUDE_BRANCH_WINDOW_MS) continue;
       const key = `${repoKey.toLowerCase()}@${b.branch}`;
       if (seen.has(key)) continue; // two clones of one repo
       seen.add(key);
       const idleMin = Math.max(0, Math.floor((now - Date.parse(b.at)) / 60_000));
-      sessions.push({ id: null, project: r.name, worktree: ownerName(r.name, b.branch), idleMin, cpuPct: null, mb: null, startedAt: null, idle: idleMin >= CLOUD_ACTIVE_MIN });
+      sessions.push({ id: null, project: r.name, worktree: ownerName(r.name, b.branch), idleMin, cpuPct: null, mb: null, startedAt: null, idle: idleMin >= CLOUD_ACTIVE_MIN, remote: gh });
     }
   }
   sessions.sort((a, b) => (a.idleMin ?? 0) - (b.idleMin ?? 0));

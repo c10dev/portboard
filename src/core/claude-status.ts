@@ -36,6 +36,8 @@ export interface SessionBrief {
   mb: number | null;
   startedAt: string | null;
   idle: boolean;
+  /** GitHub owner/name of its repo: only on the cloud's estimates (cloudEstimate), where there is no folder to go by */
+  remote?: string | null;
 }
 
 export interface ClaudeSummary {

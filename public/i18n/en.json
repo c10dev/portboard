@@ -723,7 +723,7 @@
   "machines.clean": "clean",
   "machines.cloud.estimate": "~{n} active, from claude/* branches",
   "machines.cloud.line": "cloud sessions: nothing to read",
-  "machines.cloud.note": "Estimated from the claude/* branches origin got in the last 48 hours, as of this machine's last fetch, leaving out those whose PR is merged or closed. A branch pushed within the hour counts as active; a session that hasn't pushed yet isn't seen.",
+  "machines.cloud.note": "Estimated from the claude/* branches origin got in the last 48 hours, as of this machine's last fetch, leaving out those whose PR is merged or closed (PRs are known only for repos with worktrees). A branch pushed within the hour counts as active; a session that hasn't pushed yet isn't seen.",
   "machines.d.caps": "Can",
   "machines.d.checked": "Read",
   "machines.d.checkouts": {

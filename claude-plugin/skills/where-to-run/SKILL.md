@@ -28,7 +28,9 @@ server (`mcp__plugin_portboard_portboard__*` from this plugin, or `mcp__portboar
   checked out here or on another machine. `conflict` set means it is checked out on two machines and one has
   uncommitted changes or an active session: pull or hand off before editing the same files.
 - **`machine_status`** for the whole picture: load, Claude Code sessions (active / idle vs `maxSessions`), checkouts
-  with uncommitted file counts, listening ports. `fresh: true` re-reads the agents (at most once a minute).
+  with uncommitted file counts and `ahead` / `behind` their upstream, listening ports. `fresh: true` re-reads the agents
+  (at most once a minute). The cloud's sessions (`source: "github"`) are an estimate from `claude/*` branches pushed
+  lately, as of this machine's last fetch: call them an estimate, not a count.
 
 ## Reading the results
 

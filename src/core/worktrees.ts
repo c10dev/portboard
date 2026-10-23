@@ -94,6 +94,10 @@ export interface CheckoutInfo {
   path: string;
   short: string;
   branch: string | null;
+  /** origin's URL, read only when origin has claude/* branches */
+  remote?: string | null;
+  /** as RepoInfo.claudeBranches, without PRs (gh is not asked for a repo without worktrees); absent: no claude/* refs */
+  claudeBranches?: ClaudeBranch[];
 }
 
 export interface WorktreesDoc {
@@ -462,9 +466,18 @@ async function scanRepo(repo: string, ctx: ScanCtx, prev: RepoCache | undefined)
   const common = join(repo, '.git');
   const info: RepoInfo = { name: repo.split('/').pop()!, path: repo, short: short(repo), remote: null, defaultBranch: null, worktrees: [], prsKnown: false, error: null };
   const next: RepoCache = { metaSig: null, remote: null, defaultBranch: null, commits: new Map(), ancestry: new Map(), worktrees: new Map() };
-  // Without linked worktrees a repo can't be listed (only its main checkout, nothing prunable): no git at all
+  // Without linked worktrees a repo can't be listed (only its main checkout, nothing prunable): no git at all, unless
+  // origin has claude/* branches (a loose ref dir or a packed one), read for the cloud's estimate
   if (!(await readdir(join(common, 'worktrees')).catch(() => [] as string[])).length) {
     info.checkoutBranch = branchOfHead(await readFile(join(common, 'HEAD'), 'utf8').catch(() => ''));
+    const loose = (await readdir(join(common, 'refs', 'remotes', 'origin', 'claude')).catch(() => [] as string[])).length > 0;
+    if (loose || (await readFile(join(common, 'packed-refs'), 'utf8').catch(() => '')).includes(' refs/remotes/origin/claude/')) {
+      const [refsR, remoteR] = await Promise.all([git(['for-each-ref', `--format=${REFS_FORMAT}`, 'refs/remotes/origin/claude/']), git(['remote', 'get-url', 'origin'])]);
+      if (refsR.ok) {
+        info.remote = remoteR.ok ? remoteR.stdout.trim() || null : null;
+        info.claudeBranches = recentClaude(parseRefs(refsR.stdout), new Set([info.checkoutBranch]), null, ctx.now);
+      }
+    }
     return { info, next };
   }
 
@@ -651,17 +664,19 @@ async function scanRepo(repo: string, ctx: ScanCtx, prev: RepoCache | undefined)
     const apart = refs ? { ahead: up && !up.gone ? up.ahead : null, behind: up && !up.gone ? up.behind : null } : {};
     return { ...base, ...apart, keep, removable: !main && !e.prunable && keep.length === 0 };
   });
-  if (refs) {
-    const here = new Set(entries.map((e) => e.branch).filter(Boolean));
-    info.claudeBranches = refs.claude
-      .filter((b) => !here.has(b.branch) && ctx.now - Date.parse(b.at) <= CLAUDE_BRANCH_WINDOW_MS)
-      .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
-      .map((b) => {
-        const pr = prs?.get(b.branch);
-        return { ...b, pr: pr ? { number: pr.number, state: pr.state } : null };
-      });
-  }
+  if (refs) info.claudeBranches = recentClaude(refs, new Set(entries.map((e) => e.branch)), prs, ctx.now);
   return { info, next };
+}
+
+/** origin's claude/* branches within CLAUDE_BRANCH_WINDOW_MS that aren't checked out here, newest first, with their PR */
+function recentClaude(refs: RefFacts, here: Set<string | null | undefined>, prs: PrMap | null, now: number): ClaudeBranch[] {
+  return refs.claude
+    .filter((b) => !here.has(b.branch) && now - Date.parse(b.at) <= CLAUDE_BRANCH_WINDOW_MS)
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+    .map((b) => {
+      const pr = prs?.get(b.branch);
+      return { ...b, pr: pr ? { number: pr.number, state: pr.state } : null };
+    });
 }
 
 export interface ScanOptions {
@@ -707,7 +722,10 @@ export async function scanWorktrees(opts: ScanOptions = {}): Promise<WorktreesDo
   }
   const scanned = results.map((x) => x.info);
   const withWt = scanned.filter((r) => r.worktrees.length > 1 || r.worktrees.some((w) => w.prunable));
-  const checkouts = scanned.filter((r) => !withWt.includes(r)).map((r) => ({ name: r.name, path: r.path, short: r.short, branch: r.checkoutBranch ?? null }));
+  const checkouts = scanned.filter((r) => !withWt.includes(r)).map((r): CheckoutInfo => ({
+    name: r.name, path: r.path, short: r.short, branch: r.checkoutBranch ?? null,
+    ...(r.claudeBranches ? { remote: r.remote, claudeBranches: r.claudeBranches } : {}),
+  }));
   const all = withWt.flatMap((r) => r.worktrees.filter((w) => !w.main));
   return {
     at: new Date().toISOString(),
