@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadReservations, normalizeOwner, release, reserve, reservedFor } from '../src/core/reservations.ts';
 import { matchesOwner } from '../src/features/reservations.ts';
+import { callTool } from '../src/mcp/tools.ts';
 
 const tmp = async () => join(await mkdtemp(join(tmpdir(), 'pb-resv-')), 'reservations.json');
 
@@ -31,11 +32,43 @@ test('release and concurrent writes', async () => {
   const pick = async () => undefined;
   await Promise.all([reserve('a', 4001, undefined, pick, path), reserve('b', 4002, undefined, pick, path), reserve('c', 4003, undefined, pick, path)]);
   assert.equal((await loadReservations(path)).length, 3);
-  const r = await release(4002, path);
+  const r = await release(4002, null, path);
   assert.equal(r.ok, true);
   assert.equal(r.released?.owner, 'b');
   assert.deepEqual((await loadReservations(path)).map((x) => x.port), [4001, 4003]);
-  assert.deepEqual(await release(4002, path), { ok: false, released: null });
+  assert.deepEqual(await release(4002, null, path), { ok: false, released: null });
+});
+
+test('release with an owner: only that owner\'s reservation goes; another owner\'s stays and comes back as heldBy', async () => {
+  const path = await tmp();
+  const pick = async () => undefined;
+  await reserve('shop-web@feat', 4201, undefined, pick, path);
+  assert.deepEqual(await release(4201, 'billing@main', path), { ok: false, released: null, heldBy: 'shop-web@feat' });
+  assert.deepEqual((await loadReservations(path)).map((r) => [r.port, r.owner]), [[4201, 'shop-web@feat']]);
+  const mine = await release(4201, 'shop-web@feat', path);
+  assert.equal(mine.ok, true);
+  assert.equal(mine.released?.owner, 'shop-web@feat');
+  assert.deepEqual(await loadReservations(path), []);
+  assert.deepEqual(await release(4201, 'shop-web@feat', path), { ok: false, released: null }, 'nothing reserved: not an owner mismatch');
+});
+
+test('release_port: owner is required, and another owner\'s reservation is refused with who holds it', async () => {
+  const calls: unknown[][] = [];
+  const core = {
+    releasePort: async (port: number, owner: string) => (
+      calls.push([port, owner]),
+      owner === 'shop-web@feat' ? { ok: true, released: { port, owner, createdAt: '' } } : { ok: false, released: null, heldBy: 'shop-web@feat' }
+    ),
+  } as any;
+  const missing = await callTool('release_port', { port: 4201 }, core);
+  assert.equal(missing.isError, true);
+  assert.deepEqual(calls, [], 'nothing is released without an owner');
+  const other = await callTool('release_port', { port: 4201, owner: 'billing@main' }, core);
+  assert.equal(other.isError, true);
+  assert.equal(other.content[0].text, '4201 is reserved for shop-web@feat, not billing@main');
+  const mine = await callTool('release_port', { port: 4201, owner: ' shop-web@feat ' }, core);
+  assert.equal(mine.isError, undefined);
+  assert.deepEqual(calls, [[4201, 'billing@main'], [4201, 'shop-web@feat']], 'the owner is normalized as reserve_port does');
 });
 
 test('reservedFor blocks other owners and lists the owner\'s own first', () => {

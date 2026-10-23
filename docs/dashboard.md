@@ -18,7 +18,7 @@
   - **숨기기 / 다시 보이기** (hide / show). Hiding, unpinning, clearing a label and turning 🔔 off apply at once with a **되돌리기** (undo) toast that puts the previous setting back.
   - **로그 보기** (logs): `journalctl --user` for systemd units, `docker logs` for containers, or the file a plain process writes stdout to. Output that goes to a terminal can't be shown.
   - **재시작** (restart): systemd user units and docker containers only.
-  - **중지** (stop): `systemctl --user stop`, `docker stop`, or SIGTERM to a plain process. Last, after a separator, in red. Asks first, and refuses to stop portboard itself.
+  - **중지** (stop): `systemctl --user stop`, `docker stop`, or SIGTERM to a plain process. Last, after a separator, in red. Asks first, and refuses to stop Portboard itself: its units (`portboard-remote.service`, `portboard-agent.service`) and its processes without one (`bin/portboard …`, also through npx, or `src/server.ts` and the other entry points of a folder whose `package.json` is Portboard's), previews included.
 - Copy buttons: on a plain `http://` address (not a secure context) the browser blocks clipboard access, so a prompt with the text to copy appears instead.
 - The **전체** (all) checkbox also shows what's hidden by default: system ports (owner not visible to this user: sshd, DNS, tailscaled…), ephemeral helper ports (32768–60999 with no unit or container, e.g. VS Code server) and ports you hid. Pinned ports always show.
 
@@ -40,7 +40,7 @@ Live connections are forgotten as soon as they close, so the server samples who 
 - who is connected right now, and since when
 - the last-used history: every device that used it, when it was last seen, and minutes in use over 7 and 30 days
 - for 🔔 ports: uptime over 24 h / 7 d / 30 d, the last 30 checks, a 24 h bar (48 × 30 min) and a 30-day bar, the outages with their length and reason, and the alerts that were sent
-- the row's actions with the same guards: 열기, tailnet 공개 / 공개 해제, SSH 복사, 로그 보기, 재시작 and 중지 (both ask first), 🔔
+- the row's actions with the same guards: 열기, tailnet 공개 / 공개 해제 (only for the entry tailnet 공개 made), SSH 복사, 로그 보기, 재시작 and 중지 (both ask first), 🔔
 
 It works at 390 px, for a watched port that is down, and for a port only the history knows.
 

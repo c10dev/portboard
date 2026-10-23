@@ -27,8 +27,9 @@ export function reachButtons(p, { busy, act }) {
   } else if (p.urls.direct) {
     out.push(button(t('control.copyAddress'), () => copy(p.urls.direct.replace(/^tcp:\/\//, ''))));
   }
-  if (p.served) out.push(button(t('control.unexpose'), () => act('unexpose'), { disabled: busy, write: true }));
-  else if (p.canExpose) out.push(button(t('control.expose'), () => act('expose'), { disabled: busy, write: true, title: `tailscale serve --https=${p.port} → 127.0.0.1:${p.port}` }));
+  if (p.served) {
+    if (p.canUnexpose !== false) out.push(button(t('control.unexpose'), () => act('unexpose'), { disabled: busy, write: true }));
+  } else if (p.canExpose) out.push(button(t('control.expose'), () => act('expose'), { disabled: busy, write: true, title: `tailscale serve --https=${p.port} → 127.0.0.1:${p.port}` }));
   if (p.listening && p.scope === 'loopback' && !p.served && p.urls.ssh) out.push(button(t('control.copySsh'), () => copy(p.urls.ssh)));
   return out;
 }

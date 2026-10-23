@@ -154,6 +154,12 @@ test('local tools/list order (FEATURES order) is the order clients have always s
   ]);
 });
 
+test('every destructive local tool tells the model to ask the user first (the server does not enforce it)', () => {
+  const destructive = TOOLS.filter((t) => t.annotations.destructiveHint);
+  assert.deepEqual(destructive.map((t) => t.name), ['unexpose_port', 'restart_service', 'stop_service', 'cleanup_servers', 'remove_worktrees', 'stop_dev_server']);
+  for (const t of destructive) assert.match(t.description, /\b(ask|confirm with) the user\b/i, t.name);
+});
+
 // ---- adding a feature: no shared append point (parallel branches used to conflict on the end of FEATURES) ----
 
 test('registry.ts: feature imports and MODULES are alphabetical, so a new feature goes in its own place, not at the end', () => {

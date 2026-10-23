@@ -60,6 +60,8 @@ test("Portboard's own ports, quiet windows (restart_service) and a failed ss nev
   const own = [
     view(8794, { processes: [{ pid: 7, cmdline: 'node src/remote.ts', project: 'portboard', unit: 'portboard-remote.service' }] }),
     view(8808, { processes: [{ pid: 4242, cmdline: 'node src/server.ts', project: 'portboard', unit: null }] }),
+    // a preview or a launchd agent: no unit and another pid; the snapshot marked it (PortEntry.isPortboard)
+    view(8830, { processes: [{ pid: 900, cmdline: 'node src/server.ts', project: 'portboard', unit: null }], isPortboard: true }),
   ];
   assert.ok(own.every((p) => isSelf(p, 4242)));
   assert.ok(!isSelf(view(5173, { processes: [{ pid: 9, cmdline: 'x', project: null, unit: 'pb-dev-5173.service' }] }), 4242), "Portboard's transient dev units are dev servers");

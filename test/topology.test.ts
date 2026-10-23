@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { endpoint, parseEstablished } from '../src/core/conn.ts';
 import { parseSs } from '../src/core/ss.ts';
 import { parsePeers } from '../src/core/devices.ts';
-import { buildTopology, isPortboard } from '../src/core/topology.ts';
+import { buildTopology } from '../src/core/topology.ts';
 import type { PortEntry, Snapshot } from '../src/core/index.ts';
 import { L } from './fixtures/locale.ts';
 
@@ -151,8 +151,4 @@ test('other Portboard processes (a preview, the MCP server) are probes too', () 
   const input = { snapshot: SNAP, peers: parsePeers(STATUS), conns: parseEstablished(est), lanIps: [], selfIps: [], firstSeen: () => 0, startedAt: 0, selfPid: 999 };
   assert.equal(buildTopology(input).edges.length, 1);
   assert.deepEqual(buildTopology({ ...input, probePids: [4242] }).edges, []);
-  assert.equal(isPortboard('node src/server.ts', '/home/dev/projects/worktrees/portboard-alerts'), true);
-  assert.equal(isPortboard('/usr/bin/node /home/dev/projects/portboard/src/mcp.ts', '/home/dev'), true);
-  assert.equal(isPortboard('node src/server.ts', '/home/dev/projects/acme'), false);
-  assert.equal(isPortboard('node /home/dev/projects/portboard/scripts/x.ts', '/'), false);
 });

@@ -8,6 +8,7 @@ import { stdioFiles } from './platform/procs.ts';
 import { services } from './platform/services.ts';
 import type { ActionResult } from './tailscale.ts';
 import { t } from './i18n.ts';
+import { isPortboardUnit } from './selfunit.ts';
 
 export type Control =
   | { type: 'systemd'; unit: string }
@@ -56,7 +57,7 @@ export async function stopTarget(c: Control): Promise<ActionResult> {
   const refused = readOnlyRefusal();
   if (refused) return refused;
   if (c.type === 'systemd') {
-    if (c.unit === SELF_UNIT) return { ok: false, message: 'refusing to stop portboard itself' };
+    if (isPortboardUnit(c.unit)) return { ok: false, message: 'refusing to stop portboard itself' };
     const sm = services();
     if (sm.unavailable) return { ok: false, message: `${c.unit}: ${sm.unavailable}` };
     const r = await sm.stop(c.unit);

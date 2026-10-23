@@ -294,6 +294,34 @@ test('POST /api/ports/:port/unexpose: a port that is not served is 409 and nothi
   assert.ok((await calls('tailscale')).every((l) => l.includes('status')), 'only serve status was asked');
 });
 
+test('POST /api/ports/:port/unexpose: only the entry expose_port makes is turned off; another entry for the port is refused', async () => {
+  const { forgetShared } = await import('../src/core/exec.ts');
+  const status = JSON.stringify({
+    Web: {
+      'devbox.example.ts.net:443': { Handlers: { '/': { Proxy: 'http://127.0.0.1:8790' } } },
+      'devbox.example.ts.net:8780': { Handlers: { '/': { Proxy: 'http://127.0.0.1:8780' } } },
+    },
+  });
+  await out('tailscale', status);
+  try {
+    await clearCalls();
+    forgetShared('tailscale', ['serve', 'status', '--json']);
+    const refused = await api('POST', '/api/ports/8790/unexpose', undefined, context());
+    assert.equal(refused.status, 409);
+    assert.match(refused.body.message, /8790 is served by https:443, which expose_port did not make/);
+    assert.ok((await calls('tailscale')).every((l) => l.includes('status')), 'https:443 was not turned off');
+
+    await clearCalls();
+    forgetShared('tailscale', ['serve', 'status', '--json']);
+    const off = await api('POST', '/api/ports/8780/unexpose', undefined, context());
+    assert.equal(off.status, 200);
+    assert.deepEqual((await calls('tailscale')).filter((l) => !l.includes('status')), ['tailscale serve --yes --https=8780 off']);
+  } finally {
+    await rm(join(OUT, 'tailscale'), { force: true });
+    forgetShared('tailscale', ['serve', 'status', '--json']);
+  }
+});
+
 // ---------- port rules ----------
 
 test('POST /api/port-rules: body checks, then the key and rule checks of applyRule, all 400 with the reason', async () => {

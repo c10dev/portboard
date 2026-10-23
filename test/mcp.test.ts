@@ -6,6 +6,7 @@ import type { ActionResult, PortEntry, Snapshot } from '../src/core/index.ts';
 import { callTool, parsePort, type Core } from '../src/mcp/tools.ts';
 import { parseListArgs, summarize } from '../src/mcp/views.ts';
 import { handleMessage } from '../src/mcp/rpc.ts';
+import { childEnv } from './fixtures/child-env.ts';
 
 function entry(over: Partial<PortEntry>): PortEntry {
   return {
@@ -197,9 +198,12 @@ test('handleMessage: initialize negotiates version, notifications get no reply, 
   assert.deepEqual(payload(list.result).ports.map((p: any) => p.port), [8780]);
 });
 
-test('stdio server answers initialize and tools/list, then exits when stdin closes', async () => {
+test('stdio server answers initialize and tools/list, then exits when stdin closes', async (t) => {
+  const { env, done } = await childEnv();
+  t.after(done);
   const child = spawn(process.execPath, [fileURLToPath(new URL('../src/mcp.ts', import.meta.url))], {
     stdio: ['pipe', 'pipe', 'ignore'],
+    env,
   });
   let out = '';
   child.stdout.on('data', (d) => (out += d));

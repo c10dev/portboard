@@ -57,7 +57,8 @@ export async function handleMessage(msg: Request, core: Core, audit?: AuditLog |
             'and the tailnet URL to open. Shell commands are still fine for CPU/memory/disk questions. ' +
             'Call list_ports before expose_port; only ports with canExpose=true can be exposed. ' +
             'For a service that is down or misbehaving, read tail_logs before restart_service. Before starting a new ' +
-            'dev server, call free_port instead of guessing a port. Ask before stop_service unless the user asked to stop it. ' +
+            'dev server, call free_port instead of guessing a port. ' +
+            'Ask before stop_service, restart_service, unexpose_port or stop_dev_server unless the user asked for it. ' +
             'For questions about the machines themselves (is the desktop up, how loaded is the server, what is running on the desktop or the Mac), use list_devices. ' +
             'For "who is using X", "when was this last used" or "is anything still using this before I stop it", call ' +
             'who_uses (optionally with port): devices connected now plus last-used history. list_ports shows group (ports ' +

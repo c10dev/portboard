@@ -36,7 +36,7 @@ The tools are those of the local stdio MCP server ([mcp.md](mcp.md)); the plugin
    offered.
 3. **Keep it.** `reserve_port {owner: "shop-web@feat-map"}` returns the owner's existing reservation or reserves a free
    port (or the `port` you pass, with an optional `note`). From then on `free_port` hands it to that owner only.
-   `list_reservations` shows all of them; `release_port {port}` gives one back.
+   `list_reservations` shows all of them; `release_port {port, owner}` gives one of yours back.
 4. **Start the server.** `start_dev_server {path: "<worktree path>"}` runs the worktree's package.json `dev`, `start`,
    `preview` or `serve` script (`script` picks one) as a transient systemd user unit (`pb-dev-*`) on loopback, on the
    reserved port, reserving a free one first if there is none. It works for worktrees of the repos Portboard scans
@@ -45,6 +45,7 @@ The tools are those of the local stdio MCP server ([mcp.md](mcp.md)); the plugin
 5. **Read its output.** `tail_logs {port, lines?}` reads the unit's journal (or the container's logs, or a plain
    process's output when it goes to a file), so the agent doesn't need to keep the server in its own shell.
 6. **Stop it.** `stop_dev_server {path}` stops the unit; the reservation stays, so the next start gets the same port.
+   Its description tells the agent to ask the user first unless the user asked for the stop.
 7. **Clean up leftovers.** `list_cleanup_candidates` lists servers whose working directory was deleted, whose starting
    session ended, or whose branch is already merged, each with the session and worktree that own it.
    `cleanup_servers {ports: [...]}` stops those after re-checking each one (SIGTERM, or `systemctl --user stop` for a

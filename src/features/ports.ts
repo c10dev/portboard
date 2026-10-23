@@ -108,7 +108,9 @@ const tools: Tool[] = [
     def: {
       name: 'unexpose_port',
       title: 'Remove tailnet publish',
-      description: 'Remove the `tailscale serve` entry for a port previously published with expose_port.',
+      description:
+        'Remove the `tailscale serve` entry for a port previously published with expose_port. ' +
+        'Confirm with the user first unless they asked for it explicitly.',
       inputSchema: PORT_ARG,
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },

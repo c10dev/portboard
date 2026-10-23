@@ -235,7 +235,9 @@ const stopTool: Tool = {
   def: {
     name: 'stop_dev_server',
     title: "Stop a worktree's dev server",
-    description: 'Stop the dev server Portboard started for a worktree (systemctl --user stop). The port stays reserved.',
+    description:
+      'Stop the dev server Portboard started for a worktree (systemctl --user stop). The port stays reserved. ' +
+      'Confirm with the user first unless they asked for it explicitly.',
     inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   },

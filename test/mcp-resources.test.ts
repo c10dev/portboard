@@ -7,6 +7,7 @@ import type { Core } from '../src/mcp/tools.ts';
 import { handleMessage } from '../src/mcp/rpc.ts';
 import { checkArgs, getPrompt, PROMPTS } from '../src/mcp/prompts.ts';
 import { parseResourceUri, statusReport } from '../src/mcp/resources.ts';
+import { childEnv } from './fixtures/child-env.ts';
 
 function entry(over: Partial<PortEntry>): PortEntry {
   return {
@@ -258,8 +259,10 @@ test('prompts/get: argument validation and unknown names are -32602', async () =
   assert.equal(getPrompt('server_status_summary', undefined).description, '서버 상태 요약');
 });
 
-test('stdio server: capabilities, templates, prompts and a not-found read, over the real process', async () => {
-  const child = spawn(process.execPath, [fileURLToPath(new URL('../src/mcp.ts', import.meta.url))], { stdio: ['pipe', 'pipe', 'ignore'] });
+test('stdio server: capabilities, templates, prompts and a not-found read, over the real process', async (t) => {
+  const { env, done } = await childEnv();
+  t.after(done);
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../src/mcp.ts', import.meta.url))], { stdio: ['pipe', 'pipe', 'ignore'], env });
   let out = '';
   child.stdout.on('data', (d) => (out += d));
   const exited = new Promise<number | null>((resolve) => child.on('exit', resolve));
