@@ -20,7 +20,8 @@ reserved for which `repo@branch`, and which servers are leftovers. Its MCP tools
    existing reservation is returned if it has one).
 4. **`start_dev_server {path: "<worktree path>"}`** for a worktree of a repo Portboard scans (`list_worktrees`): it runs
    the package.json `dev`/`start`/`preview`/`serve` script as a transient systemd unit on loopback, on the reserved port
-   (reserving a free one if needed). Logs: `tail_logs {port}`. Stop: `stop_dev_server {path}` (the reservation stays).
+   (reserving a free one if needed). Logs: `tail_logs {port}`.
+   Stop: `stop_dev_server {path}` (ask first; the reservation stays).
    Only when that doesn't fit (not a scanned repo, a custom command) start it yourself, on the port `free_port` gave.
 
 The owner name is `<main repo folder>@<branch>`, e.g. `shop-web@feat-map` — the same name `start_dev_server` uses.
@@ -50,7 +51,7 @@ it is visible to their tailnet devices). Give the user that URL.
 - **`list_cleanup_candidates`** shows servers whose worktree was deleted, whose starting session ended, or whose branch
   is merged, with the session and worktree that own each. Show the user the list.
 - **`cleanup_servers {ports: [...]}`** stops those (each port re-checked, SIGTERM). Ask the user first.
-- A server Portboard started: **`stop_dev_server {path}`**. An installed service: `stop_service` (ask first).
+- A server Portboard started: **`stop_dev_server {path}`** (ask first). An installed service: `stop_service` (ask first).
 - Not `kill $(lsof -t -i:N)`, `fuser -k N/tcp` or `kill $(ss -ltnp …)`: the port may belong to another session's live
   server, and killing a systemd unit's process leaves the unit in a bad state.
 

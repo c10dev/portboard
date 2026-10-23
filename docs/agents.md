@@ -45,6 +45,7 @@ The tools are those of the local stdio MCP server ([mcp.md](mcp.md)); the plugin
 5. **Read its output.** `tail_logs {port, lines?}` reads the unit's journal (or the container's logs, or a plain
    process's output when it goes to a file), so the agent doesn't need to keep the server in its own shell.
 6. **Stop it.** `stop_dev_server {path}` stops the unit; the reservation stays, so the next start gets the same port.
+   Its description tells the agent to ask the user first unless the user asked for the stop.
 7. **Clean up leftovers.** `list_cleanup_candidates` lists servers whose working directory was deleted, whose starting
    session ended, or whose branch is already merged, each with the session and worktree that own it.
    `cleanup_servers {ports: [...]}` stops those after re-checking each one (SIGTERM, or `systemctl --user stop` for a

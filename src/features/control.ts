@@ -43,6 +43,7 @@ const tools: Tool[] = [
       title: 'Restart what owns a port',
       description:
         'Restart the systemd user unit or docker container that owns a listening port (see control in list_ports). ' +
+        'Confirm with the user first unless they asked for it explicitly. ' +
         'Plain processes started from a terminal cannot be restarted this way; restart them where they were started.',
       inputSchema: PORT_ARG,
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
