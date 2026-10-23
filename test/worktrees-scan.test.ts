@@ -3,7 +3,7 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { run } from '../src/core/exec.ts';
@@ -12,10 +12,12 @@ import {
   type Runner, type ScanOptions, type WorktreesDoc,
 } from '../src/core/worktrees.ts';
 
-const git = (cwd: string, ...args: string[]) =>
-  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', '-c', 'init.defaultBranch=main', '-C', cwd, ...args], { encoding: 'utf8' }).trim();
-
 const root = realpathSync(mkdtempSync(join(tmpdir(), 'pb-wt-scan-')));
+/** A clean environment for the git the tests run themselves: no parent GIT_DIR, global or system config */
+const gitEnv = { PATH: process.env.PATH ?? '', HOME: root, GIT_CONFIG_NOSYSTEM: '1' };
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', '-c', 'init.defaultBranch=main', '-C', cwd, ...args], { encoding: 'utf8', env: gitEnv }).trim();
+
 const repo = join(root, 'repo');
 after(() => rmSync(root, { recursive: true, force: true }));
 const wt = (name: string) => join(root, name);
@@ -219,8 +221,7 @@ test('ahead/behind from the upstream as of the last fetch, and origin claude/* b
   const commitOn = (parent: string, msg: string, date?: string) =>
     execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-C', repo, 'commit-tree', `${parent}^{tree}`, '-p', parent, '-m', msg], {
       encoding: 'utf8',
-      // a clean environment: no parent GIT_DIR, global or system config
-      env: { PATH: process.env.PATH, HOME: root, GIT_CONFIG_NOSYSTEM: '1', ...(date ? { GIT_COMMITTER_DATE: date, GIT_AUTHOR_DATE: date } : {}) },
+      env: { ...gitEnv, ...(date ? { GIT_COMMITTER_DATE: date, GIT_AUTHOR_DATE: date } : {}) },
     }).trim();
   const track = (branch: string) => {
     git(repo, 'config', `branch.${branch}.remote`, 'origin');
@@ -270,9 +271,12 @@ test('a repo without linked worktrees: no git at all, unless origin has claude/*
   assert.deepEqual(d.counts, { git: 2 }, 'for-each-ref and the remote; gh is not asked');
   assert.equal(doc.checkouts![0].remote, 'https://github.com/x/plain.git');
   assert.deepEqual(doc.checkouts![0].claudeBranches!.map((b) => [b.branch, b.pr]), [['claude/loose', null]]);
-  // packed refs count too
+  // packed refs count too: the loose ref directory is gone, packed-refs alone triggers the read
   git(plain, 'pack-refs', '--all');
-  assert.equal(git(plain, 'for-each-ref', 'refs/remotes/origin/claude/').length > 0, true);
-  doc = await scanWorktrees({ repos: [plain], cache: newScanCache(), run: counting().runner, mode: 'incremental' });
+  assert.equal(existsSync(join(plain, '.git', 'refs', 'remotes', 'origin', 'claude', 'loose')), false);
+  assert.match(readFileSync(join(plain, '.git', 'packed-refs'), 'utf8'), / refs\/remotes\/origin\/claude\/loose$/m);
+  const p = counting();
+  doc = await scanWorktrees({ repos: [plain], cache: newScanCache(), run: p.runner, mode: 'incremental' });
+  assert.deepEqual(p.counts, { git: 2 });
   assert.deepEqual(doc.checkouts![0].claudeBranches!.map((b) => b.branch), ['claude/loose']);
 });

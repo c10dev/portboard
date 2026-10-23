@@ -140,6 +140,8 @@ test('projectStatus: ids cut to 8, paths only with showPaths; checkStatus reads 
   const { ahead: _a, behind: _b, ...older } = row;
   assert.deepEqual(apart(older), [null, null]);
   for (const bad of [-1, 1.5, '3', 1e7, null, true]) assert.deepEqual(apart({ ...row, ahead: bad, behind: bad }), [null, null], String(bad));
+  assert.deepEqual(apart({ ...row, ahead: 0, behind: 9_999_999 }), [0, 9_999_999], 'the edges');
+  assert.deepEqual(apart({ ...row, ahead: 4, behind: -2 }), [4, null], 'one field bad, the other kept');
   // bad rows are dropped, bad fields nulled
   const odd = checkStatus({ ...out, worktrees: [{ owner: 1 }, { ...out.worktrees![0], reservedPort: 99999 }], capabilities: ['ok', 'bad cap!'] });
   assert.equal(odd?.worktrees?.length, 1);
@@ -267,6 +269,13 @@ test('cloudEstimate: claude/* branches as approximate sessions, open or no PR on
   assert.equal(cloudEstimate({ repos: [repo('notes', null)], checkouts: [{ name: 'docs', path: '/x/docs', short: '~/docs', branch: 'main' }] }, NOW), null, 'no refs read');
   assert.equal(cloudEstimate(null, NOW), null);
   assert.deepEqual(cloudEstimate({ repos: [repo('notes', null, [])] }, NOW)?.sessions, []);
+  // clone A (worktrees, PRs known) and plain clone B of the same GitHub repo: what A leaves out stays out of B
+  const wtA = (branch: string) => ({ branch, prunable: false }) as any;
+  const cross = cloudEstimate({
+    repos: [{ ...repo('a', 'https://github.com/c10dev/app.git', [{ branch: 'claude/open', at: ago(5), pr: { number: 3, state: 'OPEN' } }, { branch: 'claude/done', at: ago(5), pr: { number: 2, state: 'MERGED' } }]), worktrees: [wtA('main'), wtA('claude/mine')] }],
+    checkouts: [{ name: 'b', path: '/x/b', short: '~/b', branch: 'main', remote: 'git@github.com:c10dev/app.git', claudeBranches: ['claude/open', 'claude/done', 'claude/mine', 'claude/new'].map((branch) => ({ branch, at: ago(5), pr: null })) }],
+  }, NOW)!;
+  assert.deepEqual(cross.sessions.map((x) => x.worktree).sort(), ['a@claude/open', 'b@claude/new'], 'merged in A, checked out in A: out of B too; open counted once');
   const list = buildMachines({ site, self: { ...PARTS, host: 'vocado-dev' }, agents: [], targets: [], devices: [], cloudWork: est, now: NOW });
   assert.equal(list.at(-1)!.claude, est);
   assert.equal(list.at(-1)!.checkedAt, null, 'nothing was read from the cloud itself');
