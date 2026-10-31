@@ -52,7 +52,8 @@ Read [docs/security.md](docs/security.md) before you change a write path.
 - `src/mcp.ts`, `src/mcp/`: the local stdio MCP server. `src/remote/`: the remote MCP server and `redact.ts`.
 - `src/agent.ts`, `src/agent/`: the host agent. `public/`: dashboard pages, served as is. `public/i18n/`: `en.json` and `ko.json`.
 - `claude-plugin/`: the Claude Code plugin. `mac-app/`: a Swift package. `menubar/`: the legacy SwiftBar script.
-- `scripts/`: changelog, English test runner, demo, deploy, smoke, Mac setup and public-tree scripts. `docs/`: one file or folder per topic.
+- `scripts/`: changelog, English test runner, demo, design system, deploy, smoke, Mac setup and public-tree scripts. `docs/`: one file or folder per topic.
+- `design-system/`: the design system's brand book, token notes and component previews ([docs/design-system.md](docs/design-system.md)).
 - [docs/agents.md](docs/agents.md) tells users how to run coding agents with Portboard. It is not about changing this repository.
 
 To add or change a feature:

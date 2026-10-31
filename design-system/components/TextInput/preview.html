@@ -1,0 +1,28 @@
+<!-- @dsCard group="Forms" height=300 subtitle="password with a button, filled, empty with placeholder, time in a group" -->
+<style>
+.ds-stage { padding: 4px 16px; background: var(--surface); color: var(--text); max-width: 760px; }
+</style>
+<div class="ds-stage">
+  <div class="st-rows">
+    <div class="st-row has-desc" id="ownerTokenRow">
+      <div class="st-row-text"><div class="st-row-label">Owner token</div><div class="st-row-desc">Token mode: paste the token `portboard token` printed on the server. It is kept in this browser only and sent with every request. None kept here.</div></div>
+      <div class="st-row-ctl"><div class="ctl-group"><input type="password" id="ownerToken" class="ctl-text" autocomplete="off" spellcheck="false" placeholder="pbt_…" aria-label="Owner token"><button type="button" class="btn primary">Save</button></div></div>
+    </div>
+  </div>
+  <div class="st-rows">
+    <div class="st-row has-desc">
+      <div class="st-row-text"><div class="st-row-label">Key</div><div class="st-row-desc">A range, host:port, command-line regex, or otherPorts</div></div>
+      <div class="st-row-ctl"><input id="prKey" class="ctl-text" value="localhost:5173" placeholder="18891-18899, localhost:5173, vite|next dev" aria-label="Key" data-write="1"></div>
+    </div>
+    <div class="st-row">
+      <div class="st-row-text"><div class="st-row-label">Name</div></div>
+      <div class="st-row-ctl"><input id="prLabel" class="ctl-text" value="" maxlength="80" placeholder="Empty: not set" aria-label="Name" data-write="1"></div>
+    </div>
+  </div>
+  <section id="digestBox" class="st-rows">
+    <div class="st-row has-desc">
+      <div class="st-row-text"><div class="st-row-label">Digest</div><div class="st-row-desc"><span id="digestState">Sent daily at 09:00</span></div></div>
+      <div class="st-row-ctl"><span class="ctl-group"><div class="ctl-menu" id="digestMode" data-write="1"><button type="button" class="ctl-menu-btn" aria-haspopup="listbox" aria-expanded="false" aria-controls="menu1" aria-label="Digest schedule" title="Daily"><span class="ctl-menu-text">Daily</span><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button><ul class="ctl-menu-list" role="listbox" id="menu1" hidden aria-label="Digest schedule"><li role="option" class="ctl-menu-opt" tabindex="-1" data-value="off" aria-selected="false"><span class="ctl-menu-label">Off</span></li><li role="option" class="ctl-menu-opt" tabindex="-1" data-value="daily" aria-selected="true"><span class="ctl-menu-label">Daily</span></li><li role="option" class="ctl-menu-opt" tabindex="-1" data-value="weekly" aria-selected="false"><span class="ctl-menu-label">Every Monday</span></li></ul></div><input id="digestTime" class="ctl-time" type="time" step="60" value="09:00" aria-label="Send time (KST)" data-write="1"><span class="muted">KST</span></span></div>
+    </div>
+  </section>
+</div>

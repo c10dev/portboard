@@ -1,0 +1,27 @@
+<!-- @dsCard group="Status" height=130 subtitle="tailnet, pool, LAN, other, self, routed, local, a port row's users line" -->
+<style>
+  .ds-stage { display: flex; flex-direction: column; gap: 14px; padding: 16px; }
+  .ds-label { font-size: var(--fs-1); color: var(--text-3); }
+</style>
+<div class="ds-stage">
+  <div>
+    <div class="ds-label">Kinds (u-kind)</div>
+    <div class="users">
+      <a class="user-chip u-tailnet" href="devices.html#laptop" title="Tailscale device">laptop</a>
+      <a class="user-chip u-pool" href="devices.html#desktop" title="compute-pool host">desktop</a>
+      <a class="user-chip u-lan" href="devices.html#desktop" title="LAN device">desktop</a>
+      <a class="user-chip u-other" href="devices.html#api" title="Other address">api</a>
+      <a class="user-chip u-self" href="devices.html#desktop" title="This server">desktop</a>
+      <a class="user-chip u-routed" href="devices.html#desktop" title="desktop routes LAN, so the connection's source shows as desktop. The original device can't be seen from here.">via desktop</a>
+      <a class="user-chip u-local" href="devices.html" title="A process on this server">This server ×2</a>
+    </div>
+  </div>
+  <div>
+    <div class="ds-label">Under a port row's badges (port 3000)</div>
+    <div class="users">
+      <span class="badge ok">3 in use</span>
+      <a class="user-chip u-tailnet" href="devices.html#laptop" title="Tailscale device">laptop</a>
+      <a class="user-chip u-local" href="devices.html" title="A process on this server">This server ×2</a>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,24 @@
+<!-- @dsCard group="Status" height=320 subtitle="neutral, serve, warn, info; after a service, a guest, a detail heading and a port" -->
+<style>
+.ds-stage { display: grid; gap: 14px; max-width: 520px; padding: 16px; background: var(--surface); color: var(--text); }
+.ds-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; font-size: 13px; }
+</style>
+<div class="ds-stage">
+  <div class="ds-row">
+    <span class="tag">this server</span>
+    <span class="tag serve">serve</span>
+    <span class="tag warn">Tailscale off</span>
+  </div>
+  <ul class="uses">
+    <li><span class="use-name"><span>my-app</span><span class="use-port">:5173</span><span class="tag serve">serve</span></span><span class="use-meta">2 connections · 1.2 MB</span></li>
+  </ul>
+  <ul class="guests">
+    <li class="guest on"><span class="gdot"></span><button class="guest-name" type="button" title="View this device"><span class="gtype lxc">CT</span><span class="vmid">101</span><span class="gname">api</span><span class="tag">this server</span></button><span class="guest-meta">CPU 4%</span></li>
+    <li class="guest on"><span class="gdot"></span><button class="guest-name" type="button" title="View this device"><span class="gtype qemu">VM</span><span class="vmid">102</span><span class="gname">desktop</span><span class="tag warn">Tailscale off</span></button><span class="guest-meta">CPU 12%</span></li>
+  </ul>
+  <div class="d-use"><div class="d-use-h"><strong>api</strong><span class="use-port">:8080</span><span class="tag">via laptop</span></div></div>
+  <ul class="hports">
+    <li><span class="hp-name"><span class="hp-port">:3000</span><span class="tag" title="Opened inside WSL (compute-pool)">WSL</span><span class="hp-proc">node</span><span class="tag info">tailnet</span></span></li>
+    <li><span class="hp-name"><span class="hp-port">:5173</span><span class="hp-proc">vite</span><span class="tag warn">On that device only</span></span></li>
+  </ul>
+</div>

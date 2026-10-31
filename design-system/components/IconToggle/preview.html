@@ -1,0 +1,71 @@
+<!-- @dsCard group="Actions" height=210 subtitle="pin and bell on, off, off in a selected row, off in a dense row" -->
+<style>
+.ds-stage { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 24px; padding: 16px; max-width: 920px; color: var(--text); background: var(--bg); }
+.ds-col { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.ds-cap { font-size: 12px; color: var(--muted); }
+.ds-plain { display: grid; gap: 10px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+</style>
+<div class="ds-stage">
+  <div class="ds-col">
+    <div class="ds-cap">Dense service rows: on, off in the selected row, off (shown on row hover)</div>
+    <ul class="list">
+      <li class="row">
+        <div class="port">3000</div>
+        <div class="main">
+          <div class="name-line">
+            <button type="button" class="pin on" aria-label="Pin" data-write="1" title="Unpin">★</button>
+            <a class="name" href="service.html#3000" title="my-app · View details">my-app</a>
+            <button class="bell on" data-write="1" type="button" title="3000: down alert on (click to turn off)" aria-label="3000: down alert on (click to turn off)" aria-pressed="true">🔔</button>
+          </div>
+          <div class="meta">node</div>
+          <div class="badges"></div>
+        </div>
+        <div class="actions"></div>
+        <details class="more"><summary>Details</summary><dl></dl></details>
+      </li>
+      <li class="row selected">
+        <div class="port">5173</div>
+        <div class="main">
+          <div class="name-line">
+            <button type="button" class="pin" aria-label="Pin" data-write="1" title="Pin to top">☆</button>
+            <a class="name" href="service.html#5173" title="api · View details">api</a>
+            <button class="bell" data-write="1" type="button" title="5173: get an alert when it goes down" aria-label="5173: get an alert when it goes down" aria-pressed="false">🔔</button>
+          </div>
+          <div class="meta">vite</div>
+          <div class="badges"></div>
+        </div>
+        <div class="actions"></div>
+        <details class="more"><summary>Details</summary><dl></dl></details>
+      </li>
+      <li class="row">
+        <div class="port">8080</div>
+        <div class="main">
+          <div class="name-line">
+            <button type="button" class="pin" aria-label="Pin" data-write="1" title="Pin to top">☆</button>
+            <a class="name" href="service.html#8080" title="desktop · View details">desktop</a>
+            <button class="bell" data-write="1" type="button" title="8080: get an alert when it goes down" aria-label="8080: get an alert when it goes down" aria-pressed="false">🔔</button>
+          </div>
+          <div class="meta">python</div>
+          <div class="badges"></div>
+        </div>
+        <div class="actions"></div>
+        <details class="more"><summary>Details</summary><dl></dl></details>
+      </li>
+    </ul>
+  </div>
+  <div class="ds-col">
+    <div class="ds-cap">Default, outside the dense list: on, then off</div>
+    <div class="ds-plain">
+      <div class="name-line">
+        <button type="button" class="pin on" aria-label="Pin" data-write="1" title="Unpin">★</button>
+        <a class="name" href="service.html#3000">my-app</a>
+        <button class="bell on" data-write="1" type="button" title="3000: down alert on (click to turn off)" aria-label="3000: down alert on (click to turn off)" aria-pressed="true">🔔</button>
+      </div>
+      <div class="name-line">
+        <button type="button" class="pin" aria-label="Pin" data-write="1" title="Pin to top">☆</button>
+        <a class="name" href="service.html#5173">api</a>
+        <button class="bell" data-write="1" type="button" title="5173: get an alert when it goes down" aria-label="5173: get an alert when it goes down" aria-pressed="false">🔔</button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,24 @@
+<!-- @dsCard group="Feedback" height=480 subtitle="title only, title + reason + action, title + hint + two actions, title + long reason" -->
+<style>
+  .ds-stage { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px; }
+  .ds-cell { border: 1px dashed var(--line); border-radius: 8px; }
+  .ds-label { font-size: 11px; color: var(--text-3); padding: 6px 10px 0; }
+</style>
+<div class="ds-stage">
+  <div class="ds-cell">
+    <div class="ds-label">Title only</div>
+    <p class="empty why-empty"><strong>No TCP ports are listening.</strong></p>
+  </div>
+  <div class="ds-cell">
+    <div class="ds-label">Title, reason and one action</div>
+    <p class="empty why-empty"><strong>No ports in use now.</strong><span class="why">They show up here when another device or a process on this server connects.</span><span class="acts"><button type="button">Show all</button></span></p>
+  </div>
+  <div class="ds-cell">
+    <div class="ds-label">Search miss: hint and two actions</div>
+    <p class="empty why-empty"><strong>No ports match "my-app".</strong><span class="why">⌘K (Ctrl+K) also finds devices and worktrees.</span><span class="acts"><button type="button">Clear search</button><button type="button">Search in the palette</button></span></p>
+  </div>
+  <div class="ds-cell">
+    <div class="ds-label">In a div, title and long reason</div>
+    <div class="why-empty"><strong>No known devices yet.</strong><span class="why">Devices come from Tailscale (tailscale status), compute-pool hosts and connections to this server (ip neigh for the LAN). Check that Tailscale is running on this server.</span></div>
+  </div>
+</div>

@@ -1,0 +1,41 @@
+<!-- @dsCard group="Navigation" height=560 subtitle="palette button (Mac, other), shortcuts rows with or and a hint, palette row keys, palette footer" -->
+<style>
+.ds-stage { display: grid; gap: 16px; max-width: 640px; padding: 16px; background: var(--bg); color: var(--text); }
+.ds-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ds-pal { position: relative; min-height: 220px; }
+</style>
+<div class="ds-stage">
+  <div class="ds-row"><div class="controls">
+    <button type="button" id="paletteBtn" class="palette-btn" title="Search and commands (⌘K or /)" aria-label="Search and commands" aria-keyshortcuts="Meta+K /"><span class="pb-ico">🔍</span><kbd>⌘K</kbd></button>
+    <button type="button" class="palette-btn" title="Search and commands (Ctrl K or /)" aria-label="Search and commands" aria-keyshortcuts="Control+K /"><span class="pb-ico">🔍</span><kbd>Ctrl K</kbd></button>
+  </div></div>
+  <section class="keys-sec">
+    <h3>General</h3>
+    <dl>
+      <dt>Search and commands</dt><dd><kbd>⌘K</kbd><span class="keys-or">or</span><kbd>/</kbd></dd>
+      <dt>Keyboard shortcuts</dt><dd><kbd>⌘/</kbd></dd>
+    </dl>
+  </section>
+  <section class="keys-sec">
+    <h3>Panes</h3>
+    <dl>
+      <dt>Open or close the sidebar</dt><dd><kbd>⌘\</kbd></dd>
+      <dt>Sidebar and details panel width (← → on the edge)</dt><dd><kbd>Drag the edge</kbd></dd>
+    </dl>
+  </section>
+  <div class="ds-pal">
+    <dialog class="palette" aria-label="Search and commands" open>
+      <div class="pal-head">
+        <button type="button" class="pal-back" aria-label="Back" hidden>←</button>
+        <input id="palQ" type="search" autocomplete="off" spellcheck="false" enterkeyhint="go" role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="palList" aria-activedescendant="pal-0" placeholder="Search or type a command">
+        <button type="button" class="pal-close">Close</button>
+      </div>
+      <div class="pal-ctx" hidden></div>
+      <ul id="palList" class="pal-list" role="listbox" aria-label="Results">
+        <li class="pal-row sel" id="pal-0" role="option" aria-selected="true" data-i="0"><span class="pal-kind k-cmd">Command</span><div class="pal-main"><div class="pal-title">Open or close the sidebar</div></div><span class="pal-keys"><kbd>⌘\</kbd></span></li>
+        <li class="pal-row" id="pal-1" role="option" aria-selected="false" data-i="1"><span class="pal-kind k-cmd">Command</span><div class="pal-main"><div class="pal-title">Keyboard shortcuts</div></div><span class="pal-keys"><kbd>⌘/</kbd></span></li>
+      </ul>
+      <p class="pal-foot"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> run · <kbd>→</kbd> more actions · <kbd>Esc</kbd> close</p>
+    </dialog>
+  </div>
+</div>

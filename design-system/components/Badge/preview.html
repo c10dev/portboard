@@ -1,0 +1,36 @@
+<!-- @dsCard group="Status" height=170 subtitle="default, ok, warn, info, bad, new, off (no rule), owner badge in a row" -->
+<style>
+  .ds-stage { display: flex; flex-direction: column; gap: 14px; padding: 16px; }
+  .ds-label { font-size: 11px; color: var(--text-3); margin-bottom: 2px; }
+  .ds-narrow { max-width: 180px; }
+</style>
+<div class="ds-stage">
+  <div>
+    <div class="ds-label">Tones</div>
+    <div class="badges">
+      <span class="badge">local only</span>
+      <span class="badge ok">2 in use</span>
+      <span class="badge warn">Not listening</span>
+      <span class="badge info">tailnet HTTPS</span>
+      <span class="badge bad">Not responding for 5m</span>
+      <span class="badge new">New device</span>
+      <span class="badge off">Offline</span>
+    </div>
+  </div>
+  <div>
+    <div class="ds-label">A port's badges (portBadges)</div>
+    <div class="badges">
+      <span class="badge info key">tailnet HTTPS</span>
+      <span class="badge info">All interfaces</span>
+      <span class="badge">HTTP 200</span>
+      <span class="badge">2 processes</span>
+      <span class="badge warn key">Alerts paused 2 min</span>
+    </div>
+  </div>
+  <div class="ds-narrow">
+    <div class="ds-label">Owner badge (ellipsis)</div>
+    <div class="badges">
+      <span class="badge owner-badge warn" title="Cleanup candidate: branch already merged">my-app@feature-long-branch-name-for-api (merged)</span>
+    </div>
+  </div>
+</div>

@@ -50,7 +50,8 @@
     "typecheck:public": "tsc -p tsconfig.public.json",
     "changelog": "node scripts/changelog.ts",
     "changelog:check": "node scripts/changelog.ts --check",
-    "demo": "PORTBOARD_SITE=portboard.example.json node scripts/demo.ts"
+    "demo": "PORTBOARD_SITE=portboard.example.json node scripts/demo.ts",
+    "design-system": "node scripts/design-system.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

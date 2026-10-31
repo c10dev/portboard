@@ -1,0 +1,61 @@
+<!-- @dsCard group="Navigation" height=600 subtitle="main list: group headers, a danger Recent row, a shortcut row, the selected row, drill buttons, an overflow note and the footer" -->
+<style>
+  .ds-stage { position: relative; min-height: 600px; background: var(--bg); }
+</style>
+<div class="ds-stage">
+  <dialog id="palette" class="palette" aria-label="Search and commands" open>
+    <div class="pal-head">
+      <button type="button" id="palBack" class="pal-back" aria-label="Back" hidden>←</button>
+      <input id="palQ" type="search" autocomplete="off" spellcheck="false" enterkeyhint="go" role="combobox" aria-expanded="true" aria-controls="palList" aria-autocomplete="list" aria-activedescendant="pal-2" placeholder="Search ports, devices, worktrees, commands">
+      <button type="button" id="palClose" class="pal-close">Close</button>
+    </div>
+    <div id="palCtx" class="pal-ctx" hidden></div>
+    <ul id="palList" class="pal-list" role="listbox" aria-label="Results">
+      <li class="pal-group">Recent</li>
+      <li class="pal-row danger" id="pal-0" role="option" data-i="0" aria-selected="false">
+        <span class="pal-kind k-port">Port</span>
+        <div class="pal-main">
+          <div class="pal-title">8080 api</div>
+          <div class="pal-sub">api · api.service</div>
+        </div>
+        <span class="pal-verb">Stop</span>
+      </li>
+      <li class="pal-group">Command</li>
+      <li class="pal-row" id="pal-1" role="option" data-i="1" aria-selected="false">
+        <span class="pal-kind k-cmd">Command</span>
+        <div class="pal-main">
+          <div class="pal-title">Keyboard shortcuts</div>
+        </div>
+        <span class="pal-keys"><kbd>Ctrl /</kbd></span>
+      </li>
+      <li class="pal-group">Port</li>
+      <li class="pal-row sel" id="pal-2" role="option" data-i="2" aria-selected="true">
+        <span class="pal-kind k-port">Port</span>
+        <div class="pal-main">
+          <div class="pal-title">3000 my-app</div>
+          <div class="pal-sub">my-app · my-app.service · ★</div>
+        </div>
+        <button type="button" class="pal-drill" title="More actions" aria-label="3000 my-app: more actions" tabindex="-1">›</button>
+      </li>
+      <li class="pal-row" id="pal-3" role="option" data-i="3" aria-selected="false">
+        <span class="pal-kind k-port">Port</span>
+        <div class="pal-main">
+          <div class="pal-title">8080 api</div>
+          <div class="pal-sub">api · api.service</div>
+        </div>
+        <button type="button" class="pal-drill" title="More actions" aria-label="8080 api: more actions" tabindex="-1">›</button>
+      </li>
+      <li class="pal-group">Device</li>
+      <li class="pal-row" id="pal-4" role="option" data-i="4" aria-selected="false">
+        <span class="pal-kind k-device">Device</span>
+        <div class="pal-main">
+          <div class="pal-title">desktop</div>
+          <div class="pal-sub">Linux · Online</div>
+        </div>
+        <button type="button" class="pal-drill" title="More actions" aria-label="desktop: more actions" tabindex="-1">›</button>
+      </li>
+      <li class="pal-more">Device: 2 more · type to find them</li>
+    </ul>
+    <p class="pal-foot"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> run · <kbd>→</kbd> more actions · <kbd>Esc</kbd> close</p>
+  </dialog>
+</div>

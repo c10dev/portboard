@@ -1,0 +1,42 @@
+<!-- @dsCard group="Feedback" height=280 subtitle="undo toast, plain, error, stack with two tucked behind" -->
+<style>
+  .ds-stage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 16px; }
+  .ds-label { font-size: 11px; color: var(--text-3); margin-bottom: 4px; }
+  .ds-box { position: relative; transform: translateZ(0); height: 96px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+</style>
+<div class="ds-stage">
+  <div>
+    <div class="ds-label">With Undo action</div>
+    <div class="ds-box">
+      <div class="toast-stack" role="status" aria-live="polite" aria-atomic="false" aria-label="Notifications">
+        <div class="toast" data-depth="0"><span class="toast-text">3000 unpinned</span><button type="button" class="toast-action" data-write="1">Undo</button><button type="button" class="toast-close" title="Close" aria-label="Dismiss notification">×</button></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="ds-label">Error</div>
+    <div class="ds-box">
+      <div class="toast-stack" role="status" aria-live="polite" aria-atomic="false" aria-label="Notifications">
+        <div class="toast error" data-depth="0"><span class="toast-text">That worktree isn't in the list</span><button type="button" class="toast-close" title="Close" aria-label="Dismiss notification">×</button></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="ds-label">Plain, repeated</div>
+    <div class="ds-box">
+      <div class="toast-stack" role="status" aria-live="polite" aria-atomic="false" aria-label="Notifications">
+        <div class="toast" data-depth="0"><span class="toast-text">Copied (×2)</span><button type="button" class="toast-close" title="Close" aria-label="Dismiss notification">×</button></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="ds-label">Stack: front (depth 0) and two behind</div>
+    <div class="ds-box">
+      <div class="toast-stack" role="status" aria-live="polite" aria-atomic="false" aria-label="Notifications" style="--toast-front-h: 40px">
+        <div class="toast" data-depth="2" inert><span class="toast-text">Copied</span><button type="button" class="toast-close" title="Close" aria-label="Dismiss notification">×</button></div>
+        <div class="toast" data-depth="1" inert><span class="toast-text">5173 hidden</span><button type="button" class="toast-action" data-write="1">Undo</button><button type="button" class="toast-close" title="Close" aria-label="Dismiss notification">×</button></div>
+        <div class="toast" data-depth="0"><span class="toast-text">8080 down alert off</span><button type="button" class="toast-action" data-write="1">Undo</button><button type="button" class="toast-close" title="Close" aria-label="Dismiss notification">×</button></div>
+      </div>
+    </div>
+  </div>
+</div>

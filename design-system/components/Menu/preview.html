@@ -1,0 +1,44 @@
+<!-- @dsCard group="Actions" height=300 subtitle="closed, open with separator and danger item, open with safe items only" -->
+<style>
+  .ds-stage { display: flex; flex-wrap: wrap; gap: 24px; padding: 16px; color: var(--text); background: var(--bg); }
+  .ds-cell { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; width: 240px; min-height: 262px; }
+  .ds-cap { align-self: flex-start; color: var(--muted); font-size: var(--fs-2); }
+</style>
+<div class="ds-stage">
+  <div class="ds-cell">
+    <span class="ds-cap">Closed</span>
+    <details class="menu">
+      <summary title="More" aria-label="More for 3000">⋯</summary>
+      <div class="menu-panel">
+        <button type="button" data-write="1">Rename</button>
+        <button type="button" data-write="1">Hide</button>
+      </div>
+    </details>
+  </div>
+  <div class="ds-cell">
+    <span class="ds-cap">Open: separator and danger item</span>
+    <details class="menu" open>
+      <summary title="More" aria-label="More for 3000">⋯</summary>
+      <div class="menu-panel">
+        <button type="button" data-write="1">Rename</button>
+        <button type="button" data-write="1">Hide</button>
+        <button type="button" data-write="1">🔔 Turn on down alert</button>
+        <button type="button">View logs</button>
+        <button type="button" data-write="1">Restart</button>
+        <div class="menu-sep" role="separator"></div>
+        <button class="danger" type="button" data-write="1">Stop</button>
+      </div>
+    </details>
+  </div>
+  <div class="ds-cell">
+    <span class="ds-cap">Open: no danger item, no separator</span>
+    <details class="menu" open>
+      <summary title="More" aria-label="More for 5173">⋯</summary>
+      <div class="menu-panel">
+        <button type="button" data-write="1">Rename</button>
+        <button type="button" data-write="1">Unhide</button>
+        <button type="button" data-write="1">🔔 Turn off down alert</button>
+      </div>
+    </details>
+  </div>
+</div>

@@ -1,0 +1,46 @@
+<!-- @dsCard group="Forms" height=250 subtitle="theme, list width with titles, language, disabled, squeezed with ellipsis" -->
+<style>
+.ds-stage { display: flex; flex-direction: column; gap: 14px; padding: 16px; background: var(--surface); color: var(--muted); font-size: 12px; }
+.ds-stage .ds-row { display: flex; align-items: center; gap: 12px; }
+.ds-stage .ds-label { width: 160px; flex: none; }
+.ds-stage .ds-narrow { display: flex; max-width: 150px; min-width: 0; }
+</style>
+<div class="ds-stage">
+  <div class="ds-row"><span class="ds-label">Theme (System picked)</span>
+    <div class="ctl-seg" role="radiogroup" id="uiTheme">
+      <label class="ctl-seg-opt"><input type="radio" class="ctl-seg-input" name="seg1" value="system" checked><span>System</span></label>
+      <label class="ctl-seg-opt"><input type="radio" class="ctl-seg-input" name="seg1" value="light"><span>Light</span></label>
+      <label class="ctl-seg-opt"><input type="radio" class="ctl-seg-input" name="seg1" value="dark"><span>Dark</span></label>
+    </div>
+  </div>
+  <div class="ds-row"><span class="ds-label">List width (with title)</span>
+    <div class="ctl-seg" role="radiogroup" id="listWidth">
+      <label class="ctl-seg-opt" title="Up to 680px"><input type="radio" class="ctl-seg-input" name="seg2" value="narrow"><span>Narrow</span></label>
+      <label class="ctl-seg-opt" title="Up to 808px"><input type="radio" class="ctl-seg-input" name="seg2" value="normal" checked><span>Normal</span></label>
+      <label class="ctl-seg-opt" title="Up to 1080px"><input type="radio" class="ctl-seg-input" name="seg2" value="wide"><span>Wide</span></label>
+    </div>
+  </div>
+  <div class="ds-row"><span class="ds-label">Language (last picked)</span>
+    <div class="ctl-seg" role="radiogroup" id="uiLocale">
+      <label class="ctl-seg-opt"><input type="radio" class="ctl-seg-input" name="seg3" value="auto"><span>Auto</span></label>
+      <label class="ctl-seg-opt"><input type="radio" class="ctl-seg-input" name="seg3" value="ko"><span>한국어</span></label>
+      <label class="ctl-seg-opt"><input type="radio" class="ctl-seg-input" name="seg3" value="en" checked><span>English</span></label>
+    </div>
+  </div>
+  <div class="ds-row"><span class="ds-label">Disabled</span>
+    <div class="ctl-seg disabled" role="radiogroup" aria-label="Theme">
+      <label class="ctl-seg-opt"><input type="radio" class="ctl-seg-input" name="seg4" value="system" disabled><span>System</span></label>
+      <label class="ctl-seg-opt"><input type="radio" class="ctl-seg-input" name="seg4" value="light" checked disabled><span>Light</span></label>
+      <label class="ctl-seg-opt"><input type="radio" class="ctl-seg-input" name="seg4" value="dark" disabled><span>Dark</span></label>
+    </div>
+  </div>
+  <div class="ds-row"><span class="ds-label">Squeezed (150px)</span>
+    <div class="ds-narrow">
+      <div class="ctl-seg" role="radiogroup" aria-label="Theme">
+        <label class="ctl-seg-opt"><input type="radio" class="ctl-seg-input" name="seg5" value="system" checked><span>System</span></label>
+        <label class="ctl-seg-opt"><input type="radio" class="ctl-seg-input" name="seg5" value="light"><span>Light</span></label>
+        <label class="ctl-seg-opt"><input type="radio" class="ctl-seg-input" name="seg5" value="dark"><span>Dark</span></label>
+      </div>
+    </div>
+  </div>
+</div>

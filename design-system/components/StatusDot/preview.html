@@ -1,0 +1,49 @@
+<!-- @dsCard group="Status" height=420 subtitle="device cards ok/warn/bad/off, tree rows with LAN ring, alert and collector lists, self-watch chip, guest dots" -->
+<style>
+  .ds-stage { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px; max-width: 900px; color: var(--text); background: var(--bg); }
+  .ds-stage .ds-wide { grid-column: 1 / -1; }
+  .ds-stage .ds-gap { margin-top: 4px; }
+  .ds-stage .ds-chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+</style>
+<div class="ds-stage">
+  <div class="devices ds-wide">
+    <div class="device ok"><div class="device-head"><span class="dot"></span><strong>desktop</strong><span class="device-os">linux</span></div><div class="device-line">Online</div></div>
+    <div class="device warn"><div class="device-head"><span class="dot"></span><strong>laptop</strong><span class="device-os">linux</span></div><div class="device-line">Degraded</div></div>
+    <div class="device bad"><div class="device-head"><span class="dot"></span><strong>api</strong><span class="device-os">linux</span></div><div class="device-line">Not responding</div></div>
+    <div class="device off"><div class="device-head"><span class="dot"></span><strong>my-app</strong><span class="device-os">linux</span></div><div class="device-line">Offline · just now</div></div>
+  </div>
+
+  <div class="net-tree">
+    <div class="nt-list" role="tree" aria-label="Network map">
+      <div class="nt-row k-device" role="treeitem" aria-level="1"><span class="nt-fold-pad"></span><div class="nt-main"><div class="nt-line"><span class="dot t-ok"></span><strong class="nt-name">desktop</strong></div><div class="nt-meta">linux</div></div></div>
+      <div class="nt-row k-device" role="treeitem" aria-level="1"><span class="nt-fold-pad"></span><div class="nt-main"><div class="nt-line"><span class="dot t-warn"></span><strong class="nt-name">laptop</strong></div><div class="nt-meta">linux</div></div></div>
+      <div class="nt-row k-device" role="treeitem" aria-level="1"><span class="nt-fold-pad"></span><div class="nt-main"><div class="nt-line"><span class="dot t-bad"></span><strong class="nt-name">api</strong></div><div class="nt-meta">linux</div></div></div>
+      <div class="nt-row k-device" role="treeitem" aria-level="1"><span class="nt-fold-pad"></span><div class="nt-main"><div class="nt-line"><span class="dot t-off"></span><strong class="nt-name">my-app</strong></div><div class="nt-meta">linux</div></div></div>
+      <div class="nt-row k-device" role="treeitem" aria-level="1"><span class="nt-fold-pad"></span><div class="nt-main"><div class="nt-line"><span class="dot t-lan"></span><strong class="nt-name">laptop</strong></div><div class="nt-meta"></div></div></div>
+    </div>
+  </div>
+
+  <div>
+    <ul class="alerts-list">
+      <li class="alerts-item"><span class="dot ok"></span><span class="alerts-port">3000</span><strong>my-app</strong><span class="alerts-state ok">OK</span><button class="alerts-off" type="button" data-write="1" title="Turn off this alert">Turn off</button></li>
+      <li class="alerts-item"><span class="dot warn"></span><span class="alerts-port">5173</span><strong>api</strong><span class="alerts-state warn">Checking (missed once)</span><button class="alerts-off" type="button" data-write="1" title="Turn off this alert">Turn off</button></li>
+      <li class="alerts-item"><span class="dot bad"></span><span class="alerts-port">8080</span><strong>desktop</strong><span class="alerts-state bad">Not responding · just now · alert sent</span><button class="alerts-off" type="button" data-write="1" title="Turn off this alert">Turn off</button></li>
+    </ul>
+    <div class="sw-dlg ds-gap">
+      <ul class="alerts-list">
+        <li class="alerts-item"><span class="dot muted"></span><strong>laptop</strong><span class="alerts-state muted">Not set up</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="ds-chips">
+    <button class="sw-chip" type="button" aria-label="Data collection status"><span class="sw-dot"></span><span class="sw-text">Collection OK</span></button>
+    <button class="sw-chip warn" type="button" aria-label="Data collection status"><span class="sw-dot"></span><span class="sw-text">Low memory</span></button>
+    <button class="sw-chip alarm" type="button" aria-label="Data collection status"><span class="sw-dot"></span><span class="sw-text">1 failing</span></button>
+  </div>
+
+  <ul class="guests">
+    <li class="guest on"><span class="gdot"></span><button class="guest-name" type="button" title="View this device"><span class="gtype lxc">CT</span><span class="vmid">101</span><span class="gname">api</span></button></li>
+    <li class="guest off"><span class="gdot"></span><button class="guest-name" type="button" title="View this device"><span class="gtype qemu">VM</span><span class="vmid">102</span><span class="gname">my-app</span></button></li>
+  </ul>
+</div>

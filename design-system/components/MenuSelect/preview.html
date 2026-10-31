@@ -1,0 +1,60 @@
+<!-- @dsCard group="Forms" height=500 subtitle="closed, disabled, open, open with option descriptions" -->
+<style>
+  .ds-stage { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 24px; padding: 16px; color: var(--text); background: var(--bg); }
+  .ds-col { display: flex; flex-direction: column; gap: 8px; }
+  .ds-cap { color: var(--muted); font-size: 12px; }
+  /* the list is position: fixed; transform makes each cell its containing block, so the inline top/right that
+     place() would set are measured from the cell, not the frame */
+  .ds-cell { position: relative; transform: translateZ(0); display: flex; justify-content: flex-end; box-sizing: border-box; padding-right: 8px; }
+  .ds-cell-s { width: 220px; min-height: 160px; }
+  .ds-cell-l { width: 400px; min-height: 300px; }
+  /* the list caps itself at 50vh: the card is tall enough that the longest list is not cut */
+</style>
+<div class="ds-stage">
+  <div class="ds-col">
+    <span class="ds-cap">Closed</span>
+    <div class="ctl-menu" id="digestMode" data-write="1">
+      <button type="button" class="ctl-menu-btn" aria-haspopup="listbox" aria-expanded="false" aria-controls="menu1" aria-label="Digest schedule" title="Off"><span class="ctl-menu-text">Off</span><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <ul class="ctl-menu-list" role="listbox" id="menu1" hidden aria-label="Digest schedule">
+        <li role="option" class="ctl-menu-opt" tabindex="-1" data-value="off" aria-selected="true"><span class="ctl-menu-label">Off</span></li>
+        <li role="option" class="ctl-menu-opt" tabindex="-1" data-value="daily" aria-selected="false"><span class="ctl-menu-label">Daily</span></li>
+        <li role="option" class="ctl-menu-opt" tabindex="-1" data-value="weekly" aria-selected="false"><span class="ctl-menu-label">Every Monday</span></li>
+      </ul>
+    </div>
+    <span class="ds-cap">Disabled</span>
+    <div class="ctl-menu" data-write="1">
+      <button type="button" class="ctl-menu-btn" aria-haspopup="listbox" aria-expanded="false" aria-controls="menu2" aria-label="Digest schedule" title="Daily" disabled><span class="ctl-menu-text">Daily</span><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <ul class="ctl-menu-list" role="listbox" id="menu2" hidden aria-label="Digest schedule">
+        <li role="option" class="ctl-menu-opt" tabindex="-1" data-value="off" aria-selected="false"><span class="ctl-menu-label">Off</span></li>
+        <li role="option" class="ctl-menu-opt" tabindex="-1" data-value="daily" aria-selected="true"><span class="ctl-menu-label">Daily</span></li>
+        <li role="option" class="ctl-menu-opt" tabindex="-1" data-value="weekly" aria-selected="false"><span class="ctl-menu-label">Every Monday</span></li>
+      </ul>
+    </div>
+  </div>
+  <div class="ds-col">
+    <span class="ds-cap">Open</span>
+    <div class="ds-cell ds-cell-s">
+      <div class="ctl-menu" data-write="1">
+        <button type="button" class="ctl-menu-btn" aria-haspopup="listbox" aria-expanded="true" aria-controls="menu3" aria-label="Digest schedule" title="Daily"><span class="ctl-menu-text">Daily</span><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <ul class="ctl-menu-list" role="listbox" id="menu3" aria-label="Digest schedule" style="right: 8px; left: auto; bottom: auto; top: 36px;">
+          <li role="option" class="ctl-menu-opt" tabindex="-1" data-value="off" aria-selected="false"><span class="ctl-menu-label">Off</span></li>
+          <li role="option" class="ctl-menu-opt" tabindex="-1" data-value="daily" aria-selected="true"><span class="ctl-menu-label">Daily</span></li>
+          <li role="option" class="ctl-menu-opt" tabindex="-1" data-value="weekly" aria-selected="false"><span class="ctl-menu-label">Every Monday</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="ds-col">
+    <span class="ds-cap">Open: options with a description</span>
+    <div class="ds-cell ds-cell-l">
+      <div class="ctl-menu" id="autoStop" data-write="1">
+        <button type="button" class="ctl-menu-btn" aria-haspopup="listbox" aria-expanded="true" aria-controls="menu4" aria-label="When a session ends" title="Nothing is stopped when a session ends. Leftover servers show up in the Services tab's cleanup banner."><span class="ctl-menu-text">Off (default)</span><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <ul class="ctl-menu-list" role="listbox" id="menu4" aria-label="When a session ends" style="right: 8px; left: auto; bottom: auto; top: 36px;">
+          <li role="option" class="ctl-menu-opt" tabindex="-1" data-value="off" aria-selected="true"><span class="ctl-menu-label">Off (default)</span><span class="ctl-menu-desc">Nothing is stopped when a session ends. Leftover servers show up in the Services tab's cleanup banner.</span></li>
+          <li role="option" class="ctl-menu-opt" tabindex="-1" data-value="scratchpad" aria-selected="false"><span class="ctl-menu-label">Scratchpad and temporary units only</span><span class="ctl-menu-desc">Stops only the servers running in that session's scratchpad and the temporary units Portboard started (pb-dev-, pb-sd-). Servers in worktrees are left alone.</span></li>
+          <li role="option" class="ctl-menu-opt" tabindex="-1" data-value="all" aria-selected="false"><span class="ctl-menu-label">All of that session's servers</span><span class="ctl-menu-desc">Stops every server that session started (except pinned ports and services that aren't cleanup candidates).</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>

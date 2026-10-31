@@ -1,0 +1,37 @@
+<!-- @dsCard height=288 -->
+<style>
+  .ds-cover { position: relative; width: 960px; height: 288px; overflow: hidden; background: var(--bg); font-family: var(--font-sans); }
+  .ds-cover svg { position: absolute; inset: 0; }
+  .ds-cover .b-accent { fill: var(--accent); }
+  .ds-cover .b-ink { fill: var(--text); }
+  .ds-cover .b-tint { fill: var(--info-bg); }
+  .ds-cover .b-ok { fill: var(--ok); }
+  .ds-cover .cut { fill: var(--bg); }
+  .ds-cover .tile { rx: var(--radius-12); }
+  .ds-cover .ds-text { position: absolute; left: 40px; bottom: 32px; max-width: 440px; }
+  .ds-cover h1 { margin: 0; font-size: 80px; line-height: .92; font-weight: 650; letter-spacing: -.02em; color: var(--text); }
+  .ds-cover p { margin: 12px 0 0; font-size: 14px; color: var(--muted); }
+</style>
+<div class="ds-cover">
+  <svg viewBox="0 0 960 288" width="960" height="288" aria-hidden="true">
+    <!--
+      blocks: accent 240×216 slab, text ink 144×112, info-bg tint 144×168, ok 64×64; corners radius-12
+      arrangement: one tall slab with satellites, flush to the top and right edges, all right of x = 480
+      pattern: a literal motif, the app icon's three rounded bars and dot, i.e. rows of a port list; the bars are the
+               ground cut out of the accent slab, the dot is ok ("rows with a status dot" is what Portboard shows)
+      steps and radii: 8px gaps between blocks; bars 24px tall with 12px ends (half the short side); radius-12 corners
+    -->
+    <rect class="b-accent tile" x="576" y="-12" width="240" height="228" />
+    <rect class="cut" x="600" y="40" width="160" height="24" rx="12" />
+    <rect class="cut" x="600" y="80" width="112" height="24" rx="12" />
+    <rect class="cut" x="600" y="120" width="136" height="24" rx="12" />
+    <circle class="b-ok" cx="752" cy="92" r="12" />
+    <rect class="b-ink tile" x="824" y="-12" width="148" height="124" />
+    <rect class="b-tint tile" x="824" y="120" width="148" height="180" />
+    <rect class="b-ok tile" x="504" y="152" width="64" height="64" />
+  </svg>
+  <div class="ds-text">
+    <h1>Portboard</h1>
+    <p>Ports, devices and worktrees on one server, at a glance.</p>
+  </div>
+</div>
