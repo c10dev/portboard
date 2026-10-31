@@ -94,6 +94,7 @@ const { loadNames } = await import('../src/core/clients.ts');
 const { loadPrefs } = await import('../src/core/prefs.ts');
 const { applyRule } = await import('../src/features/port-rules.ts');
 const { t } = await import('../src/core/i18n.ts');
+const { TAILSCALE_POLICY } = await import('../src/core/access.ts');
 
 after(() => rm(DIR, { recursive: true, force: true }));
 
@@ -114,6 +115,9 @@ function context(over: Record<string, unknown> = {}) {
     alerts: { test: async () => ({ ok: false, message: 'no channel', sent: [] }) },
     // Tailscale is running (the Tailscale-only routes answer 409 before anything else without it, #12)
     ts: { available: true },
+    // owner-only reads (logs) classify the caller: api() comes from loopback, the owner
+    owner: async () => null,
+    policy: async () => TAILSCALE_POLICY,
     ...over,
   };
   return { ctx: ctx as any, invalidated, acked };
