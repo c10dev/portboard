@@ -77,7 +77,7 @@ The REST API and the MCP server both wrap the same functions in `src/core/`, and
 | `control.ts` | `logs(port, lines)` | `GET /api/ports/:port/logs` | `tail_logs` |
 | `devices.ts` | `devices()` | `GET /api/devices` | `list_devices` (also remote) |
 | `usage.ts` | `usage()`, history | `GET /api/usage`, `/api/topology`, `POST /api/clients/name` | `who_uses`, `list_usage`, `name_device`; remote `who_uses_what` |
-| `free-ports.ts` | `freePorts(count, preferred)` | `GET /api/free-ports` | `free_port` (also remote) |
+| `free-ports.ts` | `freePorts(count, preferred, forOwner)` | `GET /api/free-ports` | `free_port` (also remote) |
 | `alerts.ts` | the checker (alerts.ts) | `GET /api/alerts`, `POST /api/alerts/test`, `POST /api/devices/:id/alert` | `set_alert` |
 | `known.ts` | the 새 기기 tracker | `GET /api/known-devices`, `POST …/ack`, `…/settings` | `list_new_devices` |
 | `service-detail.ts` | `serviceDetail(…)` (detail.ts) | `GET /api/ports/:port/detail` | `service_detail` |

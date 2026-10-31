@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadReservations, normalizeOwner, release, reserve, reservedFor } from '../src/core/reservations.ts';
@@ -84,4 +84,49 @@ test('normalizeOwner and matchesOwner', () => {
   assert.equal(matchesOwner('shop-web', 'worktrees/shop-web-1786/3d-redesign'), true);
   assert.equal(matchesOwner('uploader', 'webapp'), false);
   assert.equal(matchesOwner('uploader', null), null);
+});
+
+test('loadReservations: a missing file is an empty list; a broken file throws and reserve leaves it as it is', async () => {
+  const path = await tmp();
+  assert.deepEqual(await loadReservations(path), []);
+  const broken = '{"version":1,"reservations":[{"port":3001,"owner":"shop-web","createdAt":""},{"port":3002,"owner":"api","createdAt":""},]}\n';
+  await writeFile(path, broken);
+  await assert.rejects(loadReservations(path), /cannot parse reservations\.json/);
+  await assert.rejects(reserve('blog', 3001, undefined, async () => undefined, path), /cannot parse reservations\.json/);
+  await assert.rejects(release(3002, null, path), /cannot parse reservations\.json/);
+  assert.equal(await readFile(path, 'utf8'), broken, 'the file is not replaced');
+  await writeFile(path, '{"version":1}\n');
+  await assert.rejects(loadReservations(path), /no reservations list/);
+  // the queue still runs after a failed job
+  await writeFile(path, '{"version":1,"reservations":[]}\n');
+  const ok = await reserve('blog', 3001, undefined, async () => undefined, path);
+  assert.equal(ok.ok, true);
+});
+
+test('reserve without a port at the same time: each owner gets its own free port', async () => {
+  const path = await tmp();
+  // as freePorts does: the first port that the file does not hold
+  const pick = async () => {
+    const held = new Set((await loadReservations(path)).map((r) => r.port));
+    return [4000, 4001, 4002].find((p) => !held.has(p));
+  };
+  const [a, b] = await Promise.all([reserve('a', undefined, undefined, pick, path), reserve('b', undefined, undefined, pick, path)]);
+  assert.ok(a.ok && b.ok, JSON.stringify([a, b]));
+  assert.deepEqual([a.reservation.port, b.reservation.port], [4000, 4001]);
+  assert.deepEqual((await loadReservations(path)).map((r) => [r.port, r.owner]), [[4000, 'a'], [4001, 'b']]);
+  assert.deepEqual(await reserve('c', undefined, undefined, async () => undefined, path), { ok: false, error: 'no free port found' });
+});
+
+test('free_port: for is normalized as reserve_port normalizes owner, so an owner gets its own reserved port', async () => {
+  const seen: unknown[] = [];
+  const core = { freePorts: async (_count: number, _preferred: number | undefined, forOwner: string | null) => (seen.push(forOwner), [3005]) } as any;
+  await callTool('free_port', { for: '  shop   web ' }, core);
+  await callTool('free_port', { for: 'shop\tweb' }, core);
+  await callTool('free_port', { for: '   ' }, core);
+  await callTool('free_port', {}, core);
+  assert.deepEqual(seen, [normalizeOwner('shop  web'), 'shop web', null, null]);
+  assert.equal(normalizeOwner('shop  web'), 'shop web');
+  // what that changes: the owner's reserved port is offered, not blocked
+  const list = [{ port: 3005, owner: 'shop web', createdAt: '' }];
+  assert.deepEqual(reservedFor(list, seen[0] as string).own, [3005]);
 });

@@ -5,9 +5,10 @@
 //   MCP free_port (also remote: the result is only port numbers)
 
 import { freePorts } from '../core/index.ts';
+import { normalizeOwner } from '../core/reservations.ts';
 import { parseOptionalInt, text, type Core } from '../mcp/kit.ts';
 import { readOnlyCore } from '../remote/core.ts';
-import { ok } from './router.ts';
+import { ok, reply } from './router.ts';
 import type { FeatureModule, Tool } from './types.ts';
 
 declare module '../mcp/kit.ts' {
@@ -23,7 +24,7 @@ async function freePort(args: unknown, core: Core) {
   if (!count.ok) return text(count.error, true);
   const forRaw = (args as { for?: unknown } | null)?.for;
   if (forRaw !== undefined && typeof forRaw !== 'string') return text('for must be a string (a project or worktree owner)', true);
-  return text({ ports: await core.freePorts(count.value ?? 1, preferred.value, forRaw?.trim() || null) });
+  return text({ ports: await core.freePorts(count.value ?? 1, preferred.value, normalizeOwner(forRaw)) });
 }
 
 const tool: Tool = {
@@ -62,9 +63,15 @@ export const freePortsFeature: FeatureModule = {
       method: 'GET',
       path: '/api/free-ports',
       async handler({ url }) {
-        const count = Number(url.searchParams.get('count') ?? 1);
-        const preferred = url.searchParams.has('preferred') ? Number(url.searchParams.get('preferred')) : undefined;
-        return ok({ ports: await freePorts(count, preferred, url.searchParams.get('for')?.trim() || null) });
+        // the same ranges as the tool's parseOptionalInt: a bad value is 400, not an empty or a longer list
+        const q = (name: string) => (url.searchParams.has(name) ? Number(url.searchParams.get(name)) : undefined);
+        const count = q('count') ?? 1;
+        if (!(Number.isInteger(count) && count >= 1 && count <= 20)) return reply(400, { error: 'count must be an integer 1–20' });
+        const preferred = q('preferred');
+        if (preferred !== undefined && !(Number.isInteger(preferred) && preferred >= 1024 && preferred <= 65535)) {
+          return reply(400, { error: 'preferred must be an integer 1024–65535' });
+        }
+        return ok({ ports: await freePorts(count, preferred, normalizeOwner(url.searchParams.get('for'))) });
       },
     },
   ],

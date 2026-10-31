@@ -10,9 +10,11 @@ things, and what is recorded. The public, read-only remote MCP server (8794, Fun
 - It listens only on loopback and the Tailscale IP, so only processes on this machine and devices in the tailnet can connect. Without Tailscale, loopback only. `PORTBOARD_HOSTS` can add a LAN address; without [token mode](#token-mode-c10devportboard12) it is read-only there, and the server says so at start.
 - `tailscale serve` publishes it as `https://devbox.example.ts.net:8443` (8443 → 127.0.0.1:8790), tailnet only. Port 443 is the public, read-only remote MCP server (Funnel → 8794); the dashboard is never on a Funnel port.
 - Requests whose `Host` header isn't one of this machine's names get 421. This blocks DNS rebinding. The names are localhost, 127.0.0.1, the host name, the Tailscale names and IPs, the listen addresses, and `PORTBOARD_ALLOWED_HOSTS` (e.g. `devbox.lan`); a wildcard bind (`0.0.0.0`) adds this machine's interface addresses, never "any" (`src/core/hosts.ts`).
-- Reads (`GET`) are open to every caller that can connect, with one exception: the audit log (`GET /api/audit`) is the
-  owner's only (c10dev/portboard#7, [Audit log](#audit-log-c10devportboard30)). The tailnet is the owner's devices plus
-  anything shared into it, and the port list, devices and history are readable by all of them.
+- Reads (`GET`) are open to every caller that can connect, with two exceptions that are the owner's only: the audit
+  log (`GET /api/audit`, c10dev/portboard#7, [Audit log](#audit-log-c10devportboard30)) and service logs
+  (`GET /api/ports/:port/logs`), because a dev server often prints tokens and secrets at start. Other callers get
+  403 `owner only`. The tailnet is the owner's devices plus anything shared into it, and the port list, devices and
+  history are readable by all of them.
 
 ## Who can write (c10dev/portboard#29)
 
