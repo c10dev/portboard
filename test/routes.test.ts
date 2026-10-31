@@ -408,7 +408,7 @@ test('GET /api/free-ports: skips listening and reserved ports; count, preferred 
   assert.deepEqual((await api('GET', '/api/free-ports')).body, { ports: [3003] });
   assert.deepEqual((await api('GET', '/api/free-ports?count=3&preferred=8000')).body, { ports: [8000, 8001, 8002] });
   assert.deepEqual((await api('GET', '/api/free-ports?count=2&for=cms@main')).body, { ports: [3005, 3003] });
-  assert.equal((await api('GET', '/api/free-ports?count=500')).body.ports.length, 20, 'at most 20');
+  assert.equal((await api('GET', '/api/free-ports?count=20')).body.ports.length, 20, 'up to 20; more is 400 (above)');
   await api('POST', '/api/reservations/3005/release');
 });
 
