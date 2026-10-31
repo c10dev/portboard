@@ -391,6 +391,16 @@ test('reservations: create 201, the same owner again 200, a conflict 409, bad ow
   assert.deepEqual(await api('POST', '/api/reservations/6100/release'), { status: 404, body: { error: '6100 is not reserved' } });
 });
 
+test('GET /api/free-ports: a count or preferred that is not an integer in range is 400 before any scan', async () => {
+  await clearCalls();
+  for (const q of ['count=abc', 'count=1.5', 'count=0', 'count=21', 'count=', 'preferred=abc', 'preferred=80', 'preferred=3000.5', 'preferred=70000']) {
+    const r = await api('GET', `/api/free-ports?${q}`);
+    assert.equal(r.status, 400, q);
+    assert.match(r.body.error, /must be an integer/, q);
+  }
+  assert.deepEqual(await calls('ss'), [], 'nothing was scanned');
+});
+
 test('GET /api/free-ports: skips listening and reserved ports; count, preferred and for (that owner\'s reserved ports first)', async () => {
   await listen(3000, 3002);
   // 3001 is the feat worktree's since its dev server started above

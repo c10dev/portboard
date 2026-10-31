@@ -8,7 +8,7 @@
 | GET | `/api/ports` | Snapshot of every port (`?fresh` skips the 2 s cache, at most once per 5 s; see **Load bounds**) |
 | GET | `/api/ports/:port/logs?lines=100` | Recent logs of whatever owns the port (max 1000 lines); the owner comes from the shared 2 s snapshot. **The owner only**: anyone else gets `403 {error: "owner only", reason}` |
 | GET | `/api/ports/:port/detail` | Everything for `service.html`: `entry` (the snapshot entry, null while nothing listens), `usingNow`, `lastUsed` (devices × last seen), `watch`, `uptime` (%, recent checks, 24 h and 30-day slots, outages), `events` (alerts sent); 404 when nothing is known about the port |
-| GET | `/api/free-ports?count=1&preferred=3000` | Free ports for a new server |
+| GET | `/api/free-ports?count=1&preferred=3000&for=<owner>` | Free ports for a new server; `for` puts that owner's reserved ports first. `count` is 1–20 and `preferred` 1024–65535, else 400 |
 | GET | `/api/topology` | Raw connections: who is connected to which port now (`?fresh` as for `/api/ports`); `/api/usage` is the per-device view built on it |
 | GET | `/api/owners` | Owners of every listening plain process (the Claude Code session that started it, its worktree and branch) and the cleanup candidates: servers whose working directory was deleted, whose starting session ended, or whose branch is merged |
 | POST | `/api/cleanup` | JSON `{ports: [...]}` (1–50): stops those candidates, each re-checked first (SIGTERM, or `systemctl --user stop` for a transient unit). Installed units, docker containers, other users' processes and pinned ports are never candidates; needs `X-Portboard: 1` |
