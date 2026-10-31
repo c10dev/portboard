@@ -1822,7 +1822,9 @@
   "shell.view.settings": "Settings",
   "sshread.reason.disabled": "turned off in its config",
   "sshread.reason.reading": "first read in progress ({sec}s)",
+  "sshread.reason.refreshing": "last good read {age} ago, reading again ({sec}s)",
   "sshread.reason.retry": "{error}, next attempt in {sec}s",
+  "sshread.reason.stale": "last good read {age} ago, the next request reads again",
   "sshread.reason.waiting": "waiting for the first read",
   "start.allDone": {
     "one": "All set up ({n} item).",
