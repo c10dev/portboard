@@ -15,6 +15,7 @@ export function el(tag, cls, text) {
 /**
  * h('a', { class: 'x', href, title, onclick: fn }, 'text', child, [more]) → element.
  * Props: class, text, dataset, on<event> handlers, booleans as properties (hidden, disabled, open), the rest as attributes.
+ * A boolean whose name is not a property of the element becomes an empty attribute, so readonly sets readOnly.
  * Children: strings, nodes, arrays; null/undefined/false are skipped.
  */
 export function h(tag, props = {}, ...children) {
@@ -25,7 +26,10 @@ export function h(tag, props = {}, ...children) {
     else if (k === 'text') n.textContent = v;
     else if (k === 'dataset') Object.assign(n.dataset, v);
     else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2), v);
-    else if (typeof v === 'boolean') n[k] = v;
+    else if (typeof v === 'boolean') {
+      if (k in n) n[k] = v;
+      else n.setAttribute(k, '');
+    }
     else n.setAttribute(k, String(v));
   }
   n.append(...flat(children));
