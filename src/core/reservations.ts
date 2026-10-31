@@ -30,15 +30,26 @@ export function normalizeOwner(owner: unknown): string | null {
   return o && o.length <= OWNER_MAX ? o : null;
 }
 
+/**
+ * The reservations in the file. A missing file is an empty list. A file that cannot be read or parsed throws:
+ * an empty list would let free_port offer reserved ports, and the next write would replace the file.
+ */
 export async function loadReservations(path = PATHS.reservations): Promise<Reservation[]> {
+  let text: string;
   try {
-    const raw = JSON.parse(await readFile(path, 'utf8')) as Partial<File>;
-    return Array.isArray(raw.reservations)
-      ? raw.reservations.filter((r): r is Reservation => Number.isInteger(r?.port) && typeof r?.owner === 'string')
-      : [];
-  } catch {
-    return [];
+    text = await readFile(path, 'utf8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw new Error(`cannot read reservations.json (${(e as NodeJS.ErrnoException).code ?? 'error'})`);
   }
+  let raw: Partial<File> | null;
+  try {
+    raw = JSON.parse(text) as Partial<File> | null;
+  } catch (e) {
+    throw new Error(`cannot parse reservations.json: ${(e as Error).message}`);
+  }
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.reservations)) throw new Error('reservations.json has no reservations list');
+  return raw.reservations.filter((r): r is Reservation => Number.isInteger(r?.port) && typeof r?.owner === 'string');
 }
 
 let queue: Promise<unknown> = Promise.resolve();

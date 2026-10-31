@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadReservations, normalizeOwner, release, reserve, reservedFor } from '../src/core/reservations.ts';
@@ -84,4 +84,21 @@ test('normalizeOwner and matchesOwner', () => {
   assert.equal(matchesOwner('shop-web', 'worktrees/shop-web-1786/3d-redesign'), true);
   assert.equal(matchesOwner('uploader', 'webapp'), false);
   assert.equal(matchesOwner('uploader', null), null);
+});
+
+test('loadReservations: a missing file is an empty list; a broken file throws and reserve leaves it as it is', async () => {
+  const path = await tmp();
+  assert.deepEqual(await loadReservations(path), []);
+  const broken = '{"version":1,"reservations":[{"port":3001,"owner":"shop-web","createdAt":""},{"port":3002,"owner":"api","createdAt":""},]}\n';
+  await writeFile(path, broken);
+  await assert.rejects(loadReservations(path), /cannot parse reservations\.json/);
+  await assert.rejects(reserve('blog', 3001, undefined, async () => undefined, path), /cannot parse reservations\.json/);
+  await assert.rejects(release(3002, null, path), /cannot parse reservations\.json/);
+  assert.equal(await readFile(path, 'utf8'), broken, 'the file is not replaced');
+  await writeFile(path, '{"version":1}\n');
+  await assert.rejects(loadReservations(path), /no reservations list/);
+  // the queue still runs after a failed job
+  await writeFile(path, '{"version":1,"reservations":[]}\n');
+  const ok = await reserve('blog', 3001, undefined, async () => undefined, path);
+  assert.equal(ok.ok, true);
 });
