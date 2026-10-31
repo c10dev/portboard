@@ -11,6 +11,7 @@ new screens.
 | Layout sizes | the `:root` custom properties in `public/shell.css` |
 | Radius and shadow names | `design-system/tokens.notes.json` (the CSS writes these values directly) |
 | Usage note of every token | `design-system/tokens.notes.json` |
+| What the system has and lacks, against a checklist | `design-system/inventory.md` (not published to the artifact) |
 | Brand book | `design-system/README.md` |
 | Components | `design-system/components/<Name>/README.md` (guidelines) and `preview.html` (a static rendition of the real markup) |
 | Cover | `design-system/components/Cover/preview.html` |

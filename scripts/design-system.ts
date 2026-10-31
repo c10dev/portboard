@@ -297,7 +297,8 @@ function main(argv: string[]) {
 
   for (const f of files(SRC)) {
     const rel = relative(SRC, f);
-    if (rel === 'tokens.notes.json' || rel === 'system.json') continue;
+    // the token notes and the index date feed tokens.json and the index; the inventory is a checklist for the repo
+    if (rel === 'tokens.notes.json' || rel === 'system.json' || rel === 'inventory.md') continue;
     mkdirSync(dirname(join(P, rel)), { recursive: true });
     cpSync(f, join(P, rel));
   }

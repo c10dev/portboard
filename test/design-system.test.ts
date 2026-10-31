@@ -153,7 +153,7 @@ test('the script writes the artifact layout into an empty folder', () => {
     assert.equal(index.assetGroups.Logos.files['icon.svg'].blob, 'abc');
     assert.equal(index.lastChange.by, 'test');
     for (const f of ['tokens.json', 'tokens.css', 'README.md', 'components/bundle.css', 'components/Cover/preview.html']) assert.ok(existsSync(p(f)), f);
-    assert.ok(!existsSync(p('tokens.notes.json')) && !existsSync(p('system.json')), 'the sources of the index and tokens stay out');
+    for (const f of ['tokens.notes.json', 'system.json', 'inventory.md']) assert.ok(!existsSync(p(f)), `${f} stays out of the artifact`);
   } finally {
     rmSync(out, { recursive: true, force: true });
   }
