@@ -54,9 +54,12 @@ export async function loadReservations(path = PATHS.reservations): Promise<Reser
 
 let queue: Promise<unknown> = Promise.resolve();
 
-async function update<T>(fn: (list: Reservation[]) => { list: Reservation[]; result: T }, path = PATHS.reservations): Promise<T> {
+type Change<T> = { list: Reservation[]; result: T; write?: boolean };
+
+async function update<T>(fn: (list: Reservation[]) => Change<T> | Promise<Change<T>>, path = PATHS.reservations): Promise<T> {
   const job = queue.then(async () => {
-    const { list, result } = fn(await loadReservations(path));
+    const { list, result, write = true } = await fn(await loadReservations(path));
+    if (!write) return result;
     const body: File = { version: 1, reservations: [...list].sort((a, b) => a.port - b.port) };
     await writePrivate(path, `${JSON.stringify(body, null, 2)}\n`);
     return result;
@@ -69,12 +72,13 @@ export type ReserveResult = { ok: true; reservation: Reservation; existing: bool
 
 /**
  * Reserve `port` for `owner`, or, without a port, return the owner's existing reservation or the first free port
- * (`pick`, which already avoids listening, served and reserved ports).
+ * (`pick`, which already avoids listening, served and reserved ports). The port is chosen inside the write queue,
+ * so two calls at the same time without a port get two different ports.
  */
 export async function reserve(owner: string, port: number | undefined, note: string | undefined, pick: () => Promise<number | undefined>, path = PATHS.reservations): Promise<ReserveResult> {
-  const chosen = port ?? ((await loadReservations(path)).find((r) => r.owner === owner)?.port ?? (await pick()));
-  if (!chosen) return { ok: false, error: 'no free port found' };
-  return update<ReserveResult>((list) => {
+  return update<ReserveResult>(async (list) => {
+    const chosen = port ?? list.find((r) => r.owner === owner)?.port ?? (await pick());
+    if (!chosen) return { list, result: { ok: false, error: 'no free port found' }, write: false };
     const held = list.find((r) => r.port === chosen);
     if (held && held.owner !== owner) return { list, result: { ok: false, error: `${chosen} is reserved for ${held.owner}` } };
     if (held) return { list, result: { ok: true, reservation: held, existing: true } };

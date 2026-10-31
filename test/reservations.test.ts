@@ -102,3 +102,17 @@ test('loadReservations: a missing file is an empty list; a broken file throws an
   const ok = await reserve('blog', 3001, undefined, async () => undefined, path);
   assert.equal(ok.ok, true);
 });
+
+test('reserve without a port at the same time: each owner gets its own free port', async () => {
+  const path = await tmp();
+  // as freePorts does: the first port that the file does not hold
+  const pick = async () => {
+    const held = new Set((await loadReservations(path)).map((r) => r.port));
+    return [4000, 4001, 4002].find((p) => !held.has(p));
+  };
+  const [a, b] = await Promise.all([reserve('a', undefined, undefined, pick, path), reserve('b', undefined, undefined, pick, path)]);
+  assert.ok(a.ok && b.ok, JSON.stringify([a, b]));
+  assert.deepEqual([a.reservation.port, b.reservation.port], [4000, 4001]);
+  assert.deepEqual((await loadReservations(path)).map((r) => [r.port, r.owner]), [[4000, 'a'], [4001, 'b']]);
+  assert.deepEqual(await reserve('c', undefined, undefined, async () => undefined, path), { ok: false, error: 'no free port found' });
+});
