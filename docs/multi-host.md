@@ -101,7 +101,7 @@ The board's stdio MCP server (and `GET /api/machines`, `/api/where-to-run`, `/ap
 
 **Portboard never starts anything on another machine.** The answer says where; a person opens the session.
 
-On the dashboard: the 기기 (Devices) tab has a **Machines** strip above the map, one card per machine with CPU and memory bars, sessions against `maxSessions`, checkouts with work in them and how old the data is; a card opens a panel with its sessions and checkouts. The 개발 (Dev) tab lists the other machines' checkouts under the same repo, read-only and marked with their machine, has a machine filter in its filter menu, and badges a checkout whose `repo@branch` is also on another machine (amber when there are changes or a session there). **Where to run…** (on the strip and in the ⌘K palette) asks `where_to_run` with a sentence. The strip stays hidden while no other machine is listed.
+On the dashboard: the 기기 (Devices) tab has a **Machines** strip above the map, one card per machine with CPU and memory bars, sessions against `maxSessions`, checkouts with work in them and how old the data is; a card opens a panel with its sessions and checkouts. The 개발 (Dev) tab lists the other machines' checkouts under the same repo, read-only and marked with their machine, has a machine filter in its filter menu, and badges a checkout whose `repo@branch` is also on another machine (amber when there are changes or a session there). Each checkout shows `↑ahead ↓behind` against its upstream (amber when behind), and a repo with `claude/*` branches pushed from elsewhere lists them under its header. The cloud card shows its estimated sessions. **Where to run…** (on the strip and in the ⌘K palette) asks `where_to_run` with a sentence. The strip stays hidden while no other machine is listed.
 
 The Claude Code plugin brings these into sessions: the `where-to-run` skill, the `/portboard:where`, `/portboard:machines` and `/portboard:wt` commands, and, with its `multi_machine_hint` option, a session-start line when the session's `repo@branch` has uncommitted files or an active session on another machine. With agents listed, the dashboard reads the list once a minute for that line, so the hook never waits for an agent ([claude-plugin/](claude-plugin/README.md#the-same-branch-on-another-machine)).
 
@@ -112,7 +112,11 @@ The Claude Code plugin brings these into sessions: the `where-to-run` skill, the
 | this one (Linux) | the memory view's sessions (its last sample when fresh, else one `/proc` read): the session id from a descendant's `CLAUDE_CODE_SESSION_ID`, never a whole environ | the worktree scan (main checkouts and worktrees; repos without worktrees only with the branch from `.git/HEAD`) | `/proc/meminfo`, load average, disk |
 | this one (macOS) | `ps` + `classify()`, cwds from `lsof`, the id and idle time from the newest transcript in `~/.claude/projects/<cwd with every non-alphanumeric as ->` | same | `os.totalmem` / `os.freemem` (free memory counts less than Linux's available) |
 | an agent | its `/agent/v1/status` | same, from its scan | same |
-| cloud | none: there is no public API for cloud sessions | none | none |
+| cloud | an estimate (`source: "github"`): see below | none | none |
+
+There is no public API for cloud sessions, so the cloud's sessions are estimated from this machine's worktree scan. Each `claude/*` branch on `origin` that got a commit in the last 48 hours counts as one session, unless a checkout here has it or its PR (when `gh` knows one) is merged or closed. A branch pushed within the hour counts as active, older ones as idle. These estimates have no id; their worktree is `repo@claude/…` and their `remote` the GitHub `owner/name`. They are as fresh as the last `git fetch` (Portboard never fetches), and a session that hasn't pushed yet isn't seen. A repo without linked worktrees is read too, but only when `origin` has `claude/*` refs: then each scan runs `git for-each-ref` and `git remote get-url` there (not cached). `gh` is not asked about its PRs, so there a merged branch counts until it is 48 hours old, unless a clone with worktrees of the same GitHub repo knows its PR. Clones of one GitHub repo count as one: a branch checked out in any of them, or with a merged or closed PR in any of them, is left out.
+
+Each checkout also carries `ahead` and `behind`: its commits that its upstream lacks, and the other way. Both are read from the local refs as of the last fetch, and are `null` when the branch has no upstream (or it was deleted). They come from the same one `git for-each-ref` per repo that lists the `claude/*` branches.
 
 A session's worktree is the deepest checkout its cwd is in, named `repo@branch` (the name reservations, dev servers and the plugin's session port use). Helper CLIs (`--no-session-persistence`) are left out. A session is idle when the memory view says so (transcript quiet for `idleMin` and CPU under 3 %), or, without a CPU reading, when its transcript has been quiet for `idleMin` (60 minutes by default).
 
@@ -137,7 +141,7 @@ On the board, in `portboard.json` (every key optional):
 - `kind`: `linux`, `mac`, `windows`, `wsl` or `cloud`. Without it: the agent's capabilities (`macos`, `linux`), then the tailnet device's OS, then `linux`.
 - `tags`: capabilities the machine can't see itself (`gpu`, `xcode`, `always-on`, …), lower-case words, at most 16. A machine reports `linux` or `macos`, `systemd` and `dev-servers` (start_dev_server needs systemd), `memory-view` and `docker` (a docker socket) itself.
 - `maxSessions`: Claude Code sessions it should run at once, 1–64. Default by kind: mac 2, windows and wsl 3, others 4.
-- `machines.cloud.enabled`: list the cloud as a candidate (off by default). It has no readable state; it is the isolated, parallel option that takes nothing from your machines.
+- `machines.cloud.enabled`: list the cloud as a candidate (off by default). It has no readable state beyond the `claude/*` estimate above; it is the isolated, parallel option that takes nothing from your machines.
 - `recommend.weights`: numbers between -1 and 1 over the defaults below.
 
 On each agent, `agent.showPaths: true` also sends worktree paths (the recommendation's `cwd`); without it the board knows checkouts by `repo@branch`.
@@ -150,7 +154,7 @@ On each agent, `agent.showPaths: true` also sends worktree paths (the recommenda
 | Term | Weight | |
 |---|---|---|
 | `locality` | 0.35 | the `repo@branch` is checked out there 1, the repo only 0.5, else 0; the cloud 0.3 (it clones). A repo matches by folder name or GitHub `owner/name`. Without `repo`, a repo the task text names is used |
-| `conflict` | −0.4 | an active session or a process already works in that checkout; a quarter of it when the branch has uncommitted changes on another machine |
+| `conflict` | −0.4 | an active session or a process already works in that checkout; a quarter of it when the branch has uncommitted changes on another machine, and a quarter when an active cloud estimate is on that branch (a cloud session pushed to it within the hour) |
 | `headroom` | 0.25 | the mean of `1 − load1/cores` and available/total memory; the cloud 0.6 |
 | `sessionSlots` | 0.15 | `1 − active/maxSessions`; unknown 0.5, the cloud 1 |
 | `fit` | 0.15 | `long-running` on an `always-on` machine, `parallel` / `isolated` in the cloud; half of it off for a dev server in the cloud |
@@ -159,7 +163,7 @@ On each agent, `agent.showPaths: true` also sends worktree paths (the recommenda
 
 3. **Ties:** fresher data first, then list order (this machine, the agents in `portboard.json` order, the cloud).
 
-Each term leaves a reason (`why`) or a `caveat` in the server's language.
+Each term leaves a reason (`why`) or a `caveat` in the server's language. A checkout that is behind its upstream gets a caveat to pull first; it does not change the score.
 
 ## Not in v1
 

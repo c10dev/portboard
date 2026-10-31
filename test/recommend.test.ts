@@ -23,6 +23,8 @@ const wt = (over: Partial<WorktreeBrief>): WorktreeBrief => ({
   inUse: false,
   claude: true,
   reservedPort: 4105,
+  ahead: null,
+  behind: null,
   ...over,
 });
 
@@ -91,6 +93,27 @@ test('whereToRun: conflicts cost the Mac its locality; prefer and exclude move t
   const ex = whereToRun({ repo: 'shop-web', branch: 'feat-map', exclude: ['vocado-dev'] }, [vocado, cloud], { now: NOW });
   assert.equal(ex.recommendation?.machine, 'cloud');
   assert.equal(ex.excluded[0].machine, 'vocado-dev');
+});
+
+test('whereToRun: a checkout behind its upstream says pull first; a cloud session pushing to the branch costs everyone', () => {
+  const behind = machine({ worktrees: [wt({ behind: 3, ahead: 0 })] });
+  const r = whereToRun({ repo: 'shop-web', branch: 'feat-map' }, [behind, cloud], { now: NOW });
+  assert.ok(r.recommendation!.caveats.includes(t('machinesMsg.caveat.behind', { owner: 'shop-web@feat-map', n: 3 })), r.recommendation!.caveats.join(' | '));
+  const busyCloud = machine({ ...cloud, claude: { cliVersion: null, active: 1, idle: 0, source: 'github', sessions: [{ id: null, project: 'shop-web', worktree: 'shop-web@claude/fix', idleMin: 7, cpuPct: null, mb: null, startedAt: null, idle: false, remote: 'c10dev/shop-web' }] } });
+  const plain = whereToRun({ repo: 'shop-web', branch: 'claude/fix' }, [vocado, cloud], { now: NOW });
+  const raced = whereToRun({ repo: 'c10dev/shop-web', branch: 'claude/fix' }, [vocado, busyCloud], { now: NOW });
+  // the folder name differs from the GitHub name: matched by the estimate's remote, as sameRepo does
+  const renamed = machine({ ...busyCloud, claude: { ...busyCloud.claude!, sessions: [{ ...busyCloud.claude!.sessions[0], project: 'sw', worktree: 'sw@claude/fix', remote: 'c10dev/shop-web' }] } });
+  for (const repo of ['shop-web', 'c10dev/shop-web', 'sw']) {
+    assert.ok(whereToRun({ repo, branch: 'claude/fix' }, [vocado, renamed], { now: NOW }).recommendation!.caveats.some((c) => c.includes('claude/fix')), repo);
+  }
+  assert.ok(!whereToRun({ repo: 'other', branch: 'claude/fix' }, [vocado, renamed], { now: NOW }).recommendation!.caveats.some((c) => c.includes('claude/fix')));
+  const want = t('machinesMsg.caveat.cloudBranch', { branch: 'claude/fix', n: 7 });
+  for (const c of [raced.recommendation!, ...raced.alternatives]) assert.ok(c.caveats.includes(want), `${c.machine}: ${c.caveats.join(' | ')}`);
+  assert.ok(raced.recommendation!.score < plain.recommendation!.score);
+  // an idle estimate (pushed over an hour ago) is no race
+  const quiet = machine({ ...busyCloud, claude: { ...busyCloud.claude!, active: 0, idle: 1, sessions: [{ ...busyCloud.claude!.sessions[0], idleMin: 90, idle: true }] } });
+  assert.ok(!whereToRun({ repo: 'shop-web', branch: 'claude/fix' }, [vocado, quiet], { now: NOW }).recommendation!.caveats.includes(want));
 });
 
 test('whereToRun: needs filter (macos, docker), stale data excluded, parallel favours the cloud, nothing left → null', () => {

@@ -7,7 +7,7 @@ import { tryJSON } from '../lib/api.js';
 import { sheet } from '../lib/dialog.js';
 import { $, dl, el, h } from '../lib/dom.js';
 import { t } from '../lib/i18n.js';
-import { busyCheckouts, KIND_LABEL, loadPct, machineBits, machineTone } from '../lib/machines.js';
+import { busyCheckouts, KIND_LABEL, loadPct, machineBits, machineTone, upstreamBadge } from '../lib/machines.js';
 import { ago } from '../lib/time.js';
 import { openWhere, VIA } from './where.js';
 
@@ -68,14 +68,16 @@ function paint() {
   if (openName) show(openName, true);
 }
 
-function sessionRow(s) {
+/** One session; the cloud's are estimates from claude/* branches, so their minutes are since the last push */
+function sessionRow(s, estimate = false) {
   const what = [s.worktree ?? s.project ?? '?', s.idle ? t('machines.session.idle') : t('machines.session.active'),
-    s.idleMin != null ? t('machines.session.quiet', { n: s.idleMin }) : null, s.cpuPct != null ? `CPU ${s.cpuPct}%` : null, s.mb != null ? `${s.mb} MB` : null];
+    s.idleMin != null ? (estimate ? t('machines.session.pushed', { n: s.idleMin }) : t('machines.session.quiet', { n: s.idleMin })) : null, s.cpuPct != null ? `CPU ${s.cpuPct}%` : null, s.mb != null ? `${s.mb} MB` : null];
   return h('li', {}, h('code', { text: s.id ?? '—' }), ' ', what.filter(Boolean).join(' · '));
 }
 
 function checkoutRow(w) {
-  const what = [w.dirty ? t('machines.dirty', { n: w.dirty }) : null, w.inUse ? t('machines.inUse') : null, w.claude ? 'Claude Code' : null,
+  const up = upstreamBadge(w);
+  const what = [w.dirty ? t('machines.dirty', { n: w.dirty }) : null, up ? up[2] : null, w.inUse ? t('machines.inUse') : null, w.claude ? 'Claude Code' : null,
     w.reservedPort ? `:${w.reservedPort}` : null, w.main ? t('machines.main') : null];
   return h('li', { class: (w.dirty ?? 0) > 0 || w.inUse ? 'busy' : null }, h('strong', { text: w.owner }), ' ', what.filter(Boolean).join(' · '), w.path ? h('div', { class: 'muted', text: w.path }) : null);
 }
@@ -90,11 +92,11 @@ function show(name, keepScroll = false) {
     const body = $('machDetailBody');
     const busy = busyCheckouts(m);
     const rest = (m.worktrees ?? []).filter((w) => !busy.includes(w));
-    body.replaceChildren(
+    body.replaceChildren(...[
       el('div', 'd-kicker', `${KIND_LABEL[m.kind] ?? m.kind} · ${REACH[m.reach] ?? m.reach}`),
       el('h3', 'd-title', m.name),
       dl([
-        [t('machines.d.state'), m.kind === 'cloud' ? t('machines.cloud.line') : m.online ? (m.stale ? t('machines.d.stale') : t('machines.d.online')) : t('machines.offline')],
+        [t('machines.d.state'), m.kind === 'cloud' ? machineBits(m).join(' · ') : m.online ? (m.stale ? t('machines.d.stale') : t('machines.d.online')) : t('machines.offline')],
         [t('machines.d.checked'), m.checkedAt ? ago(m.checkedAt, { suffix: true }) : null],
         [t('machines.d.error'), m.error],
         [t('machines.d.load'), l ? `${l.load1} / ${l.cores}` : null],
@@ -105,13 +107,14 @@ function show(name, keepScroll = false) {
         [t('machines.d.caps'), m.capabilities.join(', ')],
         [t('machines.d.launch'), m.launch.map((x) => VIA[x.via] ?? x.via).join(', ')],
       ]),
-      m.claude?.sessions.length ? h('div', { class: 'd-use' }, h('div', { class: 'd-use-h' }, h('strong', { text: t('machines.d.sessionList') })), h('ul', { class: 'mach-list' }, m.claude.sessions.map(sessionRow))) : null,
+      m.claude?.sessions.length ? h('div', { class: 'd-use' }, h('div', { class: 'd-use-h' }, h('strong', { text: t('machines.d.sessionList') })), h('ul', { class: 'mach-list' }, m.claude.sessions.map((x) => sessionRow(x, m.claude.source === 'github')))) : null,
+      m.claude?.source === 'github' ? el('p', 'muted', t('machines.cloud.note')) : null,
       m.worktrees ? h('div', { class: 'd-use' },
         h('div', { class: 'd-use-h' }, h('strong', { text: t('machines.d.checkouts', { n: m.worktrees.length }) })),
         h('ul', { class: 'mach-list' }, [...busy, ...rest].slice(0, 40).map(checkoutRow)),
         m.worktrees.length > 40 ? el('p', 'muted', t('machines.d.more', { n: m.worktrees.length - 40 })) : null) : null,
       h('button', { type: 'button', class: 'name-btn', onclick: () => openWhere() }, t('where.open')),
-    );
+    ].filter(Boolean));
   }, keepScroll);
 }
 

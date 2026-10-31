@@ -16,7 +16,7 @@ import { toast as show } from './lib/toast.js';
 import { showAccess } from './lib/access.js';
 import { isSettingsHash } from './lib/settings-route.js';
 import { locale, t } from './lib/i18n.js';
-import { alsoOn, elsewhereByOwner, machineOptions, remoteRepos, sameRepo } from './lib/machines.js';
+import { alsoOn, cloudBranchLine, elsewhereByOwner, machineOptions, remoteRepos, sameRepo, upstreamBadge } from './lib/machines.js';
 
 let doc = null;
 let devDoc = { running: [], startable: {} };
@@ -44,6 +44,15 @@ function branchLine(machine, text) {
   return br;
 }
 
+/** ↑ahead ↓behind its upstream (as of the last fetch), when they differ */
+function upstream(tags, w) {
+  const up = upstreamBadge(w);
+  if (!up) return;
+  const b = badge(up[0], up[1]);
+  b.title = up[2];
+  tags.append(b);
+}
+
 function row(repo, w, elsewhere) {
   const li = el('li', `wt-row${w.removable ? '' : ' keep'}`);
   li.dataset.path = w.path;
@@ -66,6 +75,7 @@ function row(repo, w, elsewhere) {
     b.title = also[2];
     tags.append(b);
   }
+  upstream(tags, w);
   if (w.pr) tags.append(badge(t(w.pr.state === 'MERGED' ? 'dev.pr.merged' : w.pr.state === 'OPEN' ? 'dev.pr.open' : 'dev.pr.closed', { n: w.pr.number }), w.pr.state === 'MERGED' ? 'ok' : w.pr.state === 'OPEN' ? 'info' : ''));
   else if (w.mergedByAncestry) tags.append(badge(t('dev.merged'), 'ok'));
   if (w.changes) tags.append(badge(t('dev.changes', { n: w.changes }), 'warn'));
@@ -92,6 +102,7 @@ function remoteRow(machine, w) {
   main.append(branchLine(machine, w.branch), el('div', 'path', w.path ?? t('dev.machines.noPath')));
   const tags = el('div', 'tags');
   if (w.dirty) tags.append(badge(t('dev.changes', { n: w.dirty }), 'warn'));
+  upstream(tags, w);
   if (w.inUse) tags.append(badge(t('dev.machines.inUse'), 'warn'));
   if (w.claude) tags.append(badge(t('dev.claude'), 'info'));
   if (w.main) tags.append(badge(t('dev.main'), 'info'));
@@ -238,7 +249,9 @@ function render() {
     const ul = el('ul', 'wt-list');
     for (const w of wts) ul.append(row(repo, w, elsewhere));
     for (const r of theirs) for (const w of r.worktrees) ul.append(remoteRow(r.machine, w));
-    sec.append(head, ul);
+    // work pushed to claude/* branches from elsewhere (a cloud session, as a rule): not checked out here
+    const cloud = local && !onlyRemovable ? cloudBranchLine(repo) : null;
+    sec.append(head, ...(cloud ? [el('p', 'wt-cloud', cloud)] : []), ul);
     box.append(sec);
   }
   // repos that are only on other machines

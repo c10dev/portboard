@@ -5,14 +5,15 @@
 //   self    computed here: hostLoad(), localClaude() matched to this machine's worktree scan, the snapshot's ports
 //   agent   its last good /agent/v1/status (agents.ts); an agent without the route keeps info's load and null for
 //           the rest, an agent that is down keeps its last status marked stale
-//   cloud   nothing to read (no public API lists cloud sessions): reach none, tags from machines.cloud
+//   cloud   nothing to read (no public API lists cloud sessions): reach none, tags from machines.cloud; its claude is
+//           an estimate from the claude/* branches origin got lately (cloudEstimate), as of this machine's last fetch
 //
 // Portboard never starts anything on a machine: `launch` only says how a person does (the Desktop app's SSH session,
 // a cloud session, Remote Control, --teleport).
 
 import type { AgentReport, HostLoad, StatusParts } from '../agent/server.ts';
 import type { AgentRead } from './agents.ts';
-import { localClaude, type ClaudeSummary } from './claude-status.ts';
+import { localClaude, type ClaudeSummary, type SessionBrief } from './claude-status.ts';
 import type { Device } from './devices.ts';
 import { hostLoad, localCapabilities } from './hostload.ts';
 import { t } from './i18n.ts';
@@ -21,7 +22,7 @@ import { platform } from './platform/index.ts';
 import type { Reservation } from './reservations.ts';
 import { UNIT_PREFIX } from './devservers.ts';
 import type { AgentTarget, MachineKind, Site } from './site.ts';
-import { briefOf, worktreeOwnerOf, type WorktreeBrief, type WorktreesDoc } from './worktrees.ts';
+import { briefOf, CLAUDE_BRANCH_WINDOW_MS, githubRepo, ownerName, worktreeOwnerOf, type WorktreeBrief, type WorktreesDoc } from './worktrees.ts';
 
 export type { MachineKind };
 export type Reach = 'local' | 'agent' | 'none';
@@ -133,6 +134,46 @@ export function launchHints(kind: MachineKind, name: string, self: boolean): Lau
   return out;
 }
 
+/** A claude/* branch pushed within this many minutes counts as a cloud session still working */
+export const CLOUD_ACTIVE_MIN = 60;
+
+/**
+ * The cloud's sessions, estimated: each claude/* branch origin got within CLAUDE_BRANCH_WINDOW_MS that no checkout here
+ * has, and whose PR (when gh knows one) is still open; from the repos with worktrees and the plain clones (checkouts,
+ * whose PRs aren't read). Clones of one GitHub repo are one repo: a branch checked out in any of them, or with a merged
+ * or closed PR in any of them, is left out of all. Active when pushed within CLOUD_ACTIVE_MIN. These are branches, not
+ * sessions: no id, and a session that hasn't pushed yet isn't seen. The window is applied again: a saved scan can be
+ * days old. null when the scan read no refs. Pure.
+ */
+export function cloudEstimate(doc: Pick<WorktreesDoc, 'repos' | 'checkouts'> | null, now = Date.now()): ClaudeSummary | null {
+  const all = [...(doc?.repos ?? []), ...(doc?.checkouts ?? [])];
+  const repos = all.filter((r) => r.claudeBranches);
+  if (!repos.length) return null;
+  const gh = (r: { remote?: string | null }) => (r.remote ? githubRepo(r.remote) : null);
+  const keyOf = (r: { name: string; remote?: string | null }, branch: string | null) => `${(gh(r) ?? r.name).toLowerCase()}@${branch}`;
+  // first, across every clone: the branches checked out here, and those whose PR is done
+  const out = new Set<string>();
+  for (const r of all) {
+    const branches = 'worktrees' in r ? r.worktrees.filter((w) => !w.prunable).map((w) => w.branch) : [r.branch];
+    for (const b of branches) if (b) out.add(keyOf(r, b));
+    for (const b of r.claudeBranches ?? []) if (b.pr && b.pr.state !== 'OPEN') out.add(keyOf(r, b.branch));
+  }
+  const sessions: SessionBrief[] = [];
+  for (const r of repos) {
+    for (const b of r.claudeBranches!) {
+      if (now - Date.parse(b.at) > CLAUDE_BRANCH_WINDOW_MS) continue;
+      const key = keyOf(r, b.branch);
+      if (out.has(key)) continue;
+      out.add(key); // two clones of one repo: counted once
+      const idleMin = Math.max(0, Math.floor((now - Date.parse(b.at)) / 60_000));
+      sessions.push({ id: null, project: r.name, worktree: ownerName(r.name, b.branch), idleMin, cpuPct: null, mb: null, startedAt: null, idle: idleMin >= CLOUD_ACTIVE_MIN, remote: gh(r) });
+    }
+  }
+  sessions.sort((a, b) => (a.idleMin ?? 0) - (b.idleMin ?? 0));
+  const idle = sessions.filter((x) => x.idle).length;
+  return { cliVersion: null, sessions, active: sessions.length - idle, idle, source: 'github' };
+}
+
 export interface MachinesInput {
   site: Pick<Site, 'host' | 'machines'>;
   /** this machine's status (localStatus) */
@@ -143,6 +184,8 @@ export interface MachinesInput {
   targets: AgentTarget[];
   /** the tailnet devices (devices.ts), for online and OS; their agent field says which device an agent is on */
   devices: Pick<Device, 'id' | 'name' | 'online' | 'os' | 'self' | 'agent'>[];
+  /** the cloud's estimated sessions (cloudEstimate), when the cloud is on */
+  cloudWork?: ClaudeSummary | null;
   now?: number;
 }
 
@@ -208,7 +251,7 @@ export function buildMachines(i: MachinesInput): MachineStatus[] {
       stale: false,
       error: null,
       load: null,
-      claude: null,
+      claude: i.cloudWork ?? null,
       worktrees: null,
       ports: null,
       capabilities: uniq(cloud.tags),
