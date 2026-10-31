@@ -181,6 +181,9 @@ test('owner-token.json: 0600, the hash only; a loose or odd file is an error, a 
   assert.deepEqual(await loadTokenHash(file), { hash: HASH, created: '2026-10-19T00:00:00.000Z' });
   chmodSync(file, 0o644);
   assert.match((await loadTokenHash(file)).error ?? '', /600/);
+  chmodSync(file, 0o640);
+  assert.match((await loadTokenHash(file)).error ?? '', /600/, 'readable by the group: refused');
+  assert.equal((await loadTokenHash(file)).hash, null);
   writeFileSync(file, '{"sha256":"short"}', { mode: 0o600 });
   chmodSync(file, 0o600);
   assert.equal((await loadTokenHash(file)).hash, null);
@@ -218,6 +221,10 @@ test('loadAccessPolicy: access.json mode and requireTokenOnLoopback, the env on 
   const loose = await load({ PORTBOARD_ACCESS_MODE: 'token' });
   assert.match(loose.error ?? '', /access\.json.*600/);
   assert.equal(classify(req('192.168.1.50', { authorization: `Bearer ${TOKEN}` }), OWNER, loose).canWrite, false);
+  chmodSync(access, 0o640);
+  const group = await load({ PORTBOARD_ACCESS_MODE: 'token' });
+  assert.match(group.error ?? '', /access\.json.*600/, 'readable by the group: refused');
+  assert.equal(classify(req('192.168.1.50', { authorization: `Bearer ${TOKEN}` }), OWNER, group).canWrite, false);
   chmodSync(access, 0o600);
   writeFileSync(access, '{torn');
   assert.match((await load({ PORTBOARD_ACCESS_MODE: 'token' })).error ?? '', /JSON/);
