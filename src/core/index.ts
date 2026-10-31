@@ -170,7 +170,7 @@ export async function snapshot(): Promise<Snapshot> {
       const detectedName = container ? `docker: ${container}` : (known?.name ?? labelFor(processes, [...procNames.values()], pr));
       const kind = kindOf({ port, owned, container, processes });
       const control = controlFor({ container, processes });
-      const isSelf = isPortboardProcess(processes, { isCheckout: isPortboardCheckout });
+      const flags = controlFlags(processes, control, { readOnly, unitsManaged });
 
       return {
         port,
@@ -197,9 +197,7 @@ export async function snapshot(): Promise<Snapshot> {
         exposeBlocker,
         canUnexpose: exposedEntry(serve, port) !== null,
         control,
-        canRestart: !readOnly && ((control?.type === 'systemd' && unitsManaged) || control?.type === 'docker'),
-        canStop: !readOnly && control !== null && !isSelf && (control.type !== 'systemd' || unitsManaged),
-        isPortboard: isSelf,
+        ...flags,
       };
     }),
   );
@@ -288,6 +286,24 @@ function labelFor(procs: ProcInfo[], names: string[], pr: Probe | null): string 
   return p?.unitDescription ?? pr?.title ?? p?.project ?? names[0] ?? 'unknown';
 }
 
+/**
+ * What the dashboard and stop() may do with a port's owner. A Portboard process is never stoppable, with or without
+ * a unit: a preview, a launchd agent or `node src/server.ts` in a checkout (isCheckout).
+ */
+export function controlFlags(
+  processes: readonly ProcInfo[],
+  control: PortEntry['control'],
+  opts: { readOnly: boolean; unitsManaged: boolean; isCheckout?: (dir: string) => boolean; selfPid?: number },
+): Pick<PortEntry, 'canRestart' | 'canStop' | 'isPortboard'> {
+  const { readOnly, unitsManaged } = opts;
+  const isSelf = isPortboardProcess(processes, { isCheckout: opts.isCheckout ?? isPortboardCheckout, selfPid: opts.selfPid });
+  return {
+    canRestart: !readOnly && ((control?.type === 'systemd' && unitsManaged) || control?.type === 'docker'),
+    canStop: !readOnly && control !== null && !isSelf && (control.type !== 'systemd' || unitsManaged),
+    isPortboard: isSelf,
+  };
+}
+
 async function entryFor(port: number, snap: () => Promise<Snapshot> = snapshot): Promise<PortEntry | ActionResult> {
   const entry = (await snap()).ports.find((p) => p.port === port && p.listening);
   return entry ?? { ok: false, message: `nothing is listening on ${port}` };
@@ -325,8 +341,9 @@ export async function restart(port: number): Promise<ActionResult> {
   return restartTarget(entry.control);
 }
 
-export async function stop(port: number): Promise<ActionResult> {
-  const entry = await entryFor(port);
+/** `snap` is for tests: a stop always resolves the owner from a new snapshot. */
+export async function stop(port: number, snap: () => Promise<Snapshot> = snapshot): Promise<ActionResult> {
+  const entry = await entryFor(port, snap);
   if (!isEntry(entry)) return entry;
   if (!entry.control) return { ok: false, message: `owner of ${port} is not visible to this user` };
   if (!entry.canStop) return { ok: false, message: 'refusing to stop portboard itself' };
