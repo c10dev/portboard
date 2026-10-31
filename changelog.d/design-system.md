@@ -1,0 +1,2 @@
+### Added
+- **Design system**: `design-system/` holds the dashboard's brand book, a usage note per token and a guideline and static preview per component. `npm run design-system -- --out DIR` builds the files of a claude.ai Design System artifact from them and from the custom properties in `public/*.css`, so the CSS stays the one source of every value ([docs/design-system.md](docs/design-system.md)). `test/design-system.test.ts` keeps the tokens in step with the CSS.

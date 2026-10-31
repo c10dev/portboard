@@ -53,6 +53,8 @@ bin/portboard-mcp     SSH entry point for remote MCP clients (finds node without
 scripts/mac-setup.sh  one-time Mac setup for Claude Code + Claude Desktop
 scripts/mac-menubar-setup.sh  Mac menu bar plugin installer (SwiftBar)
 scripts/demo.ts       the static demo and landing page from example data (scripts/demo/: shim, landing page, data; docs/demo.md)
+scripts/design-system.ts  the design system's files from public/*.css and design-system/ (docs/design-system.md)
+design-system/        the design system's sources: brand book, token notes, component guidelines and previews
 menubar/              SwiftBar plugin (portboard.30s.mjs) + pure formatting (format.mjs), legacy
 mac-app/              Native macOS app (SwiftUI): Package.swift, PortboardCore (pure, tested), Portboard (app), build.sh
 public/               web dashboard: plain HTML/CSS and native ES modules, no build step, no packages

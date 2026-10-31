@@ -1,0 +1,57 @@
+<!-- @dsCard group="Forms" height=200 subtitle="off, on, disabled on, disabled off, in write-enabled device rows" -->
+<style>
+.ds-stage { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 24px; padding: 16px; max-width: 920px; color: var(--text); background: var(--bg); }
+.ds-col { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.ds-cap { font-size: 12px; color: var(--muted); }
+.ds-plain { display: flex; flex-wrap: wrap; gap: 20px; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.ds-item { display: grid; gap: 6px; justify-items: center; font-size: 12px; color: var(--text-2); }
+.ds-rows { padding: 0 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+</style>
+<div class="ds-stage">
+  <div class="ds-col">
+    <div class="ds-cap">States</div>
+    <div class="ds-plain">
+      <div class="ds-item">
+        <label class="ctl-toggle" data-write="1"><input type="checkbox" role="switch" class="ctl-toggle-input" value="laptop" aria-label="Allow changes from laptop" data-write="1"><span class="ctl-toggle-track" aria-hidden="true"></span></label>
+        Off
+      </div>
+      <div class="ds-item">
+        <label class="ctl-toggle" data-write="1"><input type="checkbox" role="switch" class="ctl-toggle-input" value="laptop" aria-label="Allow changes from laptop" data-write="1" checked><span class="ctl-toggle-track" aria-hidden="true"></span></label>
+        On
+      </div>
+      <div class="ds-item">
+        <label class="ctl-toggle" data-write="1"><input type="checkbox" role="switch" class="ctl-toggle-input" value="desktop" aria-label="Allow changes from desktop" data-write="1" checked disabled><span class="ctl-toggle-track" aria-hidden="true"></span></label>
+        Disabled on
+      </div>
+      <div class="ds-item">
+        <label class="ctl-toggle" data-write="1"><input type="checkbox" role="switch" class="ctl-toggle-input" value="desktop" aria-label="Allow changes from desktop" data-write="1" disabled><span class="ctl-toggle-track" aria-hidden="true"></span></label>
+        Disabled off
+      </div>
+    </div>
+  </div>
+  <div class="ds-col">
+    <div class="ds-cap">Write-enabled devices: the device in use is locked on</div>
+    <div class="ds-rows">
+      <ul class="wd-list st-rows" aria-label="Write-enabled devices">
+        <li class="st-row">
+          <label class="st-row-text" for="wd-desktop" title="You're using this device now: leave it out and you can't make changes from it anymore" data-write="1">
+            <span class="st-row-label"><strong>desktop</strong><span class="badge info">This device</span></span>
+            <span class="st-row-desc">Linux</span>
+          </label>
+          <div class="st-row-ctl">
+            <label class="ctl-toggle" data-write="1"><input type="checkbox" role="switch" class="ctl-toggle-input" id="wd-desktop" value="desktop" aria-label="Allow changes from desktop" data-write="1" checked disabled><span class="ctl-toggle-track" aria-hidden="true"></span></label>
+          </div>
+        </li>
+        <li class="st-row">
+          <label class="st-row-text" for="wd-laptop" data-write="1">
+            <span class="st-row-label"><strong>laptop</strong></span>
+            <span class="st-row-desc">Mac</span>
+          </label>
+          <div class="st-row-ctl">
+            <label class="ctl-toggle" data-write="1"><input type="checkbox" role="switch" class="ctl-toggle-input" id="wd-laptop" value="laptop" aria-label="Allow changes from laptop" data-write="1"><span class="ctl-toggle-track" aria-hidden="true"></span></label>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </div>
+</div>

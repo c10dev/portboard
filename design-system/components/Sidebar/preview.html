@@ -1,0 +1,57 @@
+<!-- @dsCard group="Navigation" height=560 subtitle="current view, selected pinned port, device tree with folded group, footer chips, read-only note" -->
+<style>
+.ds-stage { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; padding: 16px; background: var(--bg); }
+.ds-stage .shell-side { position: static; height: auto; width: var(--side-w); box-sizing: border-box; }
+</style>
+<div class="ds-stage">
+  <nav class="shell-side" aria-label="Navigation">
+    <div class="side-views" role="list">
+      <a href="#" class="side-view" role="listitem" data-view="services" aria-current="page"><span class="sv-label">Services</span><span class="side-count" id="count-services">12</span></a>
+      <a href="#" class="side-view" role="listitem" data-view="devices"><span class="sv-label">Devices</span><span class="side-count" id="count-devices">3</span></a>
+      <a href="#" class="side-view" role="listitem" data-view="dev"><span class="sv-label">Dev</span><span class="side-count" id="count-dev">4</span></a>
+    </div>
+    <section class="side-sec" id="sidePinned">
+      <h2>Pinned</h2>
+      <ul>
+        <li><a class="side-item" href="#" title="3000 my-app" data-key="3000"><span class="si-text">my-app</span><span class="si-sub">3000</span></a></li>
+        <li><a class="side-item t-warn selected" href="#" title="5173 my-app · Not listening" data-key="5173"><span class="dot"></span><span class="si-text">my-app</span><span class="si-sub">5173</span></a></li>
+        <li><a class="side-item" href="#" title="8080 api" data-key="8080"><span class="si-text">api</span><span class="si-sub">8080</span></a></li>
+      </ul>
+    </section>
+    <section class="side-sec side-tree" id="sideDevices">
+      <h2>Devices</h2>
+      <ul>
+        <li class="si-row" style="--d: 0"><button class="si-fold" type="button" data-fold="host:desktop" aria-label="Collapse or expand desktop" aria-expanded="true"></button><span class="side-item t-ok si-group" data-fold="host:desktop" title="desktop · Online" data-key="host:desktop"><span class="dot"></span><span class="si-text">desktop</span></span></li>
+        <li class="si-row" style="--d: 1" data-up="host%3Adesktop"><span class="si-fold-pad"></span><a class="side-item t-ok" href="#" title="api · Online" data-key="guest:desktop/205" data-target="guest:desktop/205"><span class="dot"></span><span class="si-text">api</span><span class="si-sub">VM 205</span></a></li>
+        <li class="si-row" style="--d: 1" data-up="host%3Adesktop"><span class="si-fold-pad"></span><a class="side-item t-off" href="#" title="my-app · Offline · Offline" data-key="guest:desktop/204" data-target="guest:desktop/204"><span class="dot"></span><span class="si-text">my-app</span><span class="si-badge">Offline</span><span class="si-sub">CT 204</span></a></li>
+        <li class="si-row" style="--d: 0"><button class="si-fold" type="button" data-fold="direct" aria-label="Collapse or expand Direct connections" aria-expanded="false"></button><span class="side-item si-group" data-fold="direct" title="Direct connections" data-key="direct"><span class="si-text">Direct connections</span></span></li>
+        <li class="si-row" style="--d: 1" data-up="direct" hidden><span class="si-fold-pad"></span><a class="side-item t-ok" href="#" title="laptop · Online" data-key="dev:laptop" data-target="laptop"><span class="dot"></span><span class="si-text">laptop</span></a></li>
+        <li class="si-row" style="--d: 0"><button class="si-fold" type="button" data-fold="other" aria-label="Collapse or expand Other LAN devices" aria-expanded="true"></button><span class="side-item si-group" data-fold="other" title="Other LAN devices" data-key="other"><span class="si-text">Other LAN devices</span></span></li>
+        <li class="si-row" style="--d: 1" data-up="other"><span class="si-fold-pad"></span><a class="side-item t-lan" href="#" title="laptop · LAN" data-key="laptop" data-target="laptop"><span class="dot"></span><span class="si-text">laptop</span></a></li>
+      </ul>
+    </section>
+    <div class="side-foot" id="shellFoot">
+      <a href="#" class="side-view" data-view="settings"><svg class="sv-icon" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 2.5v2.2M10 15.3v2.2M2.5 10h2.2M15.3 10h2.2M4.7 4.7l1.6 1.6M13.7 13.7l1.6 1.6M4.7 15.3l1.6-1.6M13.7 6.3l1.6-1.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span class="sv-label">Settings</span><span class="side-count" id="count-settings">2</span></a>
+      <a class="btn ob-chip warn" id="obChip" href="#" aria-label="Setup checklist (Settings)"><span class="ob-icon">☑</span><span class="ob-text" id="obText">Setup 3/5</span></a>
+      <button type="button" class="sw-chip warn" id="swChip" aria-label="Data collection status"><span class="sw-dot"></span><span class="sw-text" id="swText">Low memory</span></button>
+    </div>
+  </nav>
+  <nav class="shell-side" aria-label="Navigation">
+    <div class="side-views" role="list">
+      <a href="#" class="side-view" role="listitem" data-view="services"><span class="sv-label">Services</span><span class="side-count">12</span></a>
+      <a href="#" class="side-view" role="listitem" data-view="devices"><span class="sv-label">Devices</span><span class="side-count">3</span></a>
+      <a href="#" class="side-view" role="listitem" data-view="dev"><span class="sv-label">Dev</span><span class="side-count">4</span></a>
+    </div>
+    <section class="side-sec">
+      <h2>Pinned</h2>
+      <ul>
+        <li><a class="side-item" href="#" title="3000 my-app"><span class="si-text">my-app</span><span class="si-sub">3000</span></a></li>
+      </ul>
+    </section>
+    <div class="side-foot">
+      <a href="#" class="side-view" data-view="settings" aria-current="page"><svg class="sv-icon" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 2.5v2.2M10 15.3v2.2M2.5 10h2.2M15.3 10h2.2M4.7 4.7l1.6 1.6M13.7 13.7l1.6 1.6M4.7 15.3l1.6-1.6M13.7 6.3l1.6-1.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span class="sv-label">Settings</span><span class="side-count"></span></a>
+      <button type="button" class="sw-chip alarm" aria-label="Data collection status"><span class="sw-dot"></span><span class="sw-text">1 failing</span></button>
+      <p class="readonly-note" role="note">🔒 Read-only — This connection can't make changes.</p>
+    </div>
+  </nav>
+</div>

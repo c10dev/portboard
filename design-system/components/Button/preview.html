@@ -1,0 +1,12 @@
+<!-- @dsCard group="Actions" height=200 subtitle="default, primary link and submit, write control, disabled while busy" -->
+<style>
+.ds-stage { display: flex; flex-direction: column; gap: 14px; padding: 16px; background: var(--bg); color: var(--muted); font-size: 12px; }
+.ds-stage .ds-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ds-stage .ds-label { width: 140px; }
+</style>
+<div class="ds-stage">
+  <div class="ds-row"><span class="ds-label">Default</span><button type="button">Copy address</button><button type="button">Copy SSH</button></div>
+  <div class="ds-row"><span class="ds-label">Primary (link, button)</span><a class="btn primary" href="#" target="_blank" rel="noopener">Open ↗</a><button type="submit" class="btn primary">Ask</button></div>
+  <div class="ds-row"><span class="ds-label">Write control</span><button type="button" data-write="1">Expose on tailnet</button><button type="button" data-write="1">Unexpose</button></div>
+  <div class="ds-row"><span class="ds-label">Disabled</span><button type="button" data-write="1" disabled>Unexpose</button><button type="button" data-write="1" disabled>Expose on tailnet</button></div>
+</div>

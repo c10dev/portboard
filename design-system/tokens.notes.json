@@ -1,0 +1,135 @@
+{
+  "color": {
+    "side-bg": "Left sidebar and the settings window's side column; group headings in lists. The darkest ground in dark mode.",
+    "bg": "Page background behind the main column; also the fill of text inputs (and the command palette's search field) that sit on a surface.",
+    "surface": "Raised surfaces on bg: cards, list rows, panels, buttons, the command palette and dialogs.",
+    "text": "Primary text and headings on bg, side-bg, surface and neutral-bg.",
+    "text-2": "Secondary text: labels, sub-lines, close buttons. 4.5:1 on every ground in both themes.",
+    "text-3": "Tertiary text: counts, separators, sidebar section headings on side-bg, icon strokes.",
+    "muted": "Alias of text-2 for meta text (paths, times, process names); the most used text colour after text.",
+    "line": "Hairline borders and dividers: cards, rows, inputs, buttons. Borders, not shadows, separate surfaces.",
+    "neutral-bg": "Quiet fills: tags, badges, kbd keys, meter tracks, remote-host rows.",
+    "accent": "Links, focus outlines, the primary button, tailnet glyphs and the new badge. Text on bg, side-bg, surface, neutral-bg and info-bg.",
+    "accent-text": "Text on an accent fill (primary button, new badge).",
+    "ok": "Up and healthy: status dots, memory sparklines, ok badges. Text on every ground.",
+    "ok-bg": "Fill behind ok badges, the alert channel's ok row and service tiles.",
+    "warn": "Degraded or needs a look: warn dots, LAN glyphs, warn tags. Text on every ground.",
+    "warn-bg": "Fill behind warn tags and badges and the read-only notice in settings.",
+    "info": "Informational marks: compute-pool glyphs, VM type tags, the palette's port rows, info badges.",
+    "info-bg": "Fill behind info marks and the selected command-palette row.",
+    "danger": "Down, failed or destructive: bad dots, danger buttons and palette verbs. Text on every ground.",
+    "danger-text": "Text on a danger fill (error toasts).",
+    "st-divider": "Settings window: dividers between rows, list items and key-value pairs.",
+    "st-hover": "Settings window and control menus: hover fill of tabs, the close button and menu options.",
+    "st-current": "Settings window: the current tab's fill.",
+    "st-seg-bg": "Segmented control track.",
+    "st-seg-on": "Segmented control: the chosen option's fill (surface in light, a lighter grey in dark).",
+    "st-backdrop": "Backdrop behind modal dialogs."
+  },
+  "type": {
+    "fs-1": {
+      "usage": "11px: key caps, the sidebar's mono sub-lines, the inspector's log text and source line."
+    },
+    "fs-2": {
+      "usage": "12px: meta lines of list rows, sidebar counts and section headings, inspector section headings and facts, row action buttons."
+    },
+    "fs-3": {
+      "usage": "13px: shell tabs, secondary sidebar items, the inspector body, list group heads, toasts, and the port number of a list row on desktop."
+    },
+    "fs-4": {
+      "usage": "14px: body text (the body font size), row names, sidebar view rows and the settings window."
+    },
+    "fs-5": {
+      "usage": "15px: the page title in the bar, the inspector title, the keyboard shortcuts heading, and a list row's port number on a phone."
+    },
+    "figure-port": {
+      "from": ".port",
+      "usage": "The base port figure (600, 18px mono) of a service row; inside the dashboard list it drops to 13px on desktop and 15px on a phone."
+    },
+    "figure-port-sm": {
+      "from": ".hp-port",
+      "usage": "A port number inside a row (other hosts' ports)."
+    },
+    "figure-access-code": {
+      "from": ".ac-code code",
+      "usage": "The one-time approval code in Settings, spaced for reading aloud."
+    }
+  },
+  "layout": {
+    "bar-h": "Height of the top bar.",
+    "side-w": "Width of the left sidebar (0px while it is closed: data-side=\"closed\").",
+    "insp-w": "Width of the right inspector (0px while closed, 300px with data-insp=\"open\").",
+    "col-max": "Maximum width of the main column.",
+    "col-wide": "Maximum width of the main column on the devices tab.",
+    "col-pad": "Side padding of the main column: 20px, 0 from 641px to 767px, 16px at 640px and below."
+  },
+  "shadow": [
+    {
+      "name": "shadow-dialog",
+      "value": "0 16px 48px rgb(0 0 0 / .25)",
+      "usage": "The command palette and the keyboard shortcuts dialog, floating over the page."
+    },
+    {
+      "name": "shadow-toast",
+      "value": "0 6px 24px rgb(0 0 0 / .2)",
+      "usage": "Toasts at the bottom of the page."
+    },
+    {
+      "name": "shadow-drawer",
+      "value": "8px 0 24px rgb(0 0 0 / .1)",
+      "usage": "The sidebar when it slides in as a drawer on narrow windows."
+    },
+    {
+      "name": "shadow-sheet",
+      "value": "-8px 0 24px rgb(0 0 0 / .08)",
+      "usage": "The inspector when it opens as a right sheet under 1200px."
+    }
+  ],
+  "radius": [
+    {
+      "name": "radius-4",
+      "value": "4px",
+      "usage": "kbd keys, VM type tags, small icon buttons."
+    },
+    {
+      "name": "radius-6",
+      "value": "6px",
+      "usage": "Palette verbs, menu options, segmented options, inline code."
+    },
+    {
+      "name": "radius-7",
+      "value": "7px",
+      "usage": "Shell tabs and bar icon buttons; also the app icon's corner."
+    },
+    {
+      "name": "radius-8",
+      "value": "8px",
+      "usage": "Buttons, inputs and selects: the default control radius; also the dense list container on desktop."
+    },
+    {
+      "name": "radius-10",
+      "value": "10px",
+      "usage": "Toasts, the ⋯ menu panel, service tiles, notices and the list container on a phone."
+    },
+    {
+      "name": "radius-12",
+      "value": "12px",
+      "usage": "Cards, the command palette, dialogs, worktree groups; the base service row outside the dense list."
+    },
+    {
+      "name": "radius-14",
+      "value": "14px",
+      "usage": "Device cards and the network tree on the devices tab."
+    },
+    {
+      "name": "radius-pill",
+      "value": "999px",
+      "usage": "Badges, chips and tags."
+    },
+    {
+      "name": "radius-round",
+      "value": "50%",
+      "usage": "Status dots."
+    }
+  ]
+}

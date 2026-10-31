@@ -162,6 +162,7 @@ Details: [docs/mac-app](docs/mac-app/README.md).
 | [Runbooks](docs/runbooks/README.md) | setting up and rotating every credential Portboard holds |
 | [Architecture](docs/architecture.md) | source layout, adding a feature |
 | [Demo](docs/demo.md) | the static, read-only demo and landing page on GitHub Pages, from example data |
+| [Design system](docs/design-system.md) | tokens, components and the brand book, built from the dashboard's CSS |
 | [CHANGELOG.md](CHANGELOG.md) · [changelog.d](changelog.d/README.md) | releases, how to add an entry |
 
 ## Optional integrations

@@ -1,0 +1,71 @@
+<!-- @dsCard group="Forms" height=440 subtitle="segmented control with description, menu select, text field without description, no control, locked and off toggles with clickable labels" -->
+<style>
+.ds-stage { display: flex; flex-direction: column; gap: 0; padding: 4px 24px; max-width: 720px; background: var(--surface); color: var(--text); }
+</style>
+<div class="ds-stage">
+  <div class="st-rows">
+    <div class="st-row has-desc">
+      <div class="st-row-text">
+        <div class="st-row-label">Theme</div>
+        <div class="st-row-desc">Colours on this device. System follows the device's light or dark setting; the Mac app follows too.</div>
+      </div>
+      <div class="st-row-ctl">
+        <div class="ctl-seg" role="radiogroup" id="uiTheme">
+          <label class="ctl-seg-opt"><input type="radio" class="ctl-seg-input" name="seg1" value="system" checked><span>System</span></label>
+          <label class="ctl-seg-opt"><input type="radio" class="ctl-seg-input" name="seg1" value="light"><span>Light</span></label>
+          <label class="ctl-seg-opt"><input type="radio" class="ctl-seg-input" name="seg1" value="dark"><span>Dark</span></label>
+        </div>
+      </div>
+    </div>
+    <div class="st-row has-desc">
+      <div class="st-row-text">
+        <div class="st-row-label">When a session ends</div>
+        <div class="st-row-desc">Nothing is stopped when a session ends. Leftover servers show up in the Services tab's cleanup banner.</div>
+      </div>
+      <div class="st-row-ctl">
+        <div class="ctl-menu" id="autoStop" data-write="1">
+          <button type="button" class="ctl-menu-btn" aria-haspopup="listbox" aria-expanded="false" aria-controls="menu1" aria-label="When a session ends" title="Nothing is stopped when a session ends. Leftover servers show up in the Services tab's cleanup banner."><span class="ctl-menu-text">Off (default)</span><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <ul class="ctl-menu-list" role="listbox" id="menu1" hidden aria-label="When a session ends">
+            <li role="option" class="ctl-menu-opt" tabindex="-1" data-value="off" aria-selected="true"><span class="ctl-menu-label">Off (default)</span><span class="ctl-menu-desc">Nothing is stopped when a session ends. Leftover servers show up in the Services tab's cleanup banner.</span></li>
+            <li role="option" class="ctl-menu-opt" tabindex="-1" data-value="scratchpad" aria-selected="false"><span class="ctl-menu-label">Scratchpad and temporary units only</span><span class="ctl-menu-desc">Stops only the servers running in that session's scratchpad and the temporary units Portboard started (pb-dev-, pb-sd-). Servers in worktrees are left alone.</span></li>
+            <li role="option" class="ctl-menu-opt" tabindex="-1" data-value="all" aria-selected="false"><span class="ctl-menu-label">All of that session's servers</span><span class="ctl-menu-desc">Stops every server that session started (except pinned ports and services that aren't cleanup candidates).</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="st-row">
+      <div class="st-row-text">
+        <div class="st-row-label">Name</div>
+      </div>
+      <div class="st-row-ctl">
+        <input id="prLabel" class="ctl-text" value="my-app" maxlength="80" placeholder="Empty: not set" aria-label="Name" data-write="1">
+      </div>
+    </div>
+    <div class="st-row has-desc">
+      <div class="st-row-text">
+        <div class="st-row-label">Last auto-stop</div>
+        <div class="st-row-desc">Works only when Claude Code's portboard plugin reports that a session ended.</div>
+      </div>
+    </div>
+  </div>
+  <ul class="wd-list st-rows" aria-label="Write-enabled devices">
+    <li class="st-row">
+      <label class="st-row-text" for="wd-laptop" title="You're using this device now: leave it out and you can't make changes from it anymore" data-write="1">
+        <span class="st-row-label"><strong>laptop</strong><span class="badge info">This device</span></span>
+        <span class="st-row-desc">Mac</span>
+      </label>
+      <div class="st-row-ctl">
+        <label class="ctl-toggle" data-write="1"><input type="checkbox" role="switch" class="ctl-toggle-input" id="wd-laptop" value="laptop" aria-label="Allow changes from laptop" data-write="1" checked disabled><span class="ctl-toggle-track" aria-hidden="true"></span></label>
+      </div>
+    </li>
+    <li class="st-row">
+      <label class="st-row-text" for="wd-desktop" data-write="1">
+        <span class="st-row-label"><strong>desktop</strong></span>
+        <span class="st-row-desc">Linux</span>
+      </label>
+      <div class="st-row-ctl">
+        <label class="ctl-toggle" data-write="1"><input type="checkbox" role="switch" class="ctl-toggle-input" id="wd-desktop" value="desktop" aria-label="Allow changes from desktop" data-write="1"><span class="ctl-toggle-track" aria-hidden="true"></span></label>
+      </div>
+    </li>
+  </ul>
+</div>

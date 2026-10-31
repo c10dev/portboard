@@ -1,0 +1,32 @@
+<!-- @dsCard group="Status" height=130 subtitle="normal, hot (90% and over), no reading, on machine cards" -->
+<style>
+  .ds-stage { padding: 16px; }
+</style>
+<div class="ds-stage">
+  <div class="machine-strip">
+    <button type="button" class="device machine ok">
+      <div class="device-head"><span class="dot"></span><strong>desktop</strong><span class="device-os">Linux</span></div>
+      <div class="mbars">
+        <div class="mbar" title="CPU 12%"><span class="mbar-label">CPU</span><span class="mbar-track"><span class="mbar-fill" style="width: 12%;"></span></span><span class="mbar-val">12%</span></div>
+        <div class="mbar" title="Mem 48%"><span class="mbar-label">Mem</span><span class="mbar-track"><span class="mbar-fill" style="width: 48%;"></span></span><span class="mbar-val">48%</span></div>
+      </div>
+      <div class="device-line">sessions 1/4</div>
+    </button>
+    <button type="button" class="device machine warn">
+      <div class="device-head"><span class="dot"></span><strong>laptop</strong><span class="device-os">macOS</span></div>
+      <div class="mbars">
+        <div class="mbar" title="CPU 95%"><span class="mbar-label">CPU</span><span class="mbar-track"><span class="mbar-fill hot" style="width: 95%;"></span></span><span class="mbar-val">95%</span></div>
+        <div class="mbar" title="Mem 62%"><span class="mbar-label">Mem</span><span class="mbar-track"><span class="mbar-fill" style="width: 62%;"></span></span><span class="mbar-val">62%</span></div>
+      </div>
+      <div class="device-line">sessions 3/4</div>
+    </button>
+    <button type="button" class="device machine ok">
+      <div class="device-head"><span class="dot"></span><strong>api</strong><span class="device-os">WSL</span></div>
+      <div class="mbars">
+        <div class="mbar" title="CPU 30%"><span class="mbar-label">CPU</span><span class="mbar-track"><span class="mbar-fill" style="width: 30%;"></span></span><span class="mbar-val">30%</span></div>
+        <div class="mbar" title="not read"><span class="mbar-label">Mem</span><span class="mbar-track"><span class="mbar-fill" style="width: 0%;"></span></span><span class="mbar-val">–</span></div>
+      </div>
+      <div class="device-line">sessions 0</div>
+    </button>
+  </div>
+</div>
