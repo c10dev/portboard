@@ -89,6 +89,11 @@ test('scrubText: addresses by category, without mangling times, dates and versio
     assert.equal(scrubText(keep), keep);
   }
   assert.equal(scrubText('cwd /home/alice/projects/x'), 'cwd [path]');
+  // macOS
+  assert.equal(scrubText('cwd /Users/alice/projects/shop-web'), 'cwd [path]');
+  assert.equal(scrubText('Index of /private/tmp/claude-501/-Users-alice/abc/scratchpad'), 'Index of [path]');
+  assert.equal(scrubText('disk /Volumes/Data/alice/x, ok'), 'disk [path], ok');
+  assert.equal(scrubText('https://devbox.example.ts.net/private/x'), 'https://devbox.example.ts.net/private/x', 'a URL path stays');
   assert.equal(scrubText('run ssh -N -L 22:127.0.0.1:22 alice@box'), 'run [ssh command]');
   assert.equal(scrubText('token PVEAPIToken=root@pam!pb=1234-5678'), 'token [credential]');
   assert.equal(scrubText('192.168.1.5', { ...STRICT, showAddresses: true }), '192.168.1.5');
