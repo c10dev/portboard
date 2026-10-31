@@ -13,6 +13,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { run, type RunResult } from './exec.ts';
 import { reportHealth } from './health.ts';
+import { korDur } from './digest.ts';
 import { t } from './i18n.ts';
 
 export type SshReadError =
@@ -50,7 +51,8 @@ export interface SshReadStatus {
   /** ms of the next scheduled attempt */
   nextAt: number | null;
   setupUrl: string;
-  /** why there is no fresh read, in words (current(): pending, turned off, waiting to retry); null when ok */
+  /** why there is no fresh read, in words (current(): pending, turned off, waiting to retry, or the last good read is
+   *  older than STALE_AFTER and a read is running or due); null when ok and fresh */
   reason?: string | null;
 }
 
@@ -109,13 +111,20 @@ export const STALE_AFTER = 15 * 60_000;
 
 /**
  * Why a reader has no fresh read (c10dev/portboard#2: a reader sat in `pending` and nothing said why): its first
- * attempt is running (`readingSince`, ms) or hasn't started, it is turned off, or it failed and waits for nextAt.
+ * attempt is running (`readingSince`, ms) or hasn't started, it is turned off, it failed and waits for nextAt, or its
+ * last good read is older than STALE_AFTER (the data is dropped) and it reads again.
  */
 export function readerReason(s: SshReadStatus, readingSince: number | null, now: number): string | null {
   const sec = (ms: number) => Math.max(0, Math.round(ms / 1000));
   if (s.pending) return readingSince !== null ? t('sshread.reason.reading', { sec: sec(now - readingSince) }) : t('sshread.reason.waiting');
   if (!s.enabled) return t('sshread.reason.disabled');
   if (s.error) return s.nextAt !== null ? t('sshread.reason.retry', { error: s.error, sec: sec(s.nextAt - now) }) : s.error;
+  // ok, but the last read is too old to show: a process that sat idle answers its first request from the old read
+  // while it reads again in the background, so say that instead of an ok with no ports
+  if (s.lastOk !== null && now - s.lastOk >= STALE_AFTER) {
+    const age = korDur(now - s.lastOk);
+    return readingSince !== null ? t('sshread.reason.refreshing', { age, sec: sec(now - readingSince) }) : t('sshread.reason.stale', { age });
+  }
   return null;
 }
 

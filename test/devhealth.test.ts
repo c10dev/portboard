@@ -24,7 +24,7 @@ import {
 } from '../src/core/devhealth.ts';
 import { checkOnce, resetForTest, statePath, viewOf } from '../src/features/devhealth.ts';
 import { resolvePaths } from '../src/core/paths.ts';
-import { readerReason, type SshReadStatus } from '../src/core/sshread.ts';
+import { readerReason, STALE_AFTER, type SshReadStatus } from '../src/core/sshread.ts';
 import type { Message } from '../src/core/alerts.ts';
 
 const MIN = 60_000;
@@ -213,4 +213,10 @@ test('SSH readers: a pending, off or failing reader says why', () => {
   assert.equal(readerReason(status({ pending: false, enabled: false }), null, T0), '설정에서 꺼져 있음');
   assert.equal(readerReason(status({ pending: false, error: 'timeout', nextAt: T0 + 90_000 }), null, T0), 'timeout, 90초 뒤 다시 시도');
   assert.equal(readerReason(status({ pending: false, ok: true }), null, T0), null);
+  // ok, but the last good read is past STALE_AFTER: an idle process answers from it while it reads again
+  const old = status({ pending: false, ok: true, lastOk: T0 - 34 * 3_600_000 });
+  assert.equal(readerReason(old, null, T0), '마지막 성공 읽기 1일 10시간 전, 다음 요청 때 다시 읽어요');
+  assert.equal(readerReason(old, T0 - 2_000, T0), '마지막 성공 읽기 1일 10시간 전, 다시 읽는 중 (2초)');
+  assert.equal(readerReason(status({ pending: false, ok: true, lastOk: T0 - STALE_AFTER + 1 }), null, T0), null, 'fresh until STALE_AFTER');
+  assert.equal(readerReason(status({ pending: false, ok: true, lastOk: T0 - STALE_AFTER }), null, T0), '마지막 성공 읽기 15분 전, 다음 요청 때 다시 읽어요');
 });

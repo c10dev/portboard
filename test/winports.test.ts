@@ -8,6 +8,7 @@ import { attachWinPorts, mergeDevices, parsePeers, type Devices } from '../src/c
 import type { RunResult } from '../src/core/exec.ts';
 import type { PoolHost } from '../src/core/pool.ts';
 import { checkWinConfig, parseWinPorts, WIN_DEFAULTS, WIN_SETUP_URL, WinPortsCollector, type WinPortsStatus } from '../src/core/winports.ts';
+import { L } from './fixtures/locale.ts';
 import { redactDevices } from '../src/remote/redact.ts';
 import { SITE } from '../src/core/site.ts';
 
@@ -99,6 +100,20 @@ test('collector: no user → setup hint state and no ssh at all; with a user it 
   // PowerShell failing inside the forced command: exit 1, an error on stderr, nothing tab-separated
   const ps = harness(await config({ user: 'dev' }), [res('', 'ports.ps1 : File C:\\ProgramData\\portboard\\ports.ps1 cannot be loaded', false)]);
   assert.equal((await ps.c.get(Infinity)).status.error, 'failed');
+});
+
+test('collector: after a long idle the first get() answers ok with no ports and says it is reading again', async () => {
+  const h = harness(await config({ user: 'dev' }), [res(WIN), res(WIN)]);
+  assert.equal((await h.c.get(Infinity)).status.ok, true);
+  h.advance(34 * 3_600_000); // a stdio MCP process nobody asked for a day and a half
+  const idle = await h.c.get(0);
+  assert.deepEqual([idle.status.ok, idle.status.pending, idle.data], [true, false, null]);
+  assert.equal(idle.status.reason, L('마지막 성공 읽기 1일 10시간 전, 다시 읽는 중 (0초)', 'last good read 1d 10h ago, reading again (0s)'));
+  await h.c.refresh(); // joins the read that get() started
+  assert.equal(h.calls.length, 2, 'one new read, started by that get()');
+  const fresh = h.c.current();
+  assert.equal(fresh.status.reason, null);
+  assert.equal(fresh.data?.sockets.length, 23);
 });
 
 // ---- merging with the WSL side ----
