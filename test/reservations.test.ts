@@ -116,3 +116,17 @@ test('reserve without a port at the same time: each owner gets its own free port
   assert.deepEqual((await loadReservations(path)).map((r) => [r.port, r.owner]), [[4000, 'a'], [4001, 'b']]);
   assert.deepEqual(await reserve('c', undefined, undefined, async () => undefined, path), { ok: false, error: 'no free port found' });
 });
+
+test('free_port: for is normalized as reserve_port normalizes owner, so an owner gets its own reserved port', async () => {
+  const seen: unknown[] = [];
+  const core = { freePorts: async (_count: number, _preferred: number | undefined, forOwner: string | null) => (seen.push(forOwner), [3005]) } as any;
+  await callTool('free_port', { for: '  shop   web ' }, core);
+  await callTool('free_port', { for: 'shop\tweb' }, core);
+  await callTool('free_port', { for: '   ' }, core);
+  await callTool('free_port', {}, core);
+  assert.deepEqual(seen, [normalizeOwner('shop  web'), 'shop web', null, null]);
+  assert.equal(normalizeOwner('shop  web'), 'shop web');
+  // what that changes: the owner's reserved port is offered, not blocked
+  const list = [{ port: 3005, owner: 'shop web', createdAt: '' }];
+  assert.deepEqual(reservedFor(list, seen[0] as string).own, [3005]);
+});

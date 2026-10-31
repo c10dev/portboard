@@ -5,6 +5,7 @@
 //   MCP free_port (also remote: the result is only port numbers)
 
 import { freePorts } from '../core/index.ts';
+import { normalizeOwner } from '../core/reservations.ts';
 import { parseOptionalInt, text, type Core } from '../mcp/kit.ts';
 import { readOnlyCore } from '../remote/core.ts';
 import { ok, reply } from './router.ts';
@@ -23,7 +24,7 @@ async function freePort(args: unknown, core: Core) {
   if (!count.ok) return text(count.error, true);
   const forRaw = (args as { for?: unknown } | null)?.for;
   if (forRaw !== undefined && typeof forRaw !== 'string') return text('for must be a string (a project or worktree owner)', true);
-  return text({ ports: await core.freePorts(count.value ?? 1, preferred.value, forRaw?.trim() || null) });
+  return text({ ports: await core.freePorts(count.value ?? 1, preferred.value, normalizeOwner(forRaw)) });
 }
 
 const tool: Tool = {
@@ -70,7 +71,7 @@ export const freePortsFeature: FeatureModule = {
         if (preferred !== undefined && !(Number.isInteger(preferred) && preferred >= 1024 && preferred <= 65535)) {
           return reply(400, { error: 'preferred must be an integer 1024–65535' });
         }
-        return ok({ ports: await freePorts(count, preferred, url.searchParams.get('for')?.trim() || null) });
+        return ok({ ports: await freePorts(count, preferred, normalizeOwner(url.searchParams.get('for'))) });
       },
     },
   ],
