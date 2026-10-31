@@ -93,7 +93,7 @@ The board reads `/agent/v1/info`, `/agent/v1/ports` and `/agent/v1/status` from 
 
 ## Machines: machine_status and where_to_run
 
-The board's stdio MCP server (and `GET /api/machines`, `/api/where-to-run`, `/api/find-worktree`) puts every machine work can run on in one list: this machine, each agent above, and the cloud when you turn it on. Three read-only tools use it, on the local stdio server only ([mcp.md](mcp.md)):
+The board's stdio MCP server (and `GET /api/machines`, `/api/where-to-run`, `/api/find-worktree`) puts every machine work can run on in one list: this machine, each agent above, and the cloud when you turn it on. Three read-only tools use it on the local stdio server ([mcp.md](mcp.md)). The [remote MCP server](remote-mcp/README.md#tools-allowlist) offers `machine_status` only, redacted (no session ids, paths or git remotes) and from the list the dashboard last read (`machines-state.json`, written each time it reads the agents), never asking an agent itself:
 
 - `machine_status`: per machine its kind, online, data age (stale after 60 s), load, Claude Code sessions (active and idle), checkouts, port counts, capabilities, `maxSessions` and how to open a session there (`launch`).
 - `find_worktree`: which machines have a repo or branch checked out, and a `conflict` note when one branch is on two machines and one side has changes or an active session.

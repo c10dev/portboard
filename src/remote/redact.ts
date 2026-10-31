@@ -4,10 +4,12 @@
 //
 // Always dropped: cmdlines, cwd paths, SSH commands, pids, MACs, LAN / Tailscale / public IPs, subnet routes,
 // the compute-pool and Proxmox URLs, Proxmox credentials and alert settings (never copied, never in the core types),
-// worktree and dev-server paths, commit messages, package.json script commands and systemd unit descriptions.
+// worktree and dev-server paths, commit messages, package.json script commands, systemd unit descriptions, and
+// machine_status's session ids, git remotes and paths of every machine.
 // Kept: device and service names, ports, states, load numbers and the URLs that only open inside the tailnet.
 // Two flags in remote.json loosen this for a private setup: showAddresses (IPs, MACs, routes, endpoints) and
-// showProcesses (pids, client process names, and memory_usage's session titles, projects and process names).
+// showProcesses (pids, client process names, memory_usage's session titles, projects and process names, and
+// machine_status's session projects and worktrees).
 // Both default to false.
 
 import { createHmac, randomBytes } from 'node:crypto';
@@ -21,6 +23,7 @@ import type { DeviceCard, Usage, UseRow } from '../core/usage.ts';
 import type { WorktreeInfo, WorktreesDoc } from '../core/worktrees.ts';
 import type { DevServersDoc } from '../features/devservers.ts';
 import type { MemoryView } from '../features/memory.ts';
+import { STALE_MS, type MachineStatus } from '../core/machines.ts';
 import { summarize, type ListArgs } from '../mcp/views.ts';
 import { statusReport } from '../mcp/status.ts';
 
@@ -495,6 +498,86 @@ export function redactMemory(v: MemoryView, top = 10, policy: RedactPolicy = STR
       docker: v.docker.slice(0, top).map((d) => ({ name: d.name, mb: d.mb })),
       ...(names ? { other: v.other.slice(0, top).map((o) => ({ name: o.name, count: o.count, mb: o.mb })) } : {}),
       suggestions: v.suggestions.map((x) => ({ kind: x.kind, mb: x.mb, ...(names ? { text: x.text } : {}) })),
+    },
+    policy,
+  );
+}
+
+// ---- machine_status (features/machines.ts, from machines-state.json) ----
+
+/** The parts machine_status can include (as the local tool) */
+export const MACHINE_PARTS = ['load', 'claude', 'worktrees', 'ports'] as const;
+export type MachinePart = (typeof MACHINE_PARTS)[number];
+
+/**
+ * Per machine its name, kind, how the board reaches it, online and how old its data is (stale recomputed at read
+ * time), the error kind, load numbers, Claude Code session counts (and per session only idle and numbers),
+ * checkouts as repo@branch with changed yes/no, in use, ahead/behind and the reserved port, port counts,
+ * capabilities, maxSessions and how a session is opened there (the kind only). Never a session id, a path, a git
+ * remote, a commit date, the machine's tailnet id or the launch notes; no flag adds them. Session projects and
+ * worktrees only with showProcesses (as memory_usage's titles and projects).
+ */
+export function redactMachines(
+  doc: { at: string; machines: MachineStatus[] },
+  args: { machine?: string; include?: readonly MachinePart[] } = {},
+  policy: RedactPolicy = STRICT,
+  now = Date.now(),
+) {
+  const want = new Set<MachinePart>(args.include?.length ? args.include : MACHINE_PARTS);
+  const names = policy.showProcesses;
+  return scrubDeep(
+    {
+      at: doc.at,
+      machines: doc.machines
+        .filter((m) => !args.machine || m.name.toLowerCase() === args.machine.toLowerCase())
+        .map((m) => {
+          const age = m.checkedAt ? Math.max(0, Math.round((now - Date.parse(m.checkedAt)) / 1000)) : null;
+          return {
+            name: m.name,
+            kind: m.kind,
+            reach: m.reach,
+            online: m.online,
+            dataAgeSec: age,
+            stale: m.kind === 'cloud' ? false : age === null || age * 1000 > STALE_MS,
+            error: m.error,
+            ...(m.oldAgent ? { oldAgent: true } : {}),
+            ...(want.has('load') ? {
+              load: m.load ? { cores: m.load.cores, load1: m.load.load1, memTotalMb: m.load.memTotalMb, memAvailMb: m.load.memAvailMb, diskFreePct: m.load.diskFreePct, uptimeSec: m.load.uptimeSec } : null,
+            } : {}),
+            ...(want.has('claude') ? {
+              claude: m.claude ? {
+                cliVersion: m.claude.cliVersion,
+                active: m.claude.active,
+                idle: m.claude.idle,
+                estimate: m.claude.source === 'github',
+                sessions: m.claude.sessions.map((s) => ({
+                  ...(names ? { project: s.project, worktree: s.worktree } : {}),
+                  idle: s.idle,
+                  idleMin: s.idleMin,
+                  cpuPct: s.cpuPct,
+                  mb: s.mb,
+                })),
+              } : null,
+            } : {}),
+            ...(want.has('worktrees') ? {
+              worktrees: m.worktrees ? m.worktrees.map((w) => ({
+                repo: w.repo,
+                branch: w.branch,
+                main: w.main,
+                changed: w.dirty === null ? null : w.dirty > 0,
+                inUse: w.inUse,
+                claude: w.claude,
+                ahead: w.ahead ?? null,
+                behind: w.behind ?? null,
+                reservedPort: w.reservedPort,
+              })) : null,
+            } : {}),
+            ...(want.has('ports') ? { ports: m.ports ? { listening: m.ports.listening, devServers: m.ports.devServers } : null } : {}),
+            capabilities: [...m.capabilities],
+            maxSessions: m.maxSessions,
+            launch: m.launch.map((l) => l.via),
+          };
+        }),
     },
     policy,
   );

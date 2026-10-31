@@ -4,7 +4,8 @@ import type { WorktreeInfo, WorktreesDoc } from '../src/core/worktrees.ts';
 import { DEFAULT_THRESHOLDS, emptyPressure, type MemorySample, type SessionRow } from '../src/core/memory.ts';
 import type { DevServersDoc } from '../src/features/devservers.ts';
 import { viewOf, type MemoryView } from '../src/features/memory.ts';
-import { lanAlias, redactDevices, redactDevServers, redactMemory, redactPorts, redactStatus, redactUsage, redactWorktrees, scrubText, STRICT } from '../src/remote/redact.ts';
+import { lanAlias, redactDevices, redactDevServers, redactMachines, redactMemory, redactPorts, redactStatus, redactUsage, redactWorktrees, scrubText, STRICT } from '../src/remote/redact.ts';
+import type { MachineStatus } from '../src/core/machines.ts';
 import { readRemoteResource } from '../src/remote/tools.ts';
 import type { Devices } from '../src/core/devices.ts';
 import { assertClean, devices, snap, usage } from './fixtures/remote-redact.ts';
@@ -417,4 +418,100 @@ test('#8 flags: showProcesses adds memory names (never pids or paths), showAddre
   const loose = { showAddresses: true, showProcesses: true };
   assert.deepEqual(redactWorktrees(worktreesDoc, {}, loose), redactWorktrees(worktreesDoc), 'no flag adds a worktree field');
   assert.deepEqual(redactDevServers(devServersDoc, loose), redactDevServers(devServersDoc), 'no flag adds a dev-server field');
+});
+
+// ---- machine_status ----
+
+const MACH_NOW = Date.parse('2026-10-31T12:00:00.000Z');
+const machAt = (agoSec: number) => new Date(MACH_NOW - agoSec * 1000).toISOString();
+const machine = (over: Partial<MachineStatus>): MachineStatus => ({
+  id: 'nodeid-k3j2h1',
+  name: 'mac',
+  kind: 'mac',
+  reach: 'agent',
+  online: true,
+  checkedAt: machAt(5),
+  stale: false,
+  error: null,
+  load: { cores: 10, load1: 2.5, memTotalMb: 32000, memAvailMb: 12000, diskFreePct: 30, uptimeSec: 3600 },
+  claude: {
+    cliVersion: '2.1.299',
+    active: 1,
+    idle: 1,
+    source: 'ps',
+    sessions: [
+      { id: '0f0e0d0c', project: 'secret-client-project', worktree: 'secret-client-project@feat/acquisition', idleMin: 0, cpuPct: 12, mb: 800, startedAt: machAt(3600), idle: false },
+      { id: '9a8b7c6d', project: 'notes', worktree: null, idleMin: 75, cpuPct: null, mb: null, startedAt: null, idle: true },
+    ],
+  },
+  worktrees: [
+    { owner: 'shop-web@feat/pay', repo: 'shop-web', remote: 'c10dev-private/shop-web', branch: 'feat/pay', path: '/Users/alice/projects/shop-web/.claude/worktrees/pay', main: false, dirty: 3, lastCommit: '2026-10-30T09:00:00Z', inUse: true, claude: true, reservedPort: 4105, ahead: 2, behind: 0 },
+    { owner: 'shop-web@main', repo: 'shop-web', remote: 'c10dev-private/shop-web', branch: 'main', path: '~/projects/shop-web', main: true, dirty: null, lastCommit: null, inUse: false, claude: false, reservedPort: null, ahead: null, behind: null },
+  ],
+  ports: { listening: 12, devServers: 1 },
+  capabilities: ['macos', 'xcode'],
+  maxSessions: 2,
+  launch: [{ via: 'remote-control', note: 'claude --remote-control on mac, at /Users/alice/projects' }],
+  ...over,
+});
+const machinesDoc = {
+  at: machAt(30),
+  machines: [
+    machine({ id: 'devbox', name: 'devbox', kind: 'linux', reach: 'local', checkedAt: machAt(30), launch: [{ via: 'local', note: '' }] }),
+    machine({}),
+    machine({ id: 'agent:desktop', name: 'desktop', kind: 'wsl', online: false, checkedAt: machAt(900), stale: true, error: 'timeout', claude: null, worktrees: null, ports: null, load: null }),
+    machine({
+      id: 'cloud', name: 'cloud', kind: 'cloud', reach: 'none', checkedAt: null, load: null, worktrees: null, ports: null, maxSessions: null, capabilities: ['sandbox'],
+      claude: { cliVersion: null, active: 1, idle: 0, source: 'github', sessions: [{ id: null, project: 'shop-web', worktree: 'shop-web@claude/secret-feature', idleMin: 4, cpuPct: null, mb: null, startedAt: null, idle: false, remote: 'c10dev-private/shop-web' }] },
+      launch: [{ via: 'cloud', note: '' }, { via: 'teleport', note: '' }],
+    }),
+  ],
+};
+const MACHINE_LEAKS: [string, RegExp][] = [
+  ['path', /\/Users\/|\/home\/|~\/|\.claude\/worktrees|\[path\]/],
+  ['session id', /0f0e0d0c|9a8b7c6d/],
+  ['git remote', /c10dev-private/],
+  ['tailnet id', /nodeid-k3j2h1/],
+  ['launch note', /remote-control on/],
+  ['commit date', /2026-10-30T09/],
+  ['dirty count', /"dirty"/],
+];
+
+test('machine_status projection: names, load, session counts, checkouts as repo@branch; no ids, paths, remotes or session names', () => {
+  const out = redactMachines(machinesDoc, {}, STRICT, MACH_NOW);
+  assertNone('machines', out, [...MACHINE_LEAKS, ['session project', /secret-client-project|acquisition|claude\/secret-feature/]]);
+  assert.equal(out.at, machAt(30));
+  assert.deepEqual(out.machines.map((m) => [m.name, m.kind, m.reach, m.online, m.dataAgeSec, m.stale, m.error]), [
+    ['devbox', 'linux', 'local', true, 30, false, null],
+    ['mac', 'mac', 'agent', true, 5, false, null],
+    ['desktop', 'wsl', 'agent', false, 900, true, 'timeout'],
+    ['cloud', 'cloud', 'none', true, null, false, null],
+  ]);
+  const mac = out.machines[1];
+  assert.deepEqual(mac.claude, {
+    cliVersion: '2.1.299', active: 1, idle: 1, estimate: false,
+    sessions: [{ idle: false, idleMin: 0, cpuPct: 12, mb: 800 }, { idle: true, idleMin: 75, cpuPct: null, mb: null }],
+  });
+  assert.deepEqual(mac.worktrees, [
+    { repo: 'shop-web', branch: 'feat/pay', main: false, changed: true, inUse: true, claude: true, ahead: 2, behind: 0, reservedPort: 4105 },
+    { repo: 'shop-web', branch: 'main', main: true, changed: null, inUse: false, claude: false, ahead: null, behind: null, reservedPort: null },
+  ]);
+  assert.deepEqual(mac.launch, ['remote-control']);
+  assert.deepEqual(mac.capabilities, ['macos', 'xcode']);
+  assert.deepEqual(Object.keys(mac).sort(), ['capabilities', 'claude', 'dataAgeSec', 'error', 'kind', 'launch', 'load', 'maxSessions', 'name', 'online', 'ports', 'reach', 'stale', 'worktrees']);
+  assert.equal(out.machines[3].claude!.estimate, true);
+  // the data aged since the save: stale is recomputed at read time
+  assert.equal(redactMachines(machinesDoc, {}, STRICT, MACH_NOW + 120_000).machines[0].stale, true);
+  // one machine, some parts
+  const one = redactMachines(machinesDoc, { machine: 'MAC', include: ['load'] }, STRICT, MACH_NOW);
+  assert.deepEqual(one.machines.map((m) => m.name), ['mac']);
+  assert.deepEqual(['load', 'claude', 'worktrees', 'ports'].filter((k) => k in one.machines[0]), ['load']);
+  assert.equal(redactMachines(machinesDoc, { machine: 'nodeid-k3j2h1' }, STRICT, MACH_NOW).machines.length, 0, 'not by the tailnet id');
+});
+
+test('machine_status with showProcesses: session projects and worktrees; still no ids, paths or remotes', () => {
+  const out = redactMachines(machinesDoc, {}, { showAddresses: false, showProcesses: true }, MACH_NOW);
+  assertNone('machines (showProcesses)', out, MACHINE_LEAKS);
+  assert.deepEqual(out.machines[1].claude!.sessions[0], { project: 'secret-client-project', worktree: 'secret-client-project@feat/acquisition', idle: false, idleMin: 0, cpuPct: 12, mb: 800 });
+  assert.equal(out.machines[3].claude!.sessions[0].worktree, 'shop-web@claude/secret-feature');
 });

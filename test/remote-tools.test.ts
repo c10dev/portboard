@@ -201,3 +201,46 @@ test('prompts/get: local-only prompts are refused like unknown ones; arguments a
   const extra: any = await handleRemoteMessage({ jsonrpc: '2.0', id: 4, method: 'prompts/get', params: { name: 'port_cleanup', arguments: { days: '7' } } }, fakeCore());
   assert.equal(extra.error.code, -32602, 'the local days argument does not exist remotely');
 });
+
+test('machine_status: from RemoteCore.machines only (the saved list), fresh refused, fails closed without it', async () => {
+  const t = REMOTE_TOOLS.find((x) => x.name === 'machine_status')!;
+  assert.equal(t.annotations.readOnlyHint, true);
+  assert.deepEqual(Object.keys((t.inputSchema as any).properties), ['machine', 'include'], 'no fresh remotely');
+  assert.doesNotMatch(t.description, /\b(fresh|where_to_run|find_worktree)\b/);
+  const none: any = await callRemoteTool('machine_status', {}, fakeCore());
+  assert.deepEqual([none.isError, none.content[0].text], [true, 'machine_status is not available here']);
+
+  const calls: string[] = [];
+  const at = new Date().toISOString();
+  const saved = {
+    at,
+    machines: [{
+      id: 'devbox', name: 'devbox', kind: 'linux', reach: 'local', online: true, checkedAt: at, stale: false, error: null, load: null,
+      claude: { cliVersion: null, active: 0, idle: 0, source: 'proc', sessions: [{ id: 'abcdef12', project: 'p', worktree: 'p@main', idleMin: 1, cpuPct: null, mb: null, startedAt: null, idle: false }] },
+      worktrees: [], ports: null, capabilities: [], maxSessions: 4, launch: [{ via: 'local', note: '/home/me' }],
+    }],
+  } as any;
+  let doc: any = null;
+  const core: RemoteCore = { ...fakeCore(), machines: async () => (calls.push('machines'), doc) };
+  const empty: any = await callRemoteTool('machine_status', {}, core);
+  assert.deepEqual(JSON.parse(empty.content[0].text).machines, [], 'nothing saved yet: an empty answer with a note, not a read of the agents');
+  doc = saved;
+  const out = JSON.parse(((await callRemoteTool('machine_status', { include: ['claude'] }, core)) as any).content[0].text);
+  assert.deepEqual(out.machines[0].claude.sessions, [{ idle: false, idleMin: 1, cpuPct: null, mb: null }]);
+  assert.equal(out.note, undefined);
+  assert.doesNotMatch(JSON.stringify(out), /abcdef12|\/home\/me|p@main/);
+  doc = { ...saved, at: new Date(Date.now() - 30 * 60_000).toISOString() };
+  assert.match(JSON.parse(((await callRemoteTool('machine_status', {}, core)) as any).content[0].text).note, /30 minutes old/);
+  for (const [args, re] of [[{ fresh: true }, /fresh is not available remotely/], [{ machine: 3 }, /machine must be/], [{ include: ['paths'] }, /include must be/], [{ machine: 'nope' }, /no machine named nope/]] as const) {
+    const r: any = await callRemoteTool('machine_status', args, core);
+    assert.equal(r.isError, true, JSON.stringify(args));
+    assert.match(r.content[0].text, re);
+  }
+  assert.equal(calls.length, 4, 'fresh, a bad machine and bad include are refused before the core');
+  // the local-only machine tools stay unknown remotely, before the core
+  for (const name of ['find_worktree', 'where_to_run']) {
+    const r: any = await handleRemoteMessage({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name, arguments: { repo: 'x' } } }, core);
+    assert.deepEqual(r.error, { code: -32602, message: `unknown tool: ${name}` }, name);
+  }
+  assert.equal(calls.length, 4);
+});
