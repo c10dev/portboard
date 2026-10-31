@@ -131,7 +131,8 @@ function fontOf(selector: string): { fontWeight?: number; fontSize: string; line
   throw new Error(`no top-level "${selector}" rule with a font shorthand in ${STYLESHEETS.join(', ')}`);
 }
 
-export function buildTokens(sha: string, date: string, notes: Notes = JSON.parse(readFileSync(join(SRC, 'tokens.notes.json'), 'utf8'))) {
+/** `ref` is where the values come from, as `<branch>@<short sha>` */
+export function buildTokens(ref: string, date: string, notes: Notes = JSON.parse(readFileSync(join(SRC, 'tokens.notes.json'), 'utf8'))) {
   const style = themed('public/style.css');
   const settings = themed('public/settings.css');
   const missing: string[] = [];
@@ -209,7 +210,7 @@ export function buildTokens(sha: string, date: string, notes: Notes = JSON.parse
       radius: { note: 'Literal border-radius values in the stylesheets; these names exist only in the design system.', tokens: notes.radius },
       layout: { note: 'Shell sizes from public/shell.css :root.', tokens: layout },
       meta: {
-        source: 'github', repo: 'c10dev/portboard', ref: `main@${sha}`, package: '.',
+        source: 'github', repo: 'c10dev/portboard', ref, package: '.',
         paths: { tokens: ['public/style.css', 'public/settings.css', 'public/shell.css'], fonts: [], assets: ['public/icon.svg'], docs: ['design-system/'] },
         synced: date,
       },
@@ -288,16 +289,18 @@ function main(argv: string[]) {
   if (existsSync(out) && readdirSync(out).length) { console.error(`${out} is not empty`); process.exit(2); }
   const git = (...a: string[]) => execFileSync('git', ['-C', ROOT, ...a], { encoding: 'utf8' }).trim();
   const sha = git('rev-parse', '--short=7', 'HEAD');
+  const branch = git('rev-parse', '--abbrev-ref', 'HEAD'); // HEAD when detached
   const dirty = git('status', '--porcelain', '--', 'public', 'design-system') !== '';
   const at = arg('--at') ?? new Date().toISOString();
   const by = arg('--by') ?? (() => { try { return git('config', 'user.name'); } catch { return 'Claude'; } })();
-  const { tokens, skipped } = buildTokens(sha, at.slice(0, 10));
+  const { tokens, skipped } = buildTokens(`${branch}@${sha}`, at.slice(0, 10));
   const P = join(out, 'project');
   const put = (p: string, text: string) => { mkdirSync(dirname(join(P, p)), { recursive: true }); writeFileSync(join(P, p), text); };
 
   for (const f of files(SRC)) {
     const rel = relative(SRC, f);
-    if (rel === 'tokens.notes.json' || rel === 'system.json') continue;
+    // the token notes and the index date feed tokens.json and the index; the inventory is a checklist for the repo
+    if (rel === 'tokens.notes.json' || rel === 'system.json' || rel === 'inventory.md') continue;
     mkdirSync(dirname(join(P, rel)), { recursive: true });
     cpSync(f, join(P, rel));
   }

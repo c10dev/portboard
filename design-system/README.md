@@ -79,3 +79,12 @@ guidelines say what the consumer supplies.
 - Radius and shadow names exist only in the design system; the CSS writes the values directly.
 - Shadows outside the four tokens stay literal: the settings modal, menu panels and lists, the device detail panel, the current shell tab, the chosen segment and the toggle knob.
 - Components are hand-written static renditions, not a built library: the dashboard is plain DOM code without a component bundle.
+- Most font sizes in the CSS repeat the `fs-1` to `fs-5` values as px literals instead of `var(--fs-*)`; only `shell.css` uses the variables widely.
+- The serve tag uses literal purples (`#8250df`, `#d2a8ff` in dark mode), and the devices view switch uses a literal `#000` shadow tint.
+- `public/features/digest.js` reads `var(--card)`, but no stylesheet declares that property; it falls back to `transparent`.
+- There are no `link`, `focus`, chart, size, z-index or motion tokens, and no `danger-bg` or `on-ok` / `on-warn` / `on-info` colours. Charts use `accent`, `ok`, `warn` and `danger` directly.
+- `line` is a hairline: on `surface` it is 1.25:1 in light and 1.35:1 in dark, under 3:1 for control borders.
+- Three status dots carry no word: the sidebar dots (state in a hover title), an online device chip, and an online machine card.
+- Motion has no table here: durations run from .1s to .18s (and 1.6s for the palette flash), and `prefers-reduced-motion` stops only some of them.
+- This brand book has no principles, no contrast table and no component list, and its layout section does not cover the development tab, the service page or the settings window.
+- Components have no types and no state or keyboard sections. The app still builds a modal, dialog and sheet, copy button, logs viewer, tables, sparklines, a filter popover, tabs, the inspector and the network tree without a design-system component.

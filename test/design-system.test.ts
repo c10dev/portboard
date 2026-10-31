@@ -13,7 +13,7 @@ import { blocks, buildTokens, bundleCss, colorValue, customProps, declarations, 
 
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const { tokens } = buildTokens('0000000', '2026-01-01');
+const { tokens } = buildTokens('main@0000000', '2026-01-01');
 const byName = new Map(tokens.color.tokens.map((t) => [t.name, t]));
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const COLOR = /^(#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|(rgb|rgba|hsl|hsla|oklch)\([0-9.%\s,/]+\)|\{[A-Za-z0-9-]+\})$/;
@@ -152,8 +152,10 @@ test('the script writes the artifact layout into an empty folder', () => {
     assert.deepEqual(index.createdOnFiles, { v: 1, at: JSON.parse(read('design-system/system.json')).createdAt });
     assert.equal(index.assetGroups.Logos.files['icon.svg'].blob, 'abc');
     assert.equal(index.lastChange.by, 'test');
+    const branch = execFileSync('git', ['-C', ROOT, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).trim();
+    assert.match(JSON.parse(readFileSync(p('tokens.json'), 'utf8')).meta.ref, new RegExp(`^${branch.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}@[0-9a-f]{7}$`), 'meta.ref names the branch it was built from');
     for (const f of ['tokens.json', 'tokens.css', 'README.md', 'components/bundle.css', 'components/Cover/preview.html']) assert.ok(existsSync(p(f)), f);
-    assert.ok(!existsSync(p('tokens.notes.json')) && !existsSync(p('system.json')), 'the sources of the index and tokens stay out');
+    for (const f of ['tokens.notes.json', 'system.json', 'inventory.md']) assert.ok(!existsSync(p(f)), `${f} stays out of the artifact`);
   } finally {
     rmSync(out, { recursive: true, force: true });
   }
