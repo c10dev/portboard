@@ -7,7 +7,10 @@ import { agentStatus, AgentsCollector, checkStatus, type AgentRead } from '../sr
 import { buildMachines, CLOUD_ACTIVE_MIN, cloudEstimate, dataAge, defaultMaxSessions, localStatus, portCounts } from '../src/core/machines.ts';
 import { checkAgentTarget, machinesConfig, recommendConfig, resolveSite, SITE_DEFAULTS } from '../src/core/site.ts';
 import { branchOfHead, briefOf, worktreeOwnerOf, type WorktreeInfo, type WorktreesDoc } from '../src/core/worktrees.ts';
-import { answerWhere, parseFindQuery, parseRunRequest, repoFromTask, shapeMachines, machinesFeature } from '../src/features/machines.ts';
+import { answerWhere, loadSavedMachines, parseFindQuery, parseRunRequest, repoFromTask, shapeMachines, machinesFeature } from '../src/features/machines.ts';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Core } from '../src/mcp/kit.ts';
 import { STRICT } from '../src/remote/redact.ts';
 import { entry, snap, usage } from './fixtures/remote-redact.ts';
@@ -314,7 +317,7 @@ test('feature: argument checks, repo named in the task, include, and the tools o
   const core = { machines: async () => live } as unknown as Core;
   const tool = (name: string) => machinesFeature.tools!.find((x) => x.def.name === name)!;
   for (const t of machinesFeature.tools!) assert.equal(t.def.annotations.readOnlyHint, true, t.def.name);
-  assert.ok(machinesFeature.tools!.every((t) => !t.remote), 'local only');
+  assert.deepEqual(machinesFeature.tools!.filter((t) => t.remote).map((t) => t.def.name), ['machine_status'], 'find_worktree and where_to_run stay local');
   const st = JSON.parse((await tool('machine_status').call({ machine: 'VOCADO-DEV', include: ['claude'] }, core)).content[0].text);
   assert.equal(st.machines.length, 1);
   assert.equal(st.machines[0].load, undefined);
@@ -325,4 +328,18 @@ test('feature: argument checks, repo named in the task, include, and the tools o
   const wr = JSON.parse((await tool('where_to_run').call({ repo: 'shop-web', branch: 'feat-map' }, core)).content[0].text);
   assert.equal(wr.recommendation.machine, 'vocado-dev');
   assert.equal((await tool('where_to_run').call({ needs: 'everything' }, core)).isError, true);
+});
+
+test('loadSavedMachines: the dashboard\'s saved list; anything else reads as none', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'pb-machines-state-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, 'machines-state.json');
+  assert.equal(await loadSavedMachines(path), null, 'missing');
+  const m = { name: 'mac', capabilities: [], launch: [] };
+  await writeFile(path, JSON.stringify({ at: '2026-10-31T12:00:00.000Z', machines: [m, { name: 3 }, null, { name: 'x' }] }));
+  assert.deepEqual(await loadSavedMachines(path), { at: '2026-10-31T12:00:00.000Z', machines: [m] }, 'bad rows dropped');
+  for (const bad of ['{', JSON.stringify({ machines: [] }), JSON.stringify({ at: 'yesterday', machines: [] }), JSON.stringify({ at: '2026-10-31T12:00:00.000Z', machines: {} })]) {
+    await writeFile(path, bad);
+    assert.equal(await loadSavedMachines(path), null, bad);
+  }
 });

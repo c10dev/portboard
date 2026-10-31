@@ -14,6 +14,7 @@ import type { WorktreesDoc } from '../core/worktrees.ts';
 import type { Core } from '../mcp/kit.ts';
 import type { DevServersDoc } from '../features/devservers.ts';
 import type { MemoryView } from '../features/memory.ts';
+import type { MachineStatus } from '../core/machines.ts';
 import type { StatusExtras } from './redact.ts';
 
 /** What the remote server can reach: reads only. */
@@ -30,6 +31,8 @@ export interface RemoteCore {
   worktrees?(): Promise<WorktreesDoc | null>;
   /** memory_usage: the dashboard server's last sample from memory-state.json (null: none recent). Never reads /proc. */
   memory?(): Promise<MemoryView | null>;
+  /** machine_status: the list the dashboard server last read (machines-state.json; null: none). Never asks an agent. */
+  machines?(): Promise<{ at: string; machines: MachineStatus[] } | null>;
 }
 
 const notRemote = async (): Promise<never> => {
@@ -89,8 +92,8 @@ export function readOnlyCore(core: RemoteCore): Core {
     // session titles, project dirs and process names: never through shared code (the remote memory_usage reads
     // RemoteCore.memory and redacts; portboard://status carries a numbers-only line)
     memory: notRemote,
-    // machine_status / where_to_run: session projects, worktree names and paths of every machine; local only until a
-    // redacted remote version is reviewed (docs/multi-host.md)
+    // machine_status / find_worktree / where_to_run: session projects, worktree names and paths of every machine. The
+    // remote machine_status reads RemoteCore.machines (the saved list) with its own redaction; the other two stay local
     machines: notRemote,
   };
   return ro;
