@@ -47,6 +47,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "node -e \"require('node:fs').rmSync('dist', {recursive: true, force: true})\" && tsc -p tsconfig.build.json",
     "prepack": "npm run build",
+    "build:agent": "node scripts/build-agent.ts",
     "typecheck:public": "tsc -p tsconfig.public.json",
     "changelog": "node scripts/changelog.ts",
     "changelog:check": "node scripts/changelog.ts --check",

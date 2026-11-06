@@ -10,6 +10,8 @@ mac-app/.swiftpm/
 mac-app/build.env
 # npm run build (prepack): the published package's compiled src/
 /dist/
+# npm run build:agent: the one-file agent and its bundle (scripts/build-agent.ts)
+/build/
 # The static demo site (npm run demo, docs/demo.md): built from example data, published by .github/workflows/demo.yml
 /demo/
 /demo.staging/

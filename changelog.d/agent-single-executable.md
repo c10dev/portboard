@@ -1,0 +1,2 @@
+### Added
+- `npm run build:agent` (`scripts/build-agent.ts`) builds `portboard agent` as one executable file, a Node single executable application, for a machine without Node. `--node` selects the Node binary, and so the target OS and CPU. esbuild runs once through `npx` at a pinned version, so the checkout gets no new dependency. On macOS the file gets an ad-hoc signature. See docs/multi-host.md.
