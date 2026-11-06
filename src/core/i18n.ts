@@ -14,25 +14,18 @@
 // whose key is missing. Text built at import (MCP tool descriptions) stays English: it is for the model, not people.
 
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { readFileSync } from 'node:fs';
-import { isLocale, LOCALES, SITE, type Locale } from './site.ts';
+import { isLocale, SITE, type Locale } from './site.ts';
+// Static imports, not a file read next to the code: a bundler (esbuild, bun build --compile) then puts both catalogs
+// in a single executable (Node SEA), where public/ does not exist.
+import en from '../../public/i18n/en.json' with { type: 'json' };
+import ko from '../../public/i18n/ko.json' with { type: 'json' };
 
 export type { Locale };
 export type Catalog = Record<string, string | Record<string, string>>;
 export type Params = Record<string, string | number | null | undefined>;
 
-const DIR = new URL('../../public/i18n/', import.meta.url);
-
-function load(locale: Locale): Catalog {
-  try {
-    return JSON.parse(readFileSync(new URL(`${locale}.json`, DIR), 'utf8')) as Catalog;
-  } catch {
-    return {};
-  }
-}
-
-/** Both catalogs, read once (a deploy restarts the server) */
-export const CATALOGS: Record<Locale, Catalog> = Object.fromEntries(LOCALES.map((l) => [l, load(l)])) as Record<Locale, Catalog>;
+/** Both catalogs, loaded once at import (a deploy restarts the server) */
+export const CATALOGS: Record<Locale, Catalog> = { en: en as Catalog, ko: ko as Catalog };
 
 const als = new AsyncLocalStorage<Locale>();
 
