@@ -94,6 +94,7 @@ const { loadNames } = await import('../src/core/clients.ts');
 const { loadPrefs } = await import('../src/core/prefs.ts');
 const { applyRule } = await import('../src/features/port-rules.ts');
 const { t } = await import('../src/core/i18n.ts');
+const { TAILSCALE_POLICY } = await import('../src/core/access.ts');
 
 after(() => rm(DIR, { recursive: true, force: true }));
 
@@ -114,6 +115,9 @@ function context(over: Record<string, unknown> = {}) {
     alerts: { test: async () => ({ ok: false, message: 'no channel', sent: [] }) },
     // Tailscale is running (the Tailscale-only routes answer 409 before anything else without it, #12)
     ts: { available: true },
+    // owner-only reads (logs) classify the caller: api() comes from loopback, the owner
+    owner: async () => null,
+    policy: async () => TAILSCALE_POLICY,
     ...over,
   };
   return { ctx: ctx as any, invalidated, acked };
@@ -387,6 +391,16 @@ test('reservations: create 201, the same owner again 200, a conflict 409, bad ow
   assert.deepEqual(await api('POST', '/api/reservations/6100/release'), { status: 404, body: { error: '6100 is not reserved' } });
 });
 
+test('GET /api/free-ports: a count or preferred that is not an integer in range is 400 before any scan', async () => {
+  await clearCalls();
+  for (const q of ['count=abc', 'count=1.5', 'count=0', 'count=21', 'count=', 'preferred=abc', 'preferred=80', 'preferred=3000.5', 'preferred=70000']) {
+    const r = await api('GET', `/api/free-ports?${q}`);
+    assert.equal(r.status, 400, q);
+    assert.match(r.body.error, /must be an integer/, q);
+  }
+  assert.deepEqual(await calls('ss'), [], 'nothing was scanned');
+});
+
 test('GET /api/free-ports: skips listening and reserved ports; count, preferred and for (that owner\'s reserved ports first)', async () => {
   await listen(3000, 3002);
   // 3001 is the feat worktree's since its dev server started above
@@ -394,7 +408,7 @@ test('GET /api/free-ports: skips listening and reserved ports; count, preferred 
   assert.deepEqual((await api('GET', '/api/free-ports')).body, { ports: [3003] });
   assert.deepEqual((await api('GET', '/api/free-ports?count=3&preferred=8000')).body, { ports: [8000, 8001, 8002] });
   assert.deepEqual((await api('GET', '/api/free-ports?count=2&for=cms@main')).body, { ports: [3005, 3003] });
-  assert.equal((await api('GET', '/api/free-ports?count=500')).body.ports.length, 20, 'at most 20');
+  assert.equal((await api('GET', '/api/free-ports?count=20')).body.ports.length, 20, 'up to 20; more is 400 (above)');
   await api('POST', '/api/reservations/3005/release');
 });
 

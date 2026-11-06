@@ -37,10 +37,12 @@ const IPV4 = /\b(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3
 // Full and compressed IPv6 literals (at least two groups and a ::, or eight groups). Skips times like 12:33:32.
 const IPV6 = /(?<![\w:])(?:[0-9a-f]{1,4}:){1,7}(?::[0-9a-f]{0,4}){1,7}(?:\/\d{1,3})?(?![\w:])|(?<![\w:])(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}(?![\w:])/gi;
 const MAC = /\b[0-9a-f]{2}(?:[:-][0-9a-f]{2}){5}\b/gi;
-const HOME_PATH = /(?:\/home\/[^/\s"']+|\/root(?=\/|\b)|~(?=\/))(?:\/[^\s"',)]*)?/g;
+// Linux /home/<user> and macOS /Users/<user>
+const HOME_PATH = /(?:\/(?:home|Users)\/[^/\s"']+|\/root(?=\/|\b)|~(?=\/))(?:\/[^\s"',)]*)?/g;
 // Other absolute paths (a unit description, an HTTP title like "Index of /srv/files", a `tailscale serve` path
-// upstream). Not preceded by a host or path character, so URL paths stay.
-const SYSTEM_PATH = /(?<![\w.:/~-])\/(?:srv|opt|var|tmp|mnt|media|data|etc|usr|run|snap|proc)\/[^\s"',)]*/g;
+// upstream). Not preceded by a host or path character, so URL paths stay. private and Volumes are macOS
+// (/private/tmp/… is a Claude Code scratchpad, /Volumes/… an external disk).
+const SYSTEM_PATH = /(?<![\w.:/~-])\/(?:srv|opt|var|tmp|mnt|media|data|etc|usr|run|snap|proc|private|Volumes)\/[^\s"',)]*/g;
 // "ssh -N -L …" or "ssh user@host …": the rest of the string is the command
 const SSH_CMD = /\bssh\s+(?=-|[^\s@]+@)[^"'\n]*/g;
 const PVE_TOKEN = /PVEAPIToken=\S+|[\w.-]+@[\w.-]+![\w.-]+(?:=\S+)?/g;

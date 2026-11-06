@@ -8,6 +8,7 @@
 
 import { logs, restart, stop, type ActionResult, type Logs } from '../core/index.ts';
 import { quietly } from '../core/alerts.ts';
+import { classify } from '../core/access.ts';
 import { PORT_ARG, parseOptionalInt, parsePort, text, type Core } from '../mcp/kit.ts';
 import { reply } from './router.ts';
 import type { FeatureModule, Tool } from './types.ts';
@@ -99,7 +100,11 @@ export const control: FeatureModule = {
     {
       method: 'GET',
       path: '/api/ports/:port/logs',
-      async handler({ url, params }, ctx) {
+      async handler({ url, params, req }, ctx) {
+        // Service logs often hold tokens and secrets that a dev server prints at start. They are the owner's only, as
+        // the audit log is (features/access.ts): the same owner decision as writes, without the device lookup.
+        const c = classify(req, await ctx.owner(), await ctx.policy());
+        if (!c.owner) return reply(403, { error: 'owner only', reason: c.reason ?? '' });
         // the shared 2 s snapshot, not a new one per request (L1)
         const result = await logs(params.port, Number(url.searchParams.get('lines') ?? 100) || 100, () => ctx.snapshot());
         return reply(result.ok ? 200 : 409, result);

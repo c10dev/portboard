@@ -161,6 +161,10 @@ test('deviceAllowed: stable ID exactly, short or full MagicDNS name in any case'
   for (const list of no) assert.ok(!deviceAllowed(MAC, list), list.join());
   assert.ok(!deviceAllowed({ addr: '100.64.0.5' }, ['100.64.0.5']), 'addresses are not names');
   assert.ok(!deviceAllowed(undefined, ['dev-mac']));
+  // the whole first label, not a prefix of it, in either direction
+  assert.ok(!deviceAllowed({ addr: '100.64.0.9', name: 'dev' }, ['dev-mac']), 'a shorter device name');
+  assert.ok(!deviceAllowed({ addr: '100.64.0.9', name: 'dev' }, ['dev-mac.example.ts.net']), 'a shorter device name, full entry');
+  assert.ok(!deviceAllowed({ addr: '100.64.0.9', name: 'dev-mac-2' }, ['dev-mac']), 'a longer device name');
 });
 
 const owner = (device?: Device) => ({ ...classify(req('127.0.0.1', serveFrom(device?.addr ?? MAC.addr)), OWNER), ...(device ? { device } : {}) });

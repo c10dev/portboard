@@ -181,6 +181,9 @@ test('owner-token.json: 0600, the hash only; a loose or odd file is an error, a 
   assert.deepEqual(await loadTokenHash(file), { hash: HASH, created: '2026-10-19T00:00:00.000Z' });
   chmodSync(file, 0o644);
   assert.match((await loadTokenHash(file)).error ?? '', /600/);
+  chmodSync(file, 0o640);
+  assert.match((await loadTokenHash(file)).error ?? '', /600/, 'readable by the group: refused');
+  assert.equal((await loadTokenHash(file)).hash, null);
   writeFileSync(file, '{"sha256":"short"}', { mode: 0o600 });
   chmodSync(file, 0o600);
   assert.equal((await loadTokenHash(file)).hash, null);
@@ -218,6 +221,10 @@ test('loadAccessPolicy: access.json mode and requireTokenOnLoopback, the env on 
   const loose = await load({ PORTBOARD_ACCESS_MODE: 'token' });
   assert.match(loose.error ?? '', /access\.json.*600/);
   assert.equal(classify(req('192.168.1.50', { authorization: `Bearer ${TOKEN}` }), OWNER, loose).canWrite, false);
+  chmodSync(access, 0o640);
+  const group = await load({ PORTBOARD_ACCESS_MODE: 'token' });
+  assert.match(group.error ?? '', /access\.json.*600/, 'readable by the group: refused');
+  assert.equal(classify(req('192.168.1.50', { authorization: `Bearer ${TOKEN}` }), OWNER, group).canWrite, false);
   chmodSync(access, 0o600);
   writeFileSync(access, '{torn');
   assert.match((await load({ PORTBOARD_ACCESS_MODE: 'token' })).error ?? '', /JSON/);
@@ -417,4 +424,27 @@ test('settings: the owner token row is not a data-write control, and 쓰기 허�
   assert.match(src, /wd\.hidden = w\?\.tailscale === false/);
   const audit = readFileSync(new URL('../public/lib/audit.js', import.meta.url), 'utf8');
   assert.match(audit, /fetch\(path, getInit\(\)\)/, 'the audit log is read with the token too');
+});
+
+test('service logs are the owner\'s only, as the audit log is: a non-owner gets 403 before any snapshot', async () => {
+  const at = async (c: ReturnType<typeof context>, addr: string, headers: Record<string, string> = {}) =>
+    appRouter(REGISTRY.routes, c.ctx)(request('GET', addr, headers), new URL('http://x/api/ports/9/logs'), c.ctx);
+  // the context fails the test when the handler reads ctx.snapshot
+  const ts = context(TAILSCALE_POLICY);
+  for (const [addr, headers, why] of [
+    ['100.64.0.9', {}, 'a direct tailnet caller'],
+    ['127.0.0.1', { ...SERVE, 'tailscale-user-login': 'guest@example.com' }, 'a node shared in, logged in as someone else'],
+    ['127.0.0.1', SERVE, 'a tagged node through serve'],
+  ] as const) {
+    const r = await at(ts, addr, headers);
+    assert.equal(r?.status, 403, why);
+    assert.equal((r?.body as { error?: string }).error, 'owner only', why);
+  }
+  const tok = context(TOKEN_POLICY, false);
+  assert.equal((await at(tok, '192.168.1.50'))?.status, 403, 'token mode without the token');
+  // the owner goes on to the snapshot: nothing listens on 9, so 409
+  const withSnap = (c: ReturnType<typeof context>) => ({ ...c, ctx: new Proxy(c.ctx as object, { get: (t, k) => (k === 'snapshot' ? async () => ({ ports: [] }) : (t as any)[k]) }) as ServerContext });
+  assert.equal((await at(withSnap(ts), '127.0.0.1'))?.status, 409, 'loopback');
+  assert.equal((await at(withSnap(ts), '127.0.0.1', { ...SERVE, 'tailscale-user-login': OWNER }))?.status, 409, 'the owner through serve');
+  assert.equal((await at(withSnap(tok), '192.168.1.50', { authorization: `Bearer ${TOKEN}` }))?.status, 409, 'the owner token');
 });
