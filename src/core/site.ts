@@ -23,6 +23,7 @@ import { homedir, hostname, userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { keyedCache } from './cache.ts';
+import { isPortboardCheckout } from './checkout.ts';
 import { run } from './exec.ts';
 import { PATHS } from './paths.ts';
 import { dashboardUrl, serveStatus, tailscaleInfo, type ServeEntry } from './tailscale.ts';
@@ -43,9 +44,18 @@ export function parseUtcOffset(v: unknown): number | null {
   return (m[1] === '-' ? -1 : 1) * (h * 60 + min) * 60_000;
 }
 
-const CODE_ROOT = fileURLToPath(new URL('../../', import.meta.url));
+/**
+ * The checkout or npm install the code runs from: the folder above src/ or dist/. A single executable (Node SEA,
+ * bun build --compile) has no such folder, so there it is the folder that holds the executable.
+ */
+const CODE_ROOT = codeRoot();
 
-/** portboard.json next to the code (the checkout root), read under the user's file */
+function codeRoot(): string {
+  const above = fileURLToPath(new URL('../../', import.meta.url));
+  return isPortboardCheckout(above) ? above : dirname(process.execPath);
+}
+
+/** portboard.json next to the code (the checkout root, or the executable's folder), read under the user's file */
 export const CHECKOUT_SITE = join(CODE_ROOT, 'portboard.json');
 
 function osUser(): string | null {
