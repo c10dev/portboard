@@ -5,11 +5,13 @@
 //   GET /api/machines        the list (?fresh re-reads the agents, at most once a minute)
 //   GET /api/where-to-run    ?task, repo, branch, needs (comma list), prefer, exclude (comma list)
 //   GET /api/find-worktree   ?repo, branch, query, machine
-//   MCP machine_status, find_worktree, where_to_run (read-only, local only: the remote connector doesn't offer them)
+//   MCP machine_status, find_worktree, where_to_run (read-only, local); machine_status also remote, redacted, from
+//       the list the dashboard last read (machines-state.json: the remote process never asks an agent)
 //   UI  the 기기 tab's machine strip (public/features/machines.js), the 개발 tab's other-machine rows and filter
 //       (public/dev.js), 어디서 돌릴까 (public/features/where.js, also in the palette)
 //   job machines             with agents listed, the list is read once a minute so the plugin's SessionStart line
-//                            (elsewhere(), GET /api/claude/session-port?machines=1) answers from memory, never waiting
+//                            (elsewhere(), GET /api/claude/session-port?machines=1) answers from memory, never waiting;
+//                            every list the dashboard reads is saved for the remote machine_status
 //
 // Read-only on purpose: nothing here starts a session or a server. where_to_run says where and how a person does it.
 
@@ -17,6 +19,9 @@ import { agents } from '../core/agents.ts';
 import { devices, type Devices } from '../core/devices.ts';
 import { snapshot } from '../core/index.ts';
 import { buildMachines, cloudEstimate, dataAge, localStatus, type MachineStatus } from '../core/machines.ts';
+import { writePrivate } from '../core/atomic.ts';
+import { PATHS, type Paths } from '../core/paths.ts';
+import { MACHINE_PARTS, redactMachines } from '../remote/redact.ts';
 import { elsewhereOf, findWorktree, NEEDS, whereToRun, type Elsewhere, type FindQuery, type Need, type RunRequest } from '../core/recommend.ts';
 import { loadReservations } from '../core/reservations.ts';
 import { SITE } from '../core/site.ts';
@@ -25,6 +30,8 @@ import { ttlCache } from '../core/cache.ts';
 import type { WorktreesDoc } from '../core/worktrees.ts';
 import type { Snapshot } from '../core/index.ts';
 import { text } from '../mcp/kit.ts';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { ok, reply } from './router.ts';
 import type { FeatureModule, Tool } from './types.ts';
 import { currentWorktrees, loadSavedWorktrees, refreshWorktrees } from './worktrees.ts';
@@ -60,7 +67,30 @@ interface Sources {
 /** The dashboard's last list (any route or the job), for elsewhere() */
 let last: MachineStatus[] = [];
 
-async function collect(src: Sources, fresh: boolean): Promise<MachineStatus[]> {
+/** Every list the dashboard server reads, in the state dir: what the remote server's machine_status reads */
+export const MACHINES_STATE = 'machines-state.json';
+export const machinesPath = (paths: Paths = PATHS) => join(paths.stateDir, MACHINES_STATE);
+/** A saved list older than this is answered with a note */
+export const SAVED_OLD_MS = 10 * 60_000;
+
+/** The last saved list, or null when there is none or it doesn't read as one */
+export async function loadSavedMachines(path = machinesPath()): Promise<{ at: string; machines: MachineStatus[] } | null> {
+  try {
+    const raw = JSON.parse(await readFile(path, 'utf8'));
+    if (typeof raw?.at !== 'string' || !Number.isFinite(Date.parse(raw.at)) || !Array.isArray(raw.machines)) return null;
+    const machines = raw.machines.filter((m: unknown) => m && typeof m === 'object' && typeof (m as MachineStatus).name === 'string' && Array.isArray((m as MachineStatus).capabilities) && Array.isArray((m as MachineStatus).launch));
+    return { at: raw.at, machines };
+  } catch {
+    return null;
+  }
+}
+
+/** The dashboard's list, saved (0600, atomic); a failed write is logged, never the read's failure */
+async function save(list: MachineStatus[]): Promise<void> {
+  await writePrivate(machinesPath(), `${JSON.stringify({ at: new Date().toISOString(), machines: list })}\n`).catch((err) => console.error(`[portboard] machines state: ${(err as Error).message}`));
+}
+
+async function collect(src: Sources, fresh: boolean, opts: { save?: boolean } = {}): Promise<MachineStatus[]> {
   if (fresh && freshGate.ask(false) === 'started') agents().refresh();
   let doc: WorktreesDoc | null = null;
   const [self, devs, reads] = await Promise.all([
@@ -71,6 +101,7 @@ async function collect(src: Sources, fresh: boolean): Promise<MachineStatus[]> {
   const list = devs?.devices ?? [];
   const cloudWork = SITE.machines.cloud.enabled ? cloudEstimate(doc) : null;
   last = buildMachines({ site: SITE, self, selfId: list.find((d) => d.self)?.id ?? null, agents: reads, targets: SITE.agents, devices: list, cloudWork });
+  if (opts.save) await save(last);
   return last;
 }
 
@@ -88,7 +119,7 @@ export function elsewhere(owner: string, now = Date.now()): Elsewhere[] {
 // The local sessions read is a /proc pass when the dashboard's sample is stale: reuse one list for a few seconds
 const stdioMachines = ttlCache((fresh: boolean): Promise<MachineStatus[]> => collect({ snapshot, devices: () => devices() }, fresh), { ttlMs: 5_000 });
 
-const INCLUDE = ['load', 'claude', 'worktrees', 'ports'] as const;
+const INCLUDE = MACHINE_PARTS;
 type Include = (typeof INCLUDE)[number];
 
 const str = (v: unknown, max = 200): string | undefined => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined);
@@ -176,6 +207,40 @@ const statusTool: Tool = {
     if (str(a.machine) && !machines.length) return text(`no machine named ${str(a.machine)}`, true);
     return text({ at: new Date().toISOString(), machines });
   },
+  remote: {
+    description:
+      'Every machine work can run on, as the Portboard server last read them: the server itself, the other machines ' +
+      'running `portboard agent`, and the cloud when it is turned on. Per machine: name, kind (linux, mac, windows, ' +
+      'wsl, cloud), online, how old its data is (stale after 60 s), load (cores, load1, memory, disk), Claude Code ' +
+      'session counts (active, idle; the cloud\'s are an estimate from recently pushed claude/* branches), checkouts as ' +
+      'repo and branch (uncommitted changes yes/no, in use, commits ahead/behind its upstream, reserved port), port ' +
+      'counts, capabilities, maxSessions and how a session is opened there. From the server\'s last read (at; once a ' +
+      'minute while agents are listed). Session ids, paths and git remotes are left out on purpose. Read-only: nothing ' +
+      'here starts anything.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        machine: { type: 'string', description: 'One machine by name, e.g. mac' },
+        include: { type: 'array', items: { type: 'string', enum: [...INCLUDE] }, description: 'Parts to include (default all)' },
+      },
+      additionalProperties: false,
+    },
+    async call(args, core, policy) {
+      const a = (args ?? {}) as Record<string, unknown>;
+      // re-reading the agents from the internet would be an amplification lever: the remote answers from the saved list
+      if (a.fresh !== undefined) return text('fresh is not available remotely: results come from the server\'s last read', true);
+      if (a.machine !== undefined && typeof a.machine !== 'string') return text('machine must be a machine name', true);
+      const include = list(a.include);
+      if (!include || include.some((x) => !(INCLUDE as readonly string[]).includes(x))) return text(`include must be a list of: ${INCLUDE.join(', ')}`, true);
+      if (!core.machines) return text('machine_status is not available here', true);
+      const doc = await core.machines();
+      if (!doc) return text({ at: null, note: 'No machine list saved yet: the Portboard server reads it once a minute while agents are listed, and when its dashboard asks.', machines: [] });
+      const out = redactMachines(doc, { machine: str(a.machine), include: include as Include[] }, policy);
+      if (str(a.machine) && !out.machines.length) return text(`no machine named ${str(a.machine)}`, true);
+      const ageMin = Math.round((Date.now() - Date.parse(doc.at)) / 60_000);
+      return text(Date.now() - Date.parse(doc.at) > SAVED_OLD_MS ? { ...out, note: `This list is ${ageMin} minutes old: the server reads it once a minute only while agents are listed.` } : out);
+    },
+  },
 };
 
 const findTool: Tool = {
@@ -252,7 +317,7 @@ export const machinesFeature: FeatureModule = {
       method: 'GET',
       path: '/api/machines',
       async handler({ url }, ctx) {
-        const machines = await collect({ snapshot: () => ctx.snapshot(), devices: () => devices() }, url.searchParams.has('fresh'));
+        const machines = await collect({ snapshot: () => ctx.snapshot(), devices: () => devices() }, url.searchParams.has('fresh'), { save: true });
         return ok({ at: new Date().toISOString(), machines });
       },
     },
@@ -262,7 +327,7 @@ export const machinesFeature: FeatureModule = {
       async handler({ url }, ctx) {
         const r = parseRunRequest(query(url));
         if (!r.ok) return reply(400, { error: r.error });
-        return ok(answerWhere(r.value, await collect({ snapshot: () => ctx.snapshot(), devices: () => devices() }, false)));
+        return ok(answerWhere(r.value, await collect({ snapshot: () => ctx.snapshot(), devices: () => devices() }, false, { save: true })));
       },
     },
     {
@@ -271,7 +336,7 @@ export const machinesFeature: FeatureModule = {
       async handler({ url }, ctx) {
         const q = parseFindQuery(query(url));
         if (!q.ok) return reply(400, { error: q.error });
-        return ok(findWorktree(q.value, await collect({ snapshot: () => ctx.snapshot(), devices: () => devices() }, false)));
+        return ok(findWorktree(q.value, await collect({ snapshot: () => ctx.snapshot(), devices: () => devices() }, false, { save: true })));
       },
     },
   ],
@@ -283,7 +348,7 @@ export const machinesFeature: FeatureModule = {
       firstAfterMs: 20_000,
       run: async (ctx) => {
         if (!SITE.agents.length) return;
-        await collect({ snapshot: () => ctx.snapshot(), devices: () => devices() }, false).catch((err) => console.error(`[portboard] machines: ${(err as Error).message}`));
+        await collect({ snapshot: () => ctx.snapshot(), devices: () => devices() }, false, { save: true }).catch((err) => console.error(`[portboard] machines: ${(err as Error).message}`));
       },
     },
   ],

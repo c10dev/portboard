@@ -183,7 +183,7 @@ test('end to end: DCR, approval code, PKCE, MCP calls, refresh rotation', async 
   assert.equal(note.body, '');
 
   const list = await rpc(tokens.access_token, { jsonrpc: '2.0', id: 2, method: 'tools/list' }, { 'mcp-protocol-version': '2025-06-18' });
-  assert.deepEqual(JSON.parse(list.body).result.tools.map((t: any) => t.name).sort(), ['free_port', 'list_dev_servers', 'list_devices', 'list_ports', 'list_worktrees', 'memory_usage', 'who_uses_what']);
+  assert.deepEqual(JSON.parse(list.body).result.tools.map((t: any) => t.name).sort(), ['free_port', 'list_dev_servers', 'list_devices', 'list_ports', 'list_worktrees', 'machine_status', 'memory_usage', 'who_uses_what']);
 
   const ports = await rpc(tokens.access_token, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'list_ports', arguments: {} } });
   const text = JSON.parse(JSON.parse(ports.body).result.content[0].text);

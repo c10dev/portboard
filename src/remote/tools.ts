@@ -49,9 +49,10 @@ export const REMOTE_INSTRUCTIONS =
   'which TCP ports are listening and what owns them (list_ports), which devices are online and how loaded they are ' +
   '(list_devices), which device is using which service right now (who_uses_what), which ports are free for a ' +
   'new dev server (free_port), the git worktrees and which could be removed (list_worktrees), the dev servers ' +
-  'Portboard started (list_dev_servers) and where the RAM goes (memory_usage). Nothing here can start, stop, remove, ' +
+  'Portboard started (list_dev_servers), where the RAM goes (memory_usage), and the other machines Claude Code work ' +
+  'can run on, with their load, session counts and checkouts (machine_status). Nothing here can start, stop, remove, ' +
   'publish or change anything, and logs are not available. The URLs in the results only open from the owner\'s own ' +
-  'tailnet devices. Network addresses, process ids, paths, commit messages and session titles are redacted on ' +
+  'tailnet devices. Network addresses, process ids, paths, git remotes, commit messages, session ids and titles are redacted on ' +
   'purpose; do not ask for them. The portboard://status resource is a compact summary of ports, devices and usage; ' +
   'the prompts server_status_summary and port_cleanup are ready-made requests built on these tools.';
 

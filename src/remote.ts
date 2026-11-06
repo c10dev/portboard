@@ -24,6 +24,7 @@ import { dashboardReader, dashboardSources } from './remote/dashboard.ts';
 import { devServersDoc } from './features/devservers.ts';
 import { savedView } from './features/memory.ts';
 import { loadSavedWorktrees } from './features/worktrees.ts';
+import { loadSavedMachines } from './features/machines.ts';
 import { createRemoteHandler } from './remote/http.ts';
 import { settingsPageUrl } from './remote/oauth.ts';
 import { Store } from './remote/store.ts';
@@ -127,8 +128,9 @@ const statusExtras = cached(async () => {
   const memory = await loadMemoryState(join(PATHS.stateDir, MEMORY_STATE)).then((f) => statusLine(f), () => null);
   return { watching: st?.watching ?? null, newDevices: known ? pendingView(known).length : null, memory };
 });
-// list_worktrees and memory_usage read what the dashboard server saved (worktrees-state.json, memory-state.json): this
-// process never scans repositories or reads /proc and transcripts. list_dev_servers asks systemctl and git worktree
+// list_worktrees, memory_usage and machine_status read what the dashboard server saved (worktrees-state.json,
+// memory-state.json, machines-state.json): this process never scans repositories, reads /proc and transcripts, or
+// asks another machine's agent. list_dev_servers asks systemctl and git worktree
 // list, like the dashboard's GET /api/dev-servers.
 const core: RemoteCore = {
   snapshot: getSnapshot,
@@ -139,6 +141,7 @@ const core: RemoteCore = {
   devServers: cached(devServersDoc),
   worktrees: cached(() => loadSavedWorktrees()),
   memory: cached(() => savedView()),
+  machines: cached(() => loadSavedMachines()),
 };
 
 // The consent page links the dashboard's 설정 tab, where the owner makes the approval code: the https address
