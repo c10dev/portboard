@@ -32,6 +32,21 @@ Then say who may read it, in that machine's `~/.config/portboard/portboard.json`
 }
 ```
 
+### One-file agent
+
+A machine without Node can run the agent as one executable file (a Node single executable application). Build it in a checkout:
+
+```bash
+npm run build:agent -- --node ~/node-v26.10.0-linux-x64/bin/node --out build/portboard-agent-linux-x64
+```
+
+- `--node` is the Node binary that the executable is made from. Its OS and CPU are the executable's: use a Linux x64 Node for a Linux x64 machine. It must have SEA turned on. The nodejs.org builds have it; Homebrew's Node does not. Without `--node`, the script uses the Node that runs it.
+- `--out` is the executable (default `build/portboard-agent`).
+- The script bundles `src/agent.ts` with esbuild, which it runs once through `npx` at a pinned version. The checkout gets no new dependency.
+- On macOS the executable gets an ad-hoc signature, which Apple Silicon needs. To run it on another Mac, sign it with your own Developer ID.
+
+Copy the file to the machine and run it there. It reads the same `~/.config/portboard/portboard.json` and environment variables as `portboard agent`. A `portboard.json` next to the executable is read under the user's file. `install-service` is not in the executable: run it under the machine's own service manager. On macOS arm64 the file is about 140 MB.
+
 ### Who may read
 
 Checked in this order; the first that applies decides:
