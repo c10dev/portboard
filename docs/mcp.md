@@ -39,6 +39,7 @@
 | `list_cleanup_candidates` | none | Dev servers with their owner (the starting Claude session, still running or not, and the worktree/branch) and the ones that are left over: working directory deleted, session ended, branch merged. Local stdio server only |
 | `cleanup_servers` | `ports` (1–50) | Stops those candidates, each re-checked first; never installed units, docker, other users' processes, pinned ports or Portboard itself (see `stop_service`). Local stdio server only |
 | `memory_usage` | `top?` (1–50, default 10) | Where this server's RAM goes: available memory, swap, PSI, then by group; per Claude session (title or project, CLI version, idle time, MB of its tree) and per MCP server (instances, total), plus suggestions. Read-only. (also remote, redacted: groups, totals, pressure and sizes; session titles, projects and process names only with `showProcesses`) |
+| `list_accounts` | none | The Claude Code and Codex logins on this machine: plan, tier, email (Codex), access token expiry and remaining limits (5-hour and weekly windows), from the two CLI login files and each vendor's unofficial usage endpoint (cached 5 minutes). Never returns a token, never refreshes one. Answers "accounts disabled" unless `accounts.enabled` is set in `portboard.json` ([accounts.md](accounts.md)). Read-only. Local stdio server only |
 
 **Resources** (`src/mcp/resources.ts`), JSON, read on demand:
 

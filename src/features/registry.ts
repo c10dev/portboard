@@ -17,6 +17,7 @@ import type { PromptDef } from '../mcp/prompts.ts';
 import type { FeatureModule, Job, RemoteCall, RemoteResources, Resources, Route, Tool, ToolDef } from './types.ts';
 import { READ_ONLY_ANNOTATIONS } from '../mcp/kit.ts';
 import { accessFeature } from './access.ts';
+import { accountsFeature } from './accounts.ts';
 import { adoptionFeature } from './adoption.ts';
 import { alertsFeature } from './alerts.ts';
 import { claudeSessionFeature } from './claude-session.ts';
@@ -51,6 +52,7 @@ import { writeDevicesFeature } from './write-devices.ts';
 /** Every feature module, alphabetical by name (a test checks it). The order that matters is FEATURES. */
 export const MODULES: FeatureModule[] = [
   accessFeature,
+  accountsFeature,
   adoptionFeature,
   alertsFeature,
   claudeFeature,

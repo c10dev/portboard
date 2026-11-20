@@ -14,6 +14,7 @@ export const SETTINGS_LABELS = {
   'port-rules': t('settings.section.port-rules'),
   notify: t('settings.section.notify'),
   claude: t('settings.section.claude'),
+  accounts: t('settings.section.accounts'),
   secrets: t('settings.section.secrets'),
   display: t('settings.section.display'),
   about: t('settings.section.about'),

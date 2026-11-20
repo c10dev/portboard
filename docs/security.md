@@ -217,6 +217,17 @@ written at once, repeats within a minute become one line with `count` and `since
 writes about one line per minute per kind and never rotates `audit.jsonl`, which keeps allowed and failed writes
 (1 MB + one rotation).
 
+## Accounts
+
+Read-only, off by default (`accounts.enabled` in `portboard.json`, [accounts.md](accounts.md)). It shows the plan, expiry and remaining limits of the Claude Code and Codex logins on this machine.
+
+- **Two files read:** `.credentials.json` of Claude Code and `auth.json` of Codex, only the keys listed in [accounts.md](accounts.md#what-it-reads). Refresh tokens and every other key are not read.
+- **Two requests sent:** one `GET` to `api.anthropic.com` and one to `chatgpt.com`, each with that login's access token, never to another host. The endpoints are unofficial and can change, and a vendor may limit an account for unusual use. A token is never refreshed.
+- **Owner only:** `GET /api/accounts` runs the audit log's owner check (`classify`) before it reads anything; anyone else gets `403 {error: "owner only", reason}`. There is no write route.
+- **Not remote:** `list_accounts` is a local stdio tool. It is not in the remote server's tools, in `RemoteCore` or in `REMOTE_READS`.
+- **Allowlisted answer:** each field of the answer is copied by name (`src/core/accounts/view.ts`). Tokens, the account id and the id token are not in it.
+- **No token in logs:** a token is not written to a log, the audit log or an error text. Errors are a closed set of short fixed sentences with no response body, header or token.
+
 ## Responses, limits and files (security review v1.0, L3, L6, I8)
 
 - **Headers on every answer** (API, static files, 404/421/500): `X-Frame-Options: DENY` and
