@@ -92,7 +92,7 @@ For an added Claude or Codex account, **Use this account** makes a folder for it
 
 ## Remove an account
 
-**Remove** asks first. It deletes the account's folder first, then the account's record from `accounts.json` (and its `active` mark). The record goes only when the folder is gone or was never there, so a folder that cannot be deleted leaves the account listed and you can try again. Only an added account can be removed: a CLI login (`claude-local`, `codex-…`) is `local login cannot be removed`. The folder is deleted only when all of these hold: it is a real folder (not a link), it is named `acc-` and 12 hex digits, and its own `realpath` is the `realpath` of the `account-homes` folder plus its name. Otherwise it is left alone and the answer is `account home not removed`. Portboard does not follow a link, and does not delete anything outside `account-homes`.
+**Remove** asks first. It deletes the account's folder first, then the account's record from `accounts.json` (and its `active` mark). The record goes only when the folder is gone or was never there, so a folder that cannot be deleted leaves the account listed and you can try again. Only an added account can be removed: a CLI login (`claude-local`, `codex-…`) is `local login cannot be removed`. The folder is deleted only when all of these hold: it is named `acc-` and 12 hex digits, and `lstat` says it is a real folder (not a link, not a file). The delete itself does not follow a link: a link inside the folder is deleted as a link, and what it points to stays. Otherwise the folder is left alone and the answer is `account home not removed`. Nothing outside `account-homes` is deleted.
 
 ## Refresh
 

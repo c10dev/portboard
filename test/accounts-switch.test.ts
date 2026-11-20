@@ -632,6 +632,21 @@ test('#141.1 the page cancels the flow when the finish request fails (source che
   assert.doesNotMatch(catchBlock, /endFlow\(false\)/);
 });
 
+test('the accounts page never puts a "null" text above the add-account row: place drops null, undefined and false (source of public/features/accounts.js run with a fake node)', () => {
+  const src = readFileSync(new URL('../public/features/accounts.js', import.meta.url), 'utf8');
+  const line = src.split('\n').find((l) => l.startsWith('const place = '));
+  assert.ok(line, 'place is there');
+  const placed: unknown[][] = [];
+  const place = new Function('$', `${line}; return place;`)(() => ({ replaceChildren: (...n: unknown[]) => placed.push(n) }));
+  const node = { tag: 'p' };
+  place(null, node);
+  place(undefined, false, node, null);
+  place(node);
+  assert.deepEqual(placed, [[node], [node], [node]]);
+  // choices passes the note as it is (null when there is none): only place filters
+  assert.match(src, /function choices\(note\) \{[\s\S]*?place\(\s*note \?\? null,/);
+});
+
 test('#141.2 Copilot: a 5xx or 429 whose error is not one of the four codes is pending; the four codes keep their meaning', async () => {
   answers = copilotStart();
   const s = await startLogin('copilot', undefined, { fetch: fake, now, accountsPath: FILE });
@@ -873,7 +888,7 @@ test('when the file cannot be written the `home` mark is taken back', async () =
   assert.deepEqual((await stored()).active, {});
 });
 
-test('remove deletes the folder first and the record only after: a folder that cannot go leaves the record, and the next try works (the folder itself is checked with realpath)', async () => {
+test('remove deletes the folder first and the record only after: a folder that cannot go leaves the record, and the next try works', async () => {
   const a = await claudeAccount();
   await use(a.id);
   const real = mkdtempSync(join(FAKE_HOME, 'real-'));
@@ -941,6 +956,90 @@ test('#154 a folder file that cannot be checked (EACCES, not ENOENT) counts as a
   } finally {
     chmodSync(dir, 0o700);
   }
+});
+
+/** A use that reads the clock once after it waited for running refreshes; a refresh that sees an expired token starts then */
+const useWithLateRefresh = (id: string) => {
+  let refreshing: Promise<unknown> | null = null;
+  const o = {
+    ...options(),
+    now: () => {
+      if (!refreshing) refreshing = refreshAccount(id, { ...options(), now: () => NOW + 2 * 3600_000 });
+      return NOW;
+    },
+  };
+  return { using: useAccount(id, o), refreshing: () => refreshing! };
+};
+const waitFor = async (what: string, ok: () => boolean | Promise<boolean>) => {
+  for (let i = 0; i < 500 && !(await ok()); i++) await new Promise((r) => setTimeout(r, 5));
+  assert.ok(await ok(), what);
+};
+
+test('#154 a late refresh that the vendor refuses: the use answers sign-in-again, takes the mark back, saves needsReauth and writes no folder file', async () => {
+  const a = await claudeAccount({ expiresAt: iso(NOW + 3600_000) });
+  let release: (r: Response) => void = () => {};
+  answers = { [C.claude.tokenUrl]: () => new Promise<Response>((res) => { release = res; }) };
+  const run = useWithLateRefresh(a.id);
+  const outcome = run.using.then(() => null, (e: unknown) => e as { text?: string; status?: number });
+  await waitFor('the use marked the account while the refresh waits', async () => callsTo(C.claude.tokenUrl).length === 1 && (await stored()).accounts[0].home === true);
+  release(json({ error: 'invalid_grant' }, 401));
+  const err = await outcome;
+  assert.deepEqual([err?.text, err?.status], ['account needs sign-in again', 409]);
+  const rec = (await stored()).accounts[0];
+  assert.deepEqual([rec.home, rec.needsReauth], [undefined, true]);
+  assert.equal(existsSync(join(HOMES, a.id, '.credentials.json')), false);
+  assert.equal(rec.tokens.refresh, CLAUDE_REFRESH);
+});
+
+test('#154 a use whose record was removed behind its back after it wrote the folder deletes that folder', async () => {
+  const a = await claudeAccount({ expiresAt: iso(NOW + 3600_000) });
+  let release: (r: Response) => void = () => {};
+  answers = { [C.claude.tokenUrl]: () => new Promise<Response>((res) => { release = res; }) };
+  const run = useWithLateRefresh(a.id);
+  const outcome = run.using.then(() => null, (e: unknown) => e as { text?: string });
+  await waitFor('the use marked the account while the refresh waits', async () => callsTo(C.claude.tokenUrl).length === 1 && (await stored()).accounts[0].home === true);
+  // a removal outside the use's turn, queued right behind the refresh's save; its first read is held until the use has written the folder
+  let open: () => void = () => {};
+  const gate = new Promise<void>((r) => { open = r; });
+  release(json({ access_token: CLAUDE_ACCESS_NEW, refresh_token: CLAUDE_REFRESH_NEW, expires_in: 28800 }));
+  await run.refreshing();
+  const removal = updateAccount(a.id, () => null, { path: FILE, stat: async (p) => (await gate, statSync(p)) });
+  await waitFor('the use wrote the folder file', () => existsSync(join(HOMES, a.id, '.credentials.json')));
+  open();
+  await removal;
+  assert.equal((await outcome)?.text, 'account not found');
+  assert.equal(existsSync(join(HOMES, a.id)), false, 'the folder of a record that is gone is deleted');
+});
+
+test('#154 a plain file where the folder belongs (ENOTDIR) is not a folder account: it is refreshed like one without a folder', async () => {
+  const a = await claudeAccount({ expiresAt: iso(NOW - 1000) });
+  mkdirSync(HOMES, { recursive: true, mode: 0o700 });
+  writeFileSync(join(HOMES, a.id), 'A FILE');
+  answers = { ...claudeRefreshOk(), [QUOTA_REQUESTS.claude.url]: () => json(CLAUDE_USAGE) };
+  const row = (await report()).find((x) => x.id === a.id)!;
+  assert.equal(callsTo(C.claude.tokenUrl).length, 1);
+  assert.equal(row.status, 'ok');
+  assert.equal(row.command, null);
+});
+
+test('#154 remove: a link inside the folder is deleted as a link and the file outside stays', async () => {
+  const a = await claudeAccount();
+  await use(a.id);
+  const outside = mkdtempSync(join(FAKE_HOME, 'outside-'));
+  writeFileSync(join(outside, 'keep.txt'), 'KEEP');
+  symlinkSync(join(outside, 'keep.txt'), join(HOMES, a.id, 'link-to-file'));
+  symlinkSync(outside, join(HOMES, a.id, 'link-to-folder'));
+  assert.equal((await remove(a.id)).status, 200);
+  assert.equal(existsSync(join(HOMES, a.id)), false);
+  assert.equal(readFileSync(join(outside, 'keep.txt'), 'utf8'), 'KEEP');
+});
+
+test('#155 an added Claude account whose plan is the tier text (as the sign-in stores it) shows no tier', async () => {
+  const a = await claudeAccount({}, { plan: 'default_claude_max_5x' });
+  answers = { [QUOTA_REQUESTS.claude.url]: () => json(CLAUDE_USAGE) };
+  const row = (await report()).find((x) => x.id === a.id)!;
+  assert.deepEqual([row.plan, row.tier], ['default_claude_max_5x', null]);
+  assert.equal((await stored()).accounts[0].tier, 'default_claude_max_5x', 'the stored value stays');
 });
 
 test('#155 an added Claude account shows its stored tier; with a folder it shows the rateLimitTier of the folder file', async () => {

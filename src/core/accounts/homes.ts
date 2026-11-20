@@ -74,16 +74,22 @@ const FILE_NAME = { claude: '.credentials.json', codex: 'auth.json' } as const;
 /**
  * Does this account have a folder? Yes when "use" made it (`home`), and also when the login file is in the folder although
  * `home` was cleared (the account was added again): that file is the CLI's, so it is not refreshed or replaced behind its back.
- * Only ENOENT on the file means "no folder file". Any other error means "not known", and an account that may have a folder
- * is treated as one (it is not refreshed). The one place that decides it (the list, the refresh).
+ * ENOENT and ENOTDIR (a plain file where the folder belongs) on the login file mean "no folder file". Any other error means
+ * "not known", and an account that may have a folder is treated as one (it is not refreshed).
+ * The one place that decides it (the list, the refresh).
  */
 export async function hasHome(a: Pick<StoredAccount, 'id' | 'provider' | 'home'>, o: { accountHomes?: string } = {}): Promise<boolean> {
   if (a.provider === 'copilot' || !HOME_ID.test(a.id)) return false;
-  if (a.home) return true;
+  return a.home ? true : (await homeFileState(a, o)) !== 'none';
+}
+
+/** The login file in the folder of a record: it is there, it is not, or that is not known (an error other than ENOENT and ENOTDIR) */
+export async function homeFileState(a: Pick<StoredAccount, 'id' | 'provider'>, o: { accountHomes?: string } = {}): Promise<'file' | 'none' | 'unknown'> {
+  if (a.provider === 'copilot' || !HOME_ID.test(a.id)) return 'none';
   try {
-    return (await lstat(join(rootOf(o), a.id, FILE_NAME[a.provider]))).isFile();
+    return (await lstat(join(rootOf(o), a.id, FILE_NAME[a.provider]))).isFile() ? 'file' : 'none';
   } catch (err) {
-    return !isCode(err, 'ENOENT');
+    return isCode(err, 'ENOENT') || isCode(err, 'ENOTDIR') ? 'none' : 'unknown';
   }
 }
 
@@ -262,7 +268,7 @@ async function useNow(id: unknown, o: HomesOptions): Promise<{ account: StoredAc
   } else {
     if (a.tokens.refresh && a.tokens.expiresAt !== null && Date.parse(a.tokens.expiresAt) < now) {
       const r = await refreshAccount(a.id, { ...o, forUse: true });
-      if (r.state === 'reauth') throw new AccountError('account needs sign-in again');
+      if (r.state === 'reauth' || r.state === 'refused') throw new AccountError('account needs sign-in again');
       if (r.state === 'transient') throw new LoginError('login request failed', true);
       if (r.state === 'done') a = r.account;
     }
@@ -274,7 +280,8 @@ async function useNow(id: unknown, o: HomesOptions): Promise<{ account: StoredAc
       // a refresh that was already running when the mark was saved ends with new tokens in the record only: wait, then write the latest
       const late = pendingRefresh(a.id);
       if (late) {
-        await late.catch(() => {});
+        // the vendor refused the refresh token that this use was about to write: nothing is written
+        if ((await late.catch(() => null))?.state === 'refused') throw new AccountError('account needs sign-in again');
         marked = await find(a.id, o, 'use');
       }
       const file = fileOf(marked, now);
@@ -282,9 +289,10 @@ async function useNow(id: unknown, o: HomesOptions): Promise<{ account: StoredAc
       await writeHome(marked, file, root);
       wrote = true;
     } catch (err) {
+      const refused = err instanceof AccountError && err.text === 'account needs sign-in again';
       await change(a.id, o, (x) => {
         const { home: _undo, ...rest } = x;
-        return rest;
+        return refused ? { ...rest, needsReauth: true } : rest;
       }).catch(() => null);
       throw err;
     }
