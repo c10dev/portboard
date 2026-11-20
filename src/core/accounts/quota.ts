@@ -55,6 +55,8 @@ interface Cached {
 }
 
 interface Entry {
+  /** the last request that used this entry, ms: an entry unused for a day is dropped (memory bound) */
+  lastUsed: number;
   good: Cached | null;
   /** the current wait after a failure, ms; 0 when the last request worked */
   delay: number;
@@ -64,6 +66,8 @@ interface Entry {
 
 const FAIL_MIN_MS = 5 * 60_000;
 const FAIL_MAX_MS = 60 * 60_000;
+const IDLE_MS = 24 * 3600_000;
+const MAX_ENTRIES = 64;
 
 /** Keyed by provider and a hash of the access token, so a new login or a refreshed token starts clean. Memory only. */
 const cache = new Map<string, Entry>();
@@ -73,6 +77,19 @@ const inflight = new Map<string, Promise<QuotaResult>>();
 export function clearQuotaCache(): void {
   cache.clear();
   inflight.clear();
+}
+
+/** Entries not used for a day go; then the least recently used go until 64 are left (an entry per token ever seen) */
+function prune(now: number): void {
+  for (const [k, e] of cache) if (now - e.lastUsed > IDLE_MS) cache.delete(k);
+  if (cache.size <= MAX_ENTRIES) return;
+  const oldest = [...cache.entries()].sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+  for (const [k] of oldest.slice(0, cache.size - MAX_ENTRIES)) cache.delete(k);
+}
+
+/** For tests: how many tokens the cache holds */
+export function quotaCacheSize(): number {
+  return cache.size;
 }
 
 // ---- parsing ----
@@ -157,14 +174,17 @@ function codexWindows(body: Record<string, unknown>): QuotaWindow[] {
 
 // ---- request ----
 
-/** The body as text, or null when it is over the limit */
-async function readLimited(res: Response): Promise<string | null> {
+/** The body as text, or null when it is over the limit (the body is then closed unread) */
+export async function readLimited(res: Response, max = MAX_BODY): Promise<string | null> {
   const len = Number(res.headers.get('content-length'));
-  if (Number.isFinite(len) && len > MAX_BODY) return null;
+  if (Number.isFinite(len) && len > max) {
+    await res.body?.cancel().catch(() => {});
+    return null;
+  }
   const reader = res.body?.getReader();
   if (!reader) {
     const t = await res.text();
-    return t.length > MAX_BODY ? null : t;
+    return t.length > max ? null : t;
   }
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -172,7 +192,7 @@ async function readLimited(res: Response): Promise<string | null> {
     const { done, value } = await reader.read();
     if (done) break;
     total += value.byteLength;
-    if (total > MAX_BODY) {
+    if (total > max) {
       await reader.cancel().catch(() => {});
       return null;
     }
@@ -240,7 +260,10 @@ export async function fetchQuota(l: LocalLogin, o: { fetch?: typeof fetch; now?:
   const now = (o.now ?? Date.now)();
   if (l.status !== 'ok' || !l.accessToken) return { quota: null, plan: null, email: null, status: 'ok', error: l.error };
   const key = `${l.provider}:${createHash('sha256').update(l.accessToken).digest('hex').slice(0, 16)}`;
-  const entry: Entry = cache.get(key) ?? { good: null, delay: 0, failedUntil: 0, lastFail: null };
+  const known = cache.get(key);
+  if (known) known.lastUsed = now;
+  prune(now);
+  const entry: Entry = known ?? { lastUsed: now, good: null, delay: 0, failedUntil: 0, lastFail: null };
   const failure = (error: string, status: 'ok' | 'expired'): QuotaResult => ({
     quota: entry.good ? { windows: entry.good.windows, fetchedAt: iso(entry.good.at), stale: true } : null,
     plan: entry.good?.plan ?? null,

@@ -221,14 +221,17 @@ writes about one line per minute per kind and never rotates `audit.jsonl`, which
 
 ## Accounts
 
-Read-only, off by default (`accounts.enabled` in `portboard.json`, [accounts.md](accounts.md)). It shows the plan, expiry and remaining limits of the Claude Code and Codex logins on this machine.
+Off by default (`accounts.enabled` in `portboard.json`, [accounts.md](accounts.md)). It shows the plan, expiry and remaining limits of the Claude Code and Codex logins on this machine, and of the accounts the owner adds in Portboard (Claude, ChatGPT/Codex, GitHub Copilot).
 
-- **Two files read:** `.credentials.json` of Claude Code and `auth.json` of Codex, only the keys listed in [accounts.md](accounts.md#what-it-reads). Refresh tokens and every other key are not read.
-- **Two requests sent:** one `GET` to `api.anthropic.com` and one to `chatgpt.com`, each with that login's access token, never to another host. The endpoints are unofficial and can change, and a vendor may limit an account for unusual use. A token is never refreshed.
-- **Owner only:** `GET /api/accounts` runs the audit log's owner check (`classify`) before it reads anything; anyone else gets `403 {error: "owner only", reason}`. There is no write route.
-- **Not remote:** `list_accounts` is a local stdio tool. It is not in the remote server's tools, in `RemoteCore` or in `REMOTE_READS`.
-- **Allowlisted answer:** each field of the answer is copied by name (`src/core/accounts/view.ts`). Tokens, the account id and the id token are not in it.
-- **No token in logs:** a token is not written to a log, the audit log or an error text. Errors are a closed set of short fixed sentences with no response body, header or token.
+- **Two files read:** `.credentials.json` of Claude Code and `auth.json` of Codex, only the keys listed in [accounts.md](accounts.md#what-it-reads). Refresh tokens and every other key are not used and not kept (each file is parsed as a whole, and only the listed values are copied out).
+- **One file written:** `accounts.json` in the config folder (`PORTBOARD_ACCOUNTS`), mode 0600, only through `writePrivate`, only when the owner adds an account. It holds the tokens of the added accounts: Portboard's only copy, and no token leaves it. A file that cannot be read is never overwritten. Nothing under `~/.claude` or `~/.codex` is written.
+- **Requests sent:** a usage `GET` per Claude or Codex login to `api.anthropic.com` and `chatgpt.com`, each with that login's access token. Adding an account sends sign-in requests to `api.anthropic.com` (the sign-in page itself is `claude.ai`, opened in the owner's browser), `auth.openai.com`, `github.com` and `api.github.com`, and nowhere else. The endpoints are unofficial and can change, and a vendor may limit an account for unusual use. A token is never refreshed.
+- **Owner only:** `GET /api/accounts` runs the audit log's owner check (`classify`) before it reads anything; anyone else gets `403 {error: "owner only", reason}`. The four sign-in routes (`POST /api/accounts/login/start`, `finish`, `poll`, `cancel`) are `write: true` routes of a `FeatureModule`: `appRouter` refuses a caller who is not the owner, and a request without `X-Portboard: 1`, before the route's code runs.
+- **Flow state in memory only:** the PKCE verifier, the state, the device ids and the codes live in a Map in the process for at most 10 or 15 minutes, three flows per provider. They are in no file, answer, log or audit line. The sign-in link in the `start` answer carries the PKCE challenge and the state, which the vendor's page needs; the verifier never leaves.
+- **What the audit line holds:** the route, who and from which device, the result, and the names of the body keys (`flowId`, `code`, `provider`, `alias`). It holds no value: not the pasted code, not the flow id, not the name. The error text of a failed request is one fixed sentence.
+- **Not remote:** `list_accounts` is a local stdio tool. It is not in the remote server's tools, in `RemoteCore` or in `REMOTE_READS`. No MCP tool adds an account.
+- **Allowlisted answer:** each field of the answer is copied by name (`src/core/accounts/view.ts`). Tokens, the account id and the id token are not in it. The sign-in routes answer with that view, never with the stored record.
+- **No token in logs:** a token is not written to a log, the audit log or an error text. Errors are a closed set of short fixed sentences with no response body, header, token or pasted text.
 
 ## Responses, limits and files (security review v1.0, L3, L6, I8)
 

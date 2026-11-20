@@ -3,7 +3,7 @@
 // real ~/.claude, ~/.codex and usage endpoints are never touched.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -18,9 +18,12 @@ process.env.HOME = FAKE_HOME;
 process.env.CLAUDE_CONFIG_DIR = join(FAKE_HOME, 'claude-dir');
 process.env.CODEX_HOME = join(FAKE_HOME, 'codex-dir');
 for (const k of Object.keys(process.env)) if (k.startsWith('PORTBOARD_') && k !== 'PORTBOARD_LOCALE') delete process.env[k];
+const ACCOUNTS_FILE = join(FAKE_HOME, 'accounts.json');
+process.env.PORTBOARD_ACCOUNTS = ACCOUNTS_FILE;
 
 const { detectLogins, decodeJwtPayload } = await import('../src/core/accounts/detect.ts');
-const { clearQuotaCache, fetchQuota, QUOTA_REQUESTS } = await import('../src/core/accounts/quota.ts');
+const { clearQuotaCache, fetchQuota, quotaCacheSize, QUOTA_REQUESTS } = await import('../src/core/accounts/quota.ts');
+const { upsertAccount } = await import('../src/core/accounts/store.ts');
 const { accountsReport } = await import('../src/core/accounts/view.ts');
 const { accountsFeature, setAccountsEnabledForTest, setAccountsOptionsForTest } = await import('../src/features/accounts.ts');
 const { appRouter } = await import('../src/features/router.ts');
@@ -48,7 +51,8 @@ const CODEX_ACCESS = jwt({ exp: NOW / 1000 + 3600, 'https://api.openai.com/auth'
 const CODEX_ID = jwt({ email: 'user@example.com', 'https://api.openai.com/auth': { chatgpt_plan_type: 'plus' } });
 const CODEX_REFRESH = 'TESTREFRESHCODEX0123456789abcdef';
 const CODEX_ACCOUNT = 'acct-test-0001';
-const SECRETS = [CLAUDE_ACCESS, CLAUDE_REFRESH, CODEX_ACCESS, CODEX_ID, CODEX_REFRESH, CODEX_ACCOUNT];
+// the whole strings, and the marker words inside them: a token cut in half or re-encoded still carries its marker
+const SECRETS = [CLAUDE_ACCESS, CLAUDE_REFRESH, CODEX_ACCESS, CODEX_ID, CODEX_REFRESH, CODEX_ACCOUNT, 'TESTACCESS', 'TESTREFRESH', 'TESTSIGNATURE'];
 
 const claudeFile = (over: Record<string, unknown> = {}) => ({
   claudeAiOauth: {
@@ -198,8 +202,9 @@ test('the view is an allowlist: only the named fields, no account id', async () 
   const h = home({ claude: claudeFile(), codex: codexFile() });
   const r = await accountsReport({ ...h, fetch: fakeFetch(byHost).fetch, now });
   for (const a of r.accounts) {
-    assert.deepEqual(Object.keys(a).sort(), ['email', 'error', 'expiresAt', 'id', 'needsReauth', 'plan', 'provider', 'quota', 'source', 'status', 'tier']);
+    assert.deepEqual(Object.keys(a).sort(), ['alias', 'email', 'error', 'expiresAt', 'id', 'needsReauth', 'plan', 'provider', 'quota', 'source', 'status', 'tier']);
     assert.equal(a.source, 'local-cli');
+    assert.equal(a.alias, null);
   }
   assert.deepEqual(Object.keys(r).sort(), ['accounts', 'at']);
   assert.match(r.accounts[1].id, /^codex-[0-9a-f]{12}$/);
@@ -339,7 +344,15 @@ test('list_accounts is not on the remote server', () => {
   const def = REGISTRY.tools.find((t) => t.def.name === 'list_accounts')?.def;
   assert.deepEqual(def?.annotations, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true });
   assert.equal(accountsFeature.order, 2575);
-  assert.ok(accountsFeature.routes?.every((r) => r.method === 'GET'));
+  // one read, and the four login writes (each `write: true`, so the router checks the owner and the header first)
+  assert.deepEqual((accountsFeature.routes ?? []).map((r) => `${r.method} ${r.path}`), [
+    'GET /api/accounts',
+    'POST /api/accounts/login/start',
+    'POST /api/accounts/login/finish',
+    'POST /api/accounts/login/poll',
+    'POST /api/accounts/login/cancel',
+  ]);
+  assert.ok((accountsFeature.routes ?? []).filter((r) => r.method !== 'GET').every((r) => r.write === true));
 });
 
 // ---- 7. response parsing ----
@@ -592,4 +605,104 @@ test('a failed answer closes its body: 401 and 500', async () => {
     await fetchQuota(login, { fetch: fakeFetch(() => res).fetch, now });
     assert.ok(cancelled, `HTTP ${status}: body cancelled`);
   }
+});
+
+// ---- added accounts in the list ----
+
+const addedRecord = (over: Record<string, unknown> = {}) => ({
+  provider: 'claude' as const,
+  alias: 'work',
+  identity: 'uuid-added-1',
+  email: 'added@example.com',
+  plan: 'max',
+  tokens: { access: 'sk-ant-oat01-TESTACCESSADDED0123', refresh: 'sk-ant-ort01-TESTREFRESHADDED0123', idToken: null, expiresAt: new Date(NOW + 3600_000).toISOString() },
+  ...over,
+});
+
+test('added accounts follow the CLI logins in the list: Claude and Codex ask for limits, Copilot does not, no token shows', async () => {
+  rmSync(ACCOUNTS_FILE, { force: true });
+  const h = home({});
+  const claude = await upsertAccount(addedRecord(), { path: ACCOUNTS_FILE, now });
+  await upsertAccount(addedRecord({ provider: 'codex', alias: null, identity: 'acct-added-2', email: null, plan: null }), { path: ACCOUNTS_FILE, now });
+  await upsertAccount(addedRecord({ provider: 'copilot', alias: 'gh', identity: '4242', plan: null, tokens: { access: 'gho_TESTACCESSCOPILOT', refresh: null, idToken: null, expiresAt: null } }), { path: ACCOUNTS_FILE, now });
+  const f = fakeFetch(byHost);
+  const r = await accountsReport({ ...h, fetch: f.fetch, now, accountsPath: ACCOUNTS_FILE });
+  assert.deepEqual(r.accounts.map((a) => [a.provider, a.source, a.alias]), [
+    ['claude', 'local-cli', null],
+    ['codex', 'local-cli', null],
+    ['claude', 'added', 'work'],
+    ['codex', 'added', null],
+    ['copilot', 'added', 'gh'],
+  ]);
+  assert.equal(r.accounts[2].id, claude.id);
+  assert.match(r.accounts[2].id, /^acc-[0-9a-f]{12}$/);
+  assert.equal(r.accounts[2].quota?.windows[0].usedPct, 42.5);
+  assert.equal(r.accounts[3].email, 'user@example.com', 'Codex: the usage answer fills the email');
+  assert.equal(r.accounts[4].quota, null);
+  assert.equal(r.accounts[4].status, 'ok');
+  assert.deepEqual(f.calls.map((c) => new URL(c.url).host).sort(), ['api.anthropic.com', 'chatgpt.com'], 'Copilot is never asked');
+  assert.equal(f.calls.find((c) => c.url === QUOTA_REQUESTS.codex.url)?.headers['ChatGPT-Account-Id'], 'acct-added-2');
+  const out = JSON.stringify(r);
+  for (const x of ['TESTACCESS', 'TESTREFRESH', 'uuid-added-1', 'acct-added-2', '4242']) assert.ok(!out.includes(x), `leaks ${x}`);
+  for (const a of r.accounts) assert.deepEqual(Object.keys(a).sort(), ['alias', 'email', 'error', 'expiresAt', 'id', 'needsReauth', 'plan', 'provider', 'quota', 'source', 'status', 'tier']);
+});
+
+test('an added account whose access token has expired is expired and sends no request; Claude and Codex are not refreshed', async () => {
+  rmSync(ACCOUNTS_FILE, { force: true });
+  await upsertAccount(addedRecord({ tokens: { access: 'sk-ant-oat01-TESTACCESSOLD', refresh: 'r', idToken: null, expiresAt: new Date(NOW - 1000).toISOString() } }), { path: ACCOUNTS_FILE, now });
+  const f = fakeFetch(byHost);
+  const r = await accountsReport({ ...home({}), fetch: f.fetch, now, accountsPath: ACCOUNTS_FILE });
+  const a = r.accounts[2];
+  assert.deepEqual([a.status, a.error], ['expired', 'access token expired']);
+  assert.equal(f.calls.length, 0);
+});
+
+test('a broken accounts.json is one unreadable line, and it is left as it was', async () => {
+  writeFileSync(ACCOUNTS_FILE, '{not json');
+  const r = await accountsReport({ ...home({}), fetch: fakeFetch(byHost).fetch, now, accountsPath: ACCOUNTS_FILE });
+  assert.deepEqual(r.accounts.slice(2).map((a) => [a.id, a.source, a.status, a.error]), [['added-unreadable', 'added', 'unreadable', 'accounts file unreadable']]);
+  assert.equal(readFileSync(ACCOUNTS_FILE, 'utf8'), '{not json');
+  rmSync(ACCOUNTS_FILE, { force: true });
+});
+
+// ---- review fixes of milestone 1 (#139) ----
+
+test('readLimited: a Content-Length over the limit closes the body unread', async () => {
+  const { readLimited } = await import('../src/core/accounts/quota.ts');
+  const res = new Response('x'.repeat(50), { status: 200, headers: { 'content-length': String(600 * 1024) } });
+  let cancelled = false;
+  const cancel = res.body!.cancel.bind(res.body);
+  Object.defineProperty(res.body!, 'cancel', { value: (...a: []) => ((cancelled = true), cancel(...a)) });
+  assert.equal(await readLimited(res), null);
+  assert.ok(cancelled, 'body cancelled');
+  assert.equal(await readLimited(new Response('hello'), 3), null, 'a smaller limit applies too');
+  assert.equal(await readLimited(new Response('hello'), 10), 'hello');
+});
+
+test('the quota cache drops a token unused for 24 hours at the next request, and keeps at most 64', async () => {
+  clearQuotaCache();
+  const mk = (i: number) => ({ provider: 'claude' as const, id: `t${i}`, status: 'ok' as const, email: null, plan: null, tier: null, expiresAt: null, refreshExpiresAt: null, accountId: null, accessToken: `tok-${i}`, error: null });
+  const f = fakeFetch(() => json(CLAUDE_BODY));
+  let t = NOW;
+  const clock = () => t;
+  await fetchQuota(mk(0), { fetch: f.fetch, now: clock });
+  await fetchQuota(mk(1), { fetch: f.fetch, now: clock });
+  assert.equal(quotaCacheSize(), 2);
+  t = NOW + 25 * 3600_000;
+  await fetchQuota(mk(2), { fetch: f.fetch, now: clock });
+  assert.equal(quotaCacheSize(), 1, 'the two idle entries went before the new one was kept');
+  // the least recently used go first once there are more than 64
+  clearQuotaCache();
+  t = NOW;
+  for (let i = 0; i < 70; i++) {
+    t += 1000;
+    await fetchQuota(mk(i), { fetch: f.fetch, now: clock });
+  }
+  assert.ok(quotaCacheSize() <= 65, `size ${quotaCacheSize()}`);
+  const calls = f.calls.length;
+  t += 1000;
+  await fetchQuota(mk(69), { fetch: f.fetch, now: clock });
+  assert.equal(f.calls.length, calls, 'the newest is still cached');
+  await fetchQuota(mk(0), { fetch: f.fetch, now: clock });
+  assert.equal(f.calls.length, calls + 1, 'the oldest was dropped and is asked again');
 });
