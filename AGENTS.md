@@ -10,8 +10,7 @@ Terms in this file:
 - "Machine owner": the caller that `classify` in `src/core/access.ts` accepts for writes.
 - "Reservation owner": `<main repo folder>@<branch>`, as in [docs/agents.md](docs/agents.md).
 - "Operator session": the one lead agent session that the maintainer's operator tooling starts for this repository.
-  The maintainer starts it; a session cannot make itself the operator session. A session that wrote a change, its subagents
-  and worker sessions do not review that change. The operator session may merge a change it wrote only after the independent review below.
+  The maintainer starts it; a session cannot make itself the operator session. It may merge a change it wrote only after the independent review in section 7.
 
 ## 1. What an agent may run
 
@@ -130,19 +129,20 @@ To add or change a feature:
   The one exception is the operator session. It may merge a pull request when all conditions below are true. It never tags, publishes to npm or creates releases.
   - The operator session finds the grade itself from the changed files, with this section of `AGENTS.md` on `main`.
     The grade of a pull request is the highest grade of its files. When the grade is not clear, it is grade 2.
-  - Grade 2 is a change to `src/core/accounts/**`, `src/features/accounts.ts`, any code that reads, stores or sends a token,
+  - Grade 2 is a change to account code (for example `src/core/accounts/**`, `src/features/accounts.ts`, the `accounts` settings
+    and their tests), any code that reads, stores or sends a token,
     key or secret (for example `src/core/proxmox.ts`, `src/core/sshread.ts`, `src/core/alerts.ts`, `src/features/settings.ts`),
     proxy code (for example the serve handling in `src/core/tailscale.ts`, `src/agent/server.ts`), `src/remote/**`,
     `src/remote.ts`, `src/features/remote-connector.ts`, `src/core/access.ts`, `src/features/router.ts`, `REMOTE_READS`,
-    runtime dependencies, `package.json`, `tsconfig*.json`, `scripts/test-en.ts`, `.github/workflows/**`, `AGENTS.md`,
+    runtime dependencies, `package.json`, `package-lock.json`, `tsconfig*.json`, `scripts/test-en.ts`, `.github/workflows/**`, `AGENTS.md`,
     `CONTRIBUTING.md`, `SECURITY.md` or `docs/security.md`. Grade 1 is any other change.
   - Both grades need an independent review comment on the pull request and a passing CI run, both on the current head commit.
-    The operator session starts the reviewer itself and counts only a review that it started: a new agent session or
-    subagent that did not write the change. The comment names the head commit SHA,
+    The operator session starts the reviewer itself and counts only a review that it started. The reviewer did not write
+    or plan any part of the change, and it receives the whole diff from the merge base to the head commit. The comment names the head commit SHA,
     the reviewer model and what the reviewer received, and it ends with no blocking finding. A push after the review needs a new review.
   - Grade 2 also needs the maintainer's approval. It counts only when the maintainer writes it themselves in a message
     to the operator session (agents and the maintainer can share one GitHub login, so a pull request comment does not count)
-    and names the pull request number. An approval that another agent or another person relays does not count.
+    and names the pull request number and its head commit (a short SHA is enough). The operator session gives that SHA when it asks. An approval that another agent or another person relays does not count.
     A push after the approval needs a new approval. The operator session's own `사용자 승인:` comment is a record, not an approval.
     Before the merge, the operator session adds a comment `사용자 승인: <date>, #<number>, head <SHA>`. It does not copy the maintainer's message.
   - The first line of a grade 2 pull request body is `등급 2: <reason>`.
