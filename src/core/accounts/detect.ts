@@ -123,7 +123,7 @@ async function detectClaude(o: Required<DetectOptions>): Promise<LocalLogin> {
 }
 
 /** A claim at the top level, else under a namespace the OpenAI token uses */
-function claim(p: Record<string, unknown> | null, key: string, ns: string): string | null {
+export function claim(p: Record<string, unknown> | null, key: string, ns: string): string | null {
   if (!p) return null;
   const top = str(p[key]);
   if (top) return top;
