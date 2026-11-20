@@ -107,6 +107,16 @@ export function portsOverview(ports, usage, missing = 0) {
   return node;
 }
 
+/** The empty panel's sentence: each ↑ and ↓ in it becomes a key chip (text nodes only, no innerHTML) */
+function emptyNote(text) {
+  const p = el('p', 'insp-empty');
+  for (const part of text.split(/([↑↓])/)) {
+    if (part === '↑' || part === '↓') p.appendChild(el('kbd', null, part));
+    else if (part) p.appendChild(document.createTextNode(part));
+  }
+  return p;
+}
+
 /** Fill the inspector: the selected port p (null: nothing selected / it went away) */
 export function renderInspector(insp, p, ctx) {
   if (!insp) return;
@@ -117,7 +127,7 @@ export function renderInspector(insp, p, ctx) {
     stopTail();
     insp.setTitle(t('inspector.title'));
     delete body.dataset.port;
-    body.replaceChildren(...[ctx.overview, el('p', 'insp-empty', ctx.emptyText ?? t('inspector.empty'))].filter(Boolean));
+    body.replaceChildren(...[ctx.overview, emptyNote(ctx.emptyText ?? t('inspector.empty'))].filter(Boolean));
     return;
   }
   insp.setTitle(t('inspector.title.port', { port: p.port }));

@@ -56,7 +56,20 @@ fonts and hairline borders. Build new screens from the tokens and components bel
 
 ### Motion and states
 
-- Motion is short and functional: drawers and sheets slide in .16s, fades take .12s. Switching the theme turns transitions off. Honour `prefers-reduced-motion`.
+- Motion is short and functional. Pick the time and the curve from the table below; do not write a new duration or curve. The curves are the CSS keywords `ease-out` and `ease-in`, not cubic-bezier values. Switching the theme turns transitions off. Honour `prefers-reduced-motion`.
+
+| Step | Value | Enter curve | Exit curve | Used for | Reduced motion |
+|---|---|---|---|---|---|
+| `dur-1` | .12s | `ease-out` | `ease-in` | Selected-row colour and inset bar, hover reveals of ☆ 🔔 ⋯, fold arrow, column inspector exit | Colour and fade stay (linear); movement stops |
+| `dur-2` | .16s | `ease-out` | `dur-1` with `ease-in` | Column inspector enter (fade and 8px slide), inspector sheet slide | Column: fade only. Sheet: no slide |
+
+| `row-recover` | 1.6s | `ease-out` | none | A port with a down alert comes back up: the row flashes once (same value as the palette flash) | No flash |
+
+- Move only `transform` and `opacity`; colour fades are the exception for state feedback. Never `transition: all`.
+- Repeated actions are instant: a selection made with ↑/↓ changes the row at once (`data-keynav` on the list).
+- The inspector plays its motion on a person's open or close, never on page load (`data-insp-motion` on `<html>`). The column widths change at once; only the panel fades and slides.
+- Existing literals still outside the table: .1s (pane handle), .15s and .2s (settings), .18s (toast stack), 1.6s (palette flash). Move them to the table when you touch them.
+- The selected row's port number is `accent`. While pressed, a row takes the selected-row background. The ↑↓ in the empty inspector are key chips.
 - Focus is a 2px solid outline in the `accent` token. Do not remove it without a replacement.
 - Hover raises a border to the `muted` token or fills with the `st-hover` token. Disabled is opacity .5.
 - A control that changes the server carries `data-write="1"`. On a read-only page (`html[data-readonly]`) those controls are greyed out and a note says why.
@@ -82,9 +95,9 @@ guidelines say what the consumer supplies.
 - Most font sizes in the CSS repeat the `fs-1` to `fs-5` values as px literals instead of `var(--fs-*)`; only `shell.css` uses the variables widely.
 - The serve tag uses literal purples (`#8250df`, `#d2a8ff` in dark mode), and the devices view switch uses a literal `#000` shadow tint.
 - `public/features/digest.js` reads `var(--card)`, but no stylesheet declares that property; it falls back to `transparent`.
-- There are no `link`, `focus`, chart, size, z-index or motion tokens, and no `danger-bg` or `on-ok` / `on-warn` / `on-info` colours. Charts use `accent`, `ok`, `warn` and `danger` directly.
+- There are no `link`, `focus`, chart, size or z-index tokens, and no `danger-bg` or `on-ok` / `on-warn` / `on-info` colours. Charts use `accent`, `ok`, `warn` and `danger` directly.
 - `line` is a hairline: on `surface` it is 1.25:1 in light and 1.35:1 in dark, under 3:1 for control borders.
 - Three status dots carry no word: the sidebar dots (state in a hover title), an online device chip, and an online machine card.
-- Motion has no table here: durations run from .1s to .18s (and 1.6s for the palette flash), and `prefers-reduced-motion` stops only some of them.
+- Motion tokens cover the row selection and the inspector only; the toast stack, settings, the palette and the sidebar drawer still use literal durations, and the sidebar drawer and ⋯ menus ignore `prefers-reduced-motion`.
 - This brand book has no principles, no contrast table and no component list, and its layout section does not cover the development tab, the service page or the settings window.
 - Components have no types and no state or keyboard sections. The app still builds a modal, dialog and sheet, copy button, logs viewer, tables, sparklines, a filter popover, tabs, the inspector and the network tree without a design-system component.

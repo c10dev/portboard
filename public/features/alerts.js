@@ -17,6 +17,32 @@ import { uptimeLine } from './uptime.js';
 let status = null;
 let hooks = { render() {}, reload() {} };
 
+/** Ports that came back up in refreshAlerts() and still wait for their row flash (taken by takeRecovered) */
+const recovered = new Set();
+
+/**
+ * Ports whose watch was down in prev and is no longer down in next.
+ * @param {{ watching: Array<{ key: string, down?: boolean }> } | null} prev
+ * @param {{ watching: Array<{ key: string, down?: boolean }> } | null} next
+ * @returns {number[]} sorted ascending; only keys of the form `port:<n>`
+ */
+export function recoveredPorts(prev, next) {
+  if (!prev || !next) return [];
+  const ports = [];
+  for (const w of prev.watching) {
+    const m = /^port:(\d+)$/.exec(w.key);
+    if (!m || !w.down) continue;
+    const now = next.watching.find((x) => x.key === w.key);
+    if (now && !now.down) ports.push(Number(m[1]));
+  }
+  return ports.sort((a, b) => a - b);
+}
+
+/** true once for a port added by refreshAlerts(); removes it from the set. */
+export function takeRecovered(port) {
+  return recovered.delete(port);
+}
+
 export function alertStatus() {
   return status;
 }
@@ -26,6 +52,7 @@ export async function refreshAlerts() {
   const next = await tryJSON('/api/alerts');
   // the 서비스 list waits for the watched-but-down rows once (shell.css [data-wait])
   if (!next) return done('alerts');
+  for (const port of recoveredPorts(status, next)) recovered.add(port);
   status = next;
   paintButton();
   if ($('alertsDialog')?.open) paintDialog();

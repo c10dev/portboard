@@ -72,7 +72,11 @@ test('tokens: names, values and notes in the shape the Design System page reads'
     }
   }
   assert.deepEqual(tokens.color.themes.map((t) => t.id), ['light', 'dark']);
-  for (const t of [...tokens.radius.tokens, ...tokens.layout.tokens]) assert.match(t.value, /^\d+(\.\d+)?(px|%)$/, t.name);
+  for (const t of [...tokens.radius.tokens, ...tokens.layout.tokens]) {
+    // motion tokens (dur-*, ease-*) live in the layout group: a time in seconds or the keyword ease-out / ease-in
+    const motion = /^(dur|ease)-/.test(t.name);
+    assert.match(t.value, motion ? /^(\d*\.?\d+s|ease-out|ease-in)$/ : /^\d+(\.\d+)?(px|%)$/, t.name);
+  }
   for (const stack of Object.values(tokens.type.families)) assert.doesNotMatch(stack, /[;{}<>\\()]/);
   const styles = tokens.type.groups.flatMap((g) => g.styles);
   assert.deepEqual(styles.filter((s) => /^fs-/.test(s.name)).map((s) => s.fontSize), ['11px', '12px', '13px', '14px', '15px']);

@@ -4,7 +4,7 @@
 // inspector frame; the selected port is the URL hash (#8790), ↑/↓ move it.
 
 import { done, share, shell, stepSelection, typingIn } from './lib/shell.js';
-import { initAlerts, missingRows, refreshAlerts } from './features/alerts.js';
+import { initAlerts, missingRows, refreshAlerts, takeRecovered } from './features/alerts.js';
 import { logsDialog, portAction } from './features/control.js';
 import { deviceStrip, remoteHosts } from './features/devices.js';
 import { remoteView } from './features/host-ports.js';
@@ -183,6 +183,12 @@ function render() {
   });
   const missing = inUse.checked ? [] : missingRows(data.ports, needle);
   list.replaceChildren(...missing, ...grouped(rows).map((it) => (it.ports ? renderGroup(it, rowCtx) : renderRow(it, rowCtx))));
+  // a port whose down alert just cleared: its row flashes once, then the class goes
+  for (const li of list.querySelectorAll('li.row[data-port]')) {
+    if (!takeRecovered(Number(li.dataset.port))) continue;
+    li.classList.add('recovered');
+    li.addEventListener('animationend', (e) => { if (e.target === li) li.classList.remove('recovered'); });
+  }
   $('empty').hidden = rows.length + missing.length > 0;
   if (!$('empty').hidden) whyEmpty($('empty'), emptyNote(needle));
   paintInspector();
@@ -221,6 +227,7 @@ function select(port, { open = false, scroll = false } = {}) {
 
 // A click on a row (not on its links, buttons, menus or fields) selects it; on a phone 상세 stays inline instead
 list.addEventListener('click', (e) => {
+  delete list.dataset.keynav;
   const li = e.target.closest('li.row[data-port]');
   if (!li || e.target.closest('a, button, summary, details, input, label, select') || !insp?.usable) return;
   select(Number(li.dataset.port), { open: true });
@@ -238,6 +245,7 @@ document.addEventListener('keydown', (e) => {
   const next = stepSelection(keys, selected, e.key === 'ArrowDown' ? 1 : -1);
   if (next == null) return;
   e.preventDefault();
+  list.dataset.keynav = '';
   select(next, { scroll: true });
 });
 // #settings/… is the 설정 modal over this page (features/settings-modal.js): the selection stays as it was
