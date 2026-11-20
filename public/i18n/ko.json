@@ -64,6 +64,7 @@
   "accounts.error.expired": "액세스 토큰이 만료됐어요. CLI에서 다시 로그인하세요.",
   "accounts.error.failed": "사용량 요청이 실패했어요.",
   "accounts.error.failedHttp": "사용량 요청이 실패했어요 (HTTP {code}).",
+  "accounts.error.platform": "이 운영체제의 로그인 저장소는 Portboard가 읽지 않아요.",
   "accounts.error.rateLimited": "사용량 엔드포인트가 요청을 제한하고 있어요.",
   "accounts.error.refused": "사용량 엔드포인트가 요청을 거절했어요 (HTTP {code}).",
   "accounts.error.timedOut": "사용량 요청이 시간 안에 끝나지 않았어요.",

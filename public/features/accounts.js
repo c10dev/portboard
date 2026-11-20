@@ -28,6 +28,7 @@ const ERRORS = [
   [/^quota response unusable$/, () => t('accounts.error.unusable')],
   [/^access token expired$/, () => t('accounts.error.expired')],
   [/^credentials file unreadable$/, () => t('accounts.error.unreadable')],
+  [/not read on this platform$/, () => t('accounts.error.platform')],
 ];
 
 function errorText(s) {
@@ -63,7 +64,7 @@ function row(a) {
     h(
       'div',
       { class: 'set-extra' },
-      exp ? h('span', null, t(a.status === 'expired' ? 'accounts.expiredAt' : 'accounts.expires', { date: exp })) : null,
+      exp ? h('span', null, t(Date.parse(a.expiresAt) < Date.now() ? 'accounts.expiredAt' : 'accounts.expires', { date: exp })) : null,
       a.needsReauth ? h('span', { class: 'set-state warn' }, t('accounts.reauth')) : null,
       q ? q.windows.map(windowRow) : null,
       q?.stale ? h('span', { class: 'set-state warn' }, t('accounts.stale', { at: when(q.fetchedAt) ?? '' })) : null,

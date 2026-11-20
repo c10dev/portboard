@@ -27,9 +27,12 @@ export interface DetectOptions {
   home?: string;
   env?: Record<string, string | undefined>;
   readFile?: (p: string) => Promise<string>;
+  /** default process.platform: off Linux a missing file is `unreadable` (macOS keeps logins in the Keychain, not read) */
+  platform?: string;
 }
 
 const UNREADABLE = 'credentials file unreadable';
+const NOT_LINUX = 'login store not read on this platform';
 
 /** The payload of a JWT as an object. The signature is not checked: the claims are for display only. */
 export function decodeJwtPayload(jwt: string): Record<string, unknown> | null {
@@ -75,7 +78,7 @@ async function readJson(path: string, read: (p: string) => Promise<string>): Pro
   }
 }
 
-function blank(provider: 'claude' | 'codex', status: 'none' | 'unreadable'): LocalLogin {
+function blank(provider: 'claude' | 'codex', status: 'none' | 'unreadable', error: string | null = status === 'unreadable' ? UNREADABLE : null): LocalLogin {
   return {
     provider,
     id: provider === 'claude' ? 'claude-local' : 'codex-local',
@@ -87,21 +90,22 @@ function blank(provider: 'claude' | 'codex', status: 'none' | 'unreadable'): Loc
     refreshExpiresAt: null,
     accountId: null,
     accessToken: null,
-    error: status === 'unreadable' ? UNREADABLE : null,
+    error,
   };
 }
+
+/** No file: `none` on Linux, where the CLIs keep these files; elsewhere the login may live in a store we do not read */
+const missing = (provider: 'claude' | 'codex', o: Required<DetectOptions>) => (o.platform === 'linux' ? blank(provider, 'none') : blank(provider, 'unreadable', NOT_LINUX));
 
 async function detectClaude(o: Required<DetectOptions>): Promise<LocalLogin> {
   const dir = o.env.CLAUDE_CONFIG_DIR || join(o.home, '.claude');
   const r = await readJson(join(dir, '.credentials.json'), o.readFile);
-  if (r.kind === 'none') return blank('claude', 'none');
+  if (r.kind === 'none') return missing('claude', o);
   if (r.kind === 'bad' || !isObj(r.value) || !isObj(r.value.claudeAiOauth)) return blank('claude', 'unreadable');
   const c = r.value.claudeAiOauth;
   const accessToken = str(c.accessToken);
   const expires = epochMs(c.expiresAt);
   if (!accessToken || expires === null) return blank('claude', 'unreadable');
-  const hasRefreshExp = c.refreshTokenExpiresAt !== undefined && c.refreshTokenExpiresAt !== null;
-  if (hasRefreshExp && epochMs(c.refreshTokenExpiresAt) === null) return blank('claude', 'unreadable');
   return {
     provider: 'claude',
     id: 'claude-local',
@@ -131,8 +135,13 @@ const optionalString = (v: unknown) => v === undefined || v === null || typeof v
 async function detectCodex(o: Required<DetectOptions>): Promise<LocalLogin> {
   const dir = o.env.CODEX_HOME || join(o.home, '.codex');
   const r = await readJson(join(dir, 'auth.json'), o.readFile);
-  if (r.kind === 'none') return blank('codex', 'none');
-  if (r.kind === 'bad' || !isObj(r.value) || !isObj(r.value.tokens)) return blank('codex', 'unreadable');
+  if (r.kind === 'none') return missing('codex', o);
+  if (r.kind === 'bad' || !isObj(r.value)) return blank('codex', 'unreadable');
+  if (!isObj(r.value.tokens)) {
+    // an API-key login is not a subscription login: nothing to show. The key itself is not read further.
+    const apiKey = r.value.tokens == null && typeof r.value.OPENAI_API_KEY === 'string' && r.value.OPENAI_API_KEY !== '';
+    return apiKey ? blank('codex', 'none') : blank('codex', 'unreadable');
+  }
   const tk = r.value.tokens;
   const accessToken = str(tk.access_token);
   if (!accessToken || !optionalString(tk.account_id) || !optionalString(tk.id_token)) return blank('codex', 'unreadable');
@@ -163,6 +172,7 @@ export async function detectLogins(o: DetectOptions = {}): Promise<LocalLogin[]>
     home: o.home ?? homedir(),
     env: o.env ?? process.env,
     readFile: o.readFile ?? ((p) => readFile(p, 'utf8')),
+    platform: o.platform ?? process.platform,
   };
   return [await detectClaude(full), await detectCodex(full)];
 }

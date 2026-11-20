@@ -49,7 +49,7 @@ function viewOf(l: LocalLogin, q: QuotaResult | null, now: number): AccountView 
 /** detect → quota → view, for both CLIs. A login that is missing or unreadable is not asked for limits. */
 export async function accountsReport(o: DetectOptions & { fetch?: typeof fetch; now?: () => number } = {}): Promise<AccountsReport> {
   const now = o.now ?? Date.now;
-  const logins = await detectLogins({ home: o.home, env: o.env, readFile: o.readFile });
+  const logins = await detectLogins({ home: o.home, env: o.env, readFile: o.readFile, platform: o.platform });
   const accounts = await Promise.all(
     logins.map(async (l) => viewOf(l, l.status === 'ok' ? await fetchQuota(l, { fetch: o.fetch, now: o.now }) : null, now())),
   );

@@ -67,6 +67,7 @@
   "accounts.error.expired": "The access token expired. Sign in again in the CLI.",
   "accounts.error.failed": "The usage request failed.",
   "accounts.error.failedHttp": "The usage request failed (HTTP {code}).",
+  "accounts.error.platform": "Portboard doesn't read this system's login store.",
   "accounts.error.rateLimited": "The usage endpoint is rate limiting requests.",
   "accounts.error.refused": "The usage endpoint refused the request (HTTP {code}).",
   "accounts.error.timedOut": "The usage request timed out.",

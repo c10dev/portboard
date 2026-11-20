@@ -3,7 +3,7 @@
 // real ~/.claude, ~/.codex and usage endpoints are never touched.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -80,7 +80,7 @@ function home(files: { claude?: unknown; codex?: unknown }) {
   };
   if (files.claude !== undefined) put(claudeDir, '.credentials.json', files.claude);
   if (files.codex !== undefined) put(codexDir, 'auth.json', files.codex);
-  return { home: dir, env: { CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexDir } };
+  return { home: dir, env: { CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexDir }, platform: 'linux' };
 }
 
 const CLAUDE_BODY = { five_hour: { utilization: 42.5, resets_at: '2026-11-20T12:00:00Z' }, seven_day: { utilization: 10, resets_at: '2026-11-25T00:00:00Z' }, seven_day_opus: null };
@@ -147,6 +147,18 @@ const get = (addr: string, headers: Record<string, string> = {}) => {
 // ---- 1. no token leaves the process ----
 
 test('no token string is in the route answer, the tool output or an error path; the request carries the access token', async () => {
+  const logged: string[] = [];
+  const saved = { log: console.log, info: console.info, warn: console.warn, error: console.error, debug: console.debug };
+  for (const k of Object.keys(saved) as (keyof typeof saved)[]) console[k] = (...a: unknown[]) => void logged.push(a.map(String).join(' '));
+  try {
+    await noTokenLeaks();
+  } finally {
+    Object.assign(console, saved);
+  }
+  for (const line of logged) for (const x of SECRETS) assert.ok(!line.includes(x), 'a token was logged');
+});
+
+async function noTokenLeaks() {
   const h = home({ claude: claudeFile(), codex: codexFile() });
   const ok = fakeFetch(byHost);
   setAccountsEnabledForTest(() => true);
@@ -180,7 +192,7 @@ test('no token string is in the route answer, the tool output or an error path; 
   }
   for (const out of outputs) for (const s of SECRETS) assert.ok(!out.includes(s), `leaks ${s.slice(0, 14)}…`);
   for (const out of outputs) assert.ok(!out.includes('MCPSECRETTOKEN'));
-});
+}
 
 test('the view is an allowlist: only the named fields, no account id', async () => {
   const h = home({ claude: claudeFile(), codex: codexFile() });
@@ -271,8 +283,10 @@ test('401 → expired, 500 → an error, a timeout → an error; none of them th
   assert.equal((await run(() => new Response('not json', { status: 200 }))).error, 'quota response unusable');
   assert.equal((await run(() => json([1, 2]))).error, 'quota response unusable');
   assert.equal((await run(() => new Response('x'.repeat(600 * 1024), { status: 200 }))).error, 'quota response too large');
+  clearQuotaCache();
   const timeout = await accountsReport({ ...h, now, fetch: (async () => { throw Object.assign(new Error('aborted'), { name: 'AbortError' }); }) as typeof fetch });
   assert.equal(timeout.accounts[0].error, 'quota request timed out');
+  clearQuotaCache();
   const down = await accountsReport({ ...h, now, fetch: (async () => { throw new TypeError(`fetch failed ${CLAUDE_ACCESS}`); }) as typeof fetch });
   assert.equal(down.accounts[0].error, 'quota request failed');
 });
@@ -362,7 +376,7 @@ test('Claude usage, old and new shapes; Codex usage; plan and email precedence',
 
   // without plan_type and email in the answer, the id_token claims show
   clearQuotaCache();
-  const [, claims] = (await accountsReport({ ...codex, fetch: fakeFetch(() => json({ rate_limit: {} })).fetch, now })).accounts;
+  const [, claims] = (await accountsReport({ ...codex, fetch: fakeFetch(() => json({ rate_limit: { primary_window: { used_percent: 1, limit_window_seconds: 18000 } } })).fetch, now })).accounts;
   assert.equal(claims.plan, 'plus');
   assert.equal(claims.email, 'user@example.com');
   assert.equal(claims.expiresAt, iso(NOW + 3600_000));
@@ -393,4 +407,163 @@ test('the dashboard section is wired and worded in both languages', async () => 
   assert.equal(cat['settings.section.accounts'], L('계정', 'Accounts'));
   assert.deepEqual(Object.keys(en).filter((k) => k.startsWith('accounts.')), Object.keys(ko).filter((k) => k.startsWith('accounts.')));
   assert.deepEqual(accountsFeature.ui, [{ pages: ['#settings'], script: 'features/accounts.js' }]);
+});
+
+// ---- review fixes ----
+
+test('the cache is per token: another token at the same path starts clean, also a Codex login without account_id', async () => {
+  const f1 = fakeFetch(() => json(CLAUDE_BODY));
+  const a = await detectLogins(home({ claude: claudeFile() }));
+  const first = await fetchQuota(a[0], { fetch: f1.fetch, now });
+  assert.equal(first.quota?.windows[0].usedPct, 42.5);
+
+  // same id (claude-local), another token: the old value must not show, a new request goes out
+  const b = await detectLogins(home({ claude: claudeFile({ accessToken: 'sk-ant-oat01-TESTOTHER0123456789' }) }));
+  assert.equal(b[0].id, a[0].id);
+  const f2 = fakeFetch(() => json({ five_hour: { utilization: 1, resets_at: null } }));
+  const second = await fetchQuota(b[0], { fetch: f2.fetch, now });
+  assert.equal(f2.calls.length, 1);
+  assert.equal(f2.calls[0].headers.Authorization, 'Bearer sk-ant-oat01-TESTOTHER0123456789');
+  assert.equal(second.quota?.windows[0].usedPct, 1);
+
+  // a failure for a third token does not hand it another token's value
+  const fail = fakeFetch(() => json({}, 500));
+  const c = await detectLogins(home({ claude: claudeFile({ accessToken: 'sk-ant-oat01-TESTTHIRD0123456789' }) }));
+  assert.equal((await fetchQuota(c[0], { fetch: fail.fetch, now })).quota, null);
+
+  const x = await detectLogins(home({ codex: codexFile({ account_id: undefined, access_token: jwt({ exp: NOW / 1000 + 3600, n: 1 }) }) }));
+  const y = await detectLogins(home({ codex: codexFile({ account_id: undefined, access_token: jwt({ exp: NOW / 1000 + 3600, n: 2 }) }) }));
+  assert.equal(x[1].id, 'codex-local');
+  assert.equal(y[1].id, 'codex-local');
+  const cf = fakeFetch(() => json(CODEX_BODY));
+  await fetchQuota(x[1], { fetch: cf.fetch, now });
+  await fetchQuota(y[1], { fetch: cf.fetch, now });
+  assert.equal(cf.calls.length, 2);
+});
+
+test('after a failure nothing is sent for 5 minutes, then 10, up to 60; a success clears it; a 401 waits too', async () => {
+  const [login] = await detectLogins(home({ claude: claudeFile({ expiresAt: NOW + 10 * 86_400_000 }) }));
+  for (const status of [429, 401]) {
+    clearQuotaCache();
+    const f = fakeFetch(() => json({}, status));
+    const at = (sec: number) => fetchQuota(login, { fetch: f.fetch, now: () => NOW + sec * 1000 });
+    const first = await at(0);
+    for (let i = 1; i <= 4; i++) {
+      const r = await at(i);
+      assert.equal(r.error, first.error);
+      assert.equal(r.status, first.status);
+    }
+    assert.equal(f.calls.length, 1, `HTTP ${status}: one request in five calls`);
+    await at(301); // 5 min 1 s: asks again, fails, the next wait is 10 min
+    assert.equal(f.calls.length, 2);
+    await at(301 + 599);
+    assert.equal(f.calls.length, 2, 'still waiting 9 min 59 s after the second failure');
+    await at(301 + 601);
+    assert.equal(f.calls.length, 3, 'asks again after 10 min');
+    // 20, then 40, then 60 (the cap), then 60 again
+    let t = 301 + 601;
+    for (const wait of [1200, 2400, 3600, 3600]) {
+      const before = f.calls.length;
+      await at(t + wait - 1);
+      assert.equal(f.calls.length, before, `waiting ${wait}s`);
+      t += wait + 1;
+      await at(t);
+      assert.equal(f.calls.length, before + 1);
+    }
+  }
+  // a good answer after a wait clears it: the next failure waits 5 minutes again
+  clearQuotaCache();
+  let healthy = false;
+  const g = fakeFetch(() => (healthy ? json(CLAUDE_BODY) : json({}, 500)));
+  await fetchQuota(login, { fetch: g.fetch, now: () => NOW });
+  healthy = true;
+  const ok = await fetchQuota(login, { fetch: g.fetch, now: () => NOW + 301_000 });
+  assert.equal(ok.error, null);
+  healthy = false;
+  await fetchQuota(login, { fetch: g.fetch, now: () => NOW + 602_000 }); // the good value is 5 min old: asks, fails
+  const n = g.calls.length;
+  await fetchQuota(login, { fetch: g.fetch, now: () => NOW + 603_000 });
+  assert.equal(g.calls.length, n, 'waiting');
+  await fetchQuota(login, { fetch: g.fetch, now: () => NOW + 602_000 + 301_000 });
+  assert.equal(g.calls.length, n + 1, 'the first failure after a success waits 5 min, not 10');
+});
+
+test('requests for one token at once share one request', async () => {
+  const [login] = await detectLogins(home({ claude: claudeFile() }));
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const f = fakeFetch(async () => {
+    await gate;
+    return json(CLAUDE_BODY);
+  });
+  const all = Promise.all([1, 2, 3].map(() => fetchQuota(login, { fetch: f.fetch, now })));
+  release();
+  const rs = await all;
+  assert.equal(f.calls.length, 1);
+  assert.ok(rs.every((r) => r.quota?.windows.length === 2));
+});
+
+test('a 200 with no known window is a failure and keeps the last good value as stale', async () => {
+  const [login] = await detectLogins(home({ claude: claudeFile() }));
+  const good = await fetchQuota(login, { fetch: fakeFetch(() => json(CLAUDE_BODY)).fetch, now: () => NOW });
+  const empty = await fetchQuota(login, { fetch: fakeFetch(() => json({})).fetch, now: () => NOW + 6 * 60_000 });
+  assert.equal(empty.error, 'quota response unusable');
+  assert.equal(empty.quota?.stale, true);
+  assert.deepEqual(empty.quota?.windows, good.quota?.windows);
+});
+
+test('a refreshTokenExpiresAt of the wrong type is ignored: still ok, no reauth', async () => {
+  const h = home({ claude: claudeFile({ refreshTokenExpiresAt: 'soon' }) });
+  const a = (await accountsReport({ ...h, fetch: fakeFetch(byHost).fetch, now })).accounts[0];
+  assert.equal(a.status, 'ok');
+  assert.equal(a.needsReauth, false);
+});
+
+test('a Codex API-key login is none, and the key is nowhere in the answer', async () => {
+  const h = home({ codex: { OPENAI_API_KEY: 'sk-TESTKEY', tokens: null } });
+  const none = fakeFetch(byHost);
+  const r = await accountsReport({ ...h, fetch: none.fetch, now });
+  assert.deepEqual([r.accounts[1].status, r.accounts[1].error, r.accounts[1].quota], ['none', null, null]);
+  setAccountsEnabledForTest(() => true);
+  setAccountsOptionsForTest(() => ({ ...h, fetch: none.fetch, now }));
+  const out = [JSON.stringify((await get('127.0.0.1'))?.body), (await callTool('list_accounts', {}, {} as Core)).content[0].text];
+  for (const o of out) assert.ok(!o.includes('sk-TESTKEY'));
+  assert.equal(none.calls.length, 0);
+  // neither tokens nor a key: still unreadable
+  const bare = await accountsReport({ ...home({ codex: { tokens: null } }), fetch: none.fetch, now });
+  assert.equal(bare.accounts[1].status, 'unreadable');
+});
+
+test('off Linux a missing login file is unreadable (the login store is not read); on Linux it is none', async () => {
+  const empty = home({});
+  const mac = await detectLogins({ ...empty, platform: 'darwin' });
+  assert.deepEqual(mac.map((l) => [l.status, l.error]), [['unreadable', 'login store not read on this platform'], ['unreadable', 'login store not read on this platform']]);
+  const lin = await detectLogins({ ...empty, platform: 'linux' });
+  assert.deepEqual(lin.map((l) => [l.status, l.error]), [['none', null], ['none', null]]);
+  const via = await accountsReport({ ...empty, platform: 'darwin', fetch: fakeFetch(byHost).fetch, now });
+  assert.ok(via.accounts.every((a) => a.status === 'unreadable' && a.error === 'login store not read on this platform'));
+});
+
+test('strings from an answer are cut and stripped of control characters', async () => {
+  const [login] = await detectLogins(home({ claude: claudeFile() }));
+  const limits = [{ kind: 'weekly_scoped', percent: 1, resets_at: null, scope: { model: { display_name: 'O'.repeat(100000) } } }];
+  const claude = await fetchQuota(login, { fetch: fakeFetch(() => json({ limits })).fetch, now });
+  const name = claude.quota?.windows[0].name ?? '';
+  assert.equal(name.length, 41);
+  assert.ok(name.endsWith('…'));
+
+  clearQuotaCache();
+  const [, codex] = await detectLogins(home({ codex: codexFile() }));
+  const body = { plan_type: 'p'.repeat(1000), email: `a\u0000b\u001b[31m\u007f${'e'.repeat(300)}@example.com`, rate_limit: { primary_window: { used_percent: 1, limit_window_seconds: 18000 } } };
+  const r = await fetchQuota(codex, { fetch: fakeFetch(() => json(body)).fetch, now });
+  assert.equal(r.plan, `${'p'.repeat(40)}…`);
+  assert.ok(r.email && r.email.length === 255 && r.email.endsWith('…'));
+  assert.ok(!/[\u0000-\u001f\u007f]/.test(r.email ?? ''));
+  assert.ok(r.email?.startsWith('ab[31m'));
+});
+
+test('the expiry line says "expired" only for a date in the past, and the platform error has a text', () => {
+  const src = readFileSync(new URL('../public/features/accounts.js', import.meta.url), 'utf8');
+  assert.match(src, /Date\.parse\(a\.expiresAt\) < Date\.now\(\)/);
+  assert.match(src, /not read on this platform/);
 });

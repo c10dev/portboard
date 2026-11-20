@@ -10,9 +10,10 @@ things, and what is recorded. The public, read-only remote MCP server (8794, Fun
 - It listens only on loopback and the Tailscale IP, so only processes on this machine and devices in the tailnet can connect. Without Tailscale, loopback only. `PORTBOARD_HOSTS` can add a LAN address; without [token mode](#token-mode-c10devportboard12) it is read-only there, and the server says so at start.
 - `tailscale serve` publishes it as `https://devbox.example.ts.net:8443` (8443 → 127.0.0.1:8790), tailnet only. Port 443 is the public, read-only remote MCP server (Funnel → 8794); the dashboard is never on a Funnel port.
 - Requests whose `Host` header isn't one of this machine's names get 421. This blocks DNS rebinding. The names are localhost, 127.0.0.1, the host name, the Tailscale names and IPs, the listen addresses, and `PORTBOARD_ALLOWED_HOSTS` (e.g. `devbox.lan`); a wildcard bind (`0.0.0.0`) adds this machine's interface addresses, never "any" (`src/core/hosts.ts`).
-- Reads (`GET`) are open to every caller that can connect, with two exceptions that are the owner's only: the audit
-  log (`GET /api/audit`, c10dev/portboard#7, [Audit log](#audit-log-c10devportboard30)) and service logs
-  (`GET /api/ports/:port/logs`), because a dev server often prints tokens and secrets at start. Other callers get
+- Reads (`GET`) are open to every caller that can connect, with three exceptions that are the owner's only: the audit
+  log (`GET /api/audit`, c10dev/portboard#7, [Audit log](#audit-log-c10devportboard30)), service logs
+  (`GET /api/ports/:port/logs`), because a dev server often prints tokens and secrets at start, and the Claude Code
+  and Codex logins (`GET /api/accounts`, [Accounts](#accounts), 404 while `accounts.enabled` is off). Other callers get
   403 `owner only`. The tailnet is the owner's devices plus anything shared into it, and the port list, devices and
   history are readable by all of them.
 
@@ -132,6 +133,7 @@ owner's login; that is the live check for serve itself.
 | `tailscale status` fails (tailscaled restarting) | — | owner unknown ⇒ serve writes refused until it answers; loopback unaffected |
 | A non-owner reads ports, devices and history | yes | yes: reads stay open to the tailnet (accepted: the dashboard is a read-only view for the tailnet by design) |
 | A non-owner reads the audit log (who changed what, from which device, when) | yes | no: `GET /api/audit` answers `403 owner only` (#7) |
+| A non-owner reads the plan, email and remaining limits of the logins on this machine | — | no: `GET /api/accounts` answers `403 owner only`, and `404` while `accounts.enabled` is off ([Accounts](#accounts)) |
 | Other Unix users on devbox | could use loopback | still can by default: loopback is trusted. **Accepted** (#7): the machine has one login user, and every local process runs as the owner who can edit the state files anyway. If a second user gets a login: token mode with `requireTokenOnLoopback` (#12) |
 
 ## Token mode (c10dev/portboard#12)

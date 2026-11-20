@@ -2,6 +2,7 @@
 // CLIs' own clients use. Read-only GET requests. The token is refreshed never, kept in the answer never, and logged
 // never: an error is one of a closed set of short fixed texts, with no response body, header or token in it.
 
+import { createHash } from 'node:crypto';
 import type { LocalLogin } from './detect.ts';
 
 // The two URLs and every request header live in this block and nowhere else. The shapes follow opencodex commit
@@ -52,11 +53,34 @@ interface Cached {
   email: string | null;
 }
 
-const cache = new Map<string, Cached>();
+interface Entry {
+  good: Cached | null;
+  /** the current wait after a failure, ms; 0 when the last request worked */
+  delay: number;
+  failedUntil: number;
+  lastFail: { error: string; status: 'ok' | 'expired' } | null;
+}
+
+const FAIL_MIN_MS = 5 * 60_000;
+const FAIL_MAX_MS = 60 * 60_000;
+const NAME_MAX = 40;
+const PLAN_MAX = 40;
+const EMAIL_MAX = 254;
+
+/** Keyed by provider and a hash of the access token, so a new login or a refreshed token starts clean. Memory only. */
+const cache = new Map<string, Entry>();
+const inflight = new Map<string, Promise<QuotaResult>>();
 
 /** For tests */
 export function clearQuotaCache(): void {
   cache.clear();
+  inflight.clear();
+}
+
+/** Text from a response: control characters out, cut at `max` with an ellipsis */
+function clip(v: string, max: number): string {
+  const clean = v.replace(/[\u0000-\u001f\u007f]/g, '');
+  return clean.length > max ? `${clean.slice(0, max)}…` : clean;
 }
 
 // ---- parsing ----
@@ -105,7 +129,7 @@ function claudeWindows(body: Record<string, unknown>): QuotaWindow[] {
       else if (row.kind === 'weekly_all') name = 'weekly';
       else if (row.kind === 'weekly_scoped' && row.is_active !== false) {
         const model = isObj(row.scope) && isObj(row.scope.model) ? row.scope.model.display_name : null;
-        name = typeof model === 'string' && model ? `weekly-${model.toLowerCase()}` : 'weekly-scoped';
+        name = typeof model === 'string' && model ? clip(`weekly-${model.toLowerCase()}`, NAME_MAX) : 'weekly-scoped';
       }
       if (name && !has(name)) out.push({ name, usedPct: pct(row.percent), resetsAt: resetIso(row.resets_at) });
     }
@@ -134,7 +158,7 @@ function codexWindows(body: Record<string, unknown>): QuotaWindow[] {
     else base = 'monthly';
     const n = (seen.get(base) ?? 0) + 1;
     seen.set(base, n);
-    out.push({ name: n === 1 ? base : `${base}-${n}`, usedPct: pct(w.used_percent), resetsAt: resetIso(w.reset_at) });
+    out.push({ name: clip(n === 1 ? base : `${base}-${n}`, NAME_MAX), usedPct: pct(w.used_percent), resetsAt: resetIso(w.reset_at) });
   }
   return out;
 }
@@ -199,40 +223,63 @@ async function request(l: LocalLogin, doFetch: typeof fetch): Promise<Parsed> {
     return { ok: false, error: 'quota response unusable' };
   }
   if (!isObj(body)) return { ok: false, error: 'quota response unusable' };
-  if (l.provider === 'claude') return { ok: true, windows: claudeWindows(body), plan: null, email: null };
+  const windows = l.provider === 'claude' ? claudeWindows(body) : codexWindows(body);
+  // a 200 with no window we know is an answer we cannot use, not an empty set of limits
+  if (windows.length === 0) return { ok: false, error: 'quota response unusable' };
+  if (l.provider === 'claude') return { ok: true, windows, plan: null, email: null };
   return {
     ok: true,
-    windows: codexWindows(body),
-    plan: typeof body.plan_type === 'string' && body.plan_type ? body.plan_type : null,
-    email: typeof body.email === 'string' && body.email ? body.email : null,
+    windows,
+    plan: typeof body.plan_type === 'string' && clip(body.plan_type, PLAN_MAX) ? clip(body.plan_type, PLAN_MAX) : null,
+    email: typeof body.email === 'string' && clip(body.email, EMAIL_MAX) ? clip(body.email, EMAIL_MAX) : null,
   };
 }
 
+const iso = (ms: number) => new Date(ms).toISOString();
+
 /**
- * The limits of one login. Within 5 minutes of a good answer, that answer is reused. After a failure the last good
- * answer comes back marked stale. An expired access token is not sent; no token is ever refreshed here.
+ * The limits of one login. Within 5 minutes of a good answer, that answer is reused. After a failure (any, a 401 too)
+ * nothing is sent for 5 minutes, then 10, up to 60: the last failure and the last good answer, marked stale, come
+ * back meanwhile. Requests for one token at once share one request. An expired access token is not sent; no token is
+ * ever refreshed here.
  */
 export async function fetchQuota(l: LocalLogin, o: { fetch?: typeof fetch; now?: () => number } = {}): Promise<QuotaResult> {
   const now = (o.now ?? Date.now)();
-  const key = `${l.provider}:${l.id}`;
-  const last = cache.get(key);
-  const iso = (ms: number) => new Date(ms).toISOString();
-  const fromCache = (c: Cached, stale: boolean) => ({ windows: c.windows, fetchedAt: iso(c.at), stale });
-  const fail = (error: string, status: 'ok' | 'expired'): QuotaResult => ({
-    quota: last ? fromCache(last, true) : null,
-    plan: last?.plan ?? null,
-    email: last?.email ?? null,
+  if (l.status !== 'ok' || !l.accessToken) return { quota: null, plan: null, email: null, status: 'ok', error: l.error };
+  const key = `${l.provider}:${createHash('sha256').update(l.accessToken).digest('hex').slice(0, 16)}`;
+  const entry: Entry = cache.get(key) ?? { good: null, delay: 0, failedUntil: 0, lastFail: null };
+  const failure = (error: string, status: 'ok' | 'expired'): QuotaResult => ({
+    quota: entry.good ? { windows: entry.good.windows, fetchedAt: iso(entry.good.at), stale: true } : null,
+    plan: entry.good?.plan ?? null,
+    email: entry.good?.email ?? null,
     status,
     error,
   });
 
-  if (l.status !== 'ok' || !l.accessToken) return { quota: null, plan: null, email: null, status: 'ok', error: l.error };
-  if (l.expiresAt !== null && Date.parse(l.expiresAt) < now) return fail('access token expired', 'expired');
-  if (last && now - last.at < CACHE_MS) return { quota: fromCache(last, false), plan: last.plan, email: last.email, status: 'ok', error: null };
+  if (l.expiresAt !== null && Date.parse(l.expiresAt) < now) return failure('access token expired', 'expired');
+  const g = entry.good;
+  if (g && now - g.at < CACHE_MS) return { quota: { windows: g.windows, fetchedAt: iso(g.at), stale: false }, plan: g.plan, email: g.email, status: 'ok', error: null };
+  if (entry.lastFail && now < entry.failedUntil) return failure(entry.lastFail.error, entry.lastFail.status);
+  const running = inflight.get(key);
+  if (running) return running;
 
-  const r = await request(l, o.fetch ?? fetch);
-  if (!r.ok) return fail(r.error, r.status ?? 'ok');
-  const fresh: Cached = { at: now, windows: r.windows, plan: r.plan, email: r.email };
-  cache.set(key, fresh);
-  return { quota: fromCache(fresh, false), plan: r.plan, email: r.email, status: 'ok', error: null };
+  const job = (async (): Promise<QuotaResult> => {
+    const r = await request(l, o.fetch ?? fetch);
+    if (!r.ok) {
+      const status = r.status ?? 'ok';
+      entry.delay = Math.min(Math.max(entry.delay * 2, FAIL_MIN_MS), FAIL_MAX_MS);
+      entry.failedUntil = now + entry.delay;
+      entry.lastFail = { error: r.error, status };
+      cache.set(key, entry);
+      return failure(r.error, status);
+    }
+    entry.good = { at: now, windows: r.windows, plan: r.plan, email: r.email };
+    entry.delay = 0;
+    entry.failedUntil = 0;
+    entry.lastFail = null;
+    cache.set(key, entry);
+    return { quota: { windows: r.windows, fetchedAt: iso(now), stale: false }, plan: r.plan, email: r.email, status: 'ok', error: null };
+  })().finally(() => inflight.delete(key));
+  inflight.set(key, job);
+  return job;
 }
