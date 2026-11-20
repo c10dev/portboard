@@ -37,19 +37,20 @@ Read [docs/security.md](docs/security.md) before you change a write path.
   3. Only for a config change: the maintainer names the key and its value themselves in a message to the operator session
      (a relayed request or a pull request comment does not count). After step 2 passed on the same HEAD, add or set only that key
      in the production `~/.config/portboard/portboard.json`, keep every other key, and write the file in one atomic step:
-     create a temporary file in the same folder exclusively with mode 0600 (as `writePrivate` in `src/core/atomic.ts` does),
+     create a new temporary file in the same folder with mode 0600 and the `wx` flag (as `writePrivate` in `src/core/atomic.ts` does),
      then rename it. Then run `scripts/deploy.sh --restart portboard --no-push`. If it fails or is refused for any reason,
      restore the file's previous content the same way (remove the key if it was absent), run the same command once, then stop
      and report. Keep the previous content only in the memory of the one process that writes the file, runs `deploy.sh`
-     and restores it; do not save a copy.
+     and restores it; do not save a copy, and remove the temporary file if the rename fails. If that process ends before
+     the restore, stop and report.
   4. Check the result with GET requests to `127.0.0.1:8790` only.
   - Use no other `deploy.sh` flags. Everything else in the Never list above stays forbidden, including direct `systemctl`,
     `tailscale serve`, `tailscale funnel`, `portboard token`, npm publish, tags, releases and a push to `main`.
   - Record no token, email or account detail anywhere: a report, a message to any person or agent, a pull request, an issue,
     a commit, a connector or a file. The one exception is the value the maintainer named in step 3, written only to
     `portboard.json` together with the file's existing content. Do not print `portboard.json` or a response body that holds such values; count or summarise them instead.
-- When you need an action that is not "always allowed" (the merge and the deploy above, and the pull request comments that
-  section 7 asks for, are the only exceptions), stop and report. Do not choose a permissive default.
+- When you need an action that is not "always allowed" (the merge and the deploy above, and the review comment and the
+  `사용자 승인:` record that the operator session or the reviewer it started posts under section 7, are the only exceptions), stop and report. Do not choose a permissive default.
 <!-- TODO(maintainer): confirm the lists above. -->
 
 ## 2. Write paths
@@ -153,7 +154,7 @@ To add or change a feature:
   - Grade 2 is a change to account code (for example `src/core/accounts/**`, `src/features/accounts.ts`, the `accounts` settings
     and their tests), any code that reads, stores or sends a token,
     key or secret (for example `src/core/proxmox.ts`, `src/core/sshread.ts`, `src/core/alerts.ts`, `src/features/settings.ts`,
-    `src/cli.ts`, `src/agent.ts`, `src/core/site.ts`),
+    `src/cli.ts`, `src/agent.ts`, `src/core/site.ts`, `src/core/agents.ts`),
     proxy code (for example the serve handling in `src/core/tailscale.ts`, `src/agent/server.ts`), `src/remote/**`,
     `src/remote.ts`, `src/features/remote-connector.ts`, `src/core/access.ts`, `src/features/router.ts`, `REMOTE_READS`,
     runtime dependencies, `package.json`, `package-lock.json`, `tsconfig*.json`, `scripts/test-en.ts`, `scripts/deploy.sh`,
