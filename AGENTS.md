@@ -42,15 +42,16 @@ Read [docs/security.md](docs/security.md) before you change a write path.
      restore the file's previous content the same way (remove the key if it was absent), run the same command once, then stop
      and report. Keep the previous content only in the memory of the one process that writes the file, runs `deploy.sh`
      and restores it; do not save a copy, and remove the temporary file if the rename fails. If that process ends before
-     the restore, stop and report.
+     a needed restore, stop and report. If a write itself fails (the first one or the restore), stop and report.
   4. Check the result with GET requests to `127.0.0.1:8790` only.
   - Use no other `deploy.sh` flags. Everything else in the Never list above stays forbidden, including direct `systemctl`,
     `tailscale serve`, `tailscale funnel`, `portboard token`, npm publish, tags, releases and a push to `main`.
   - Record no token, email or account detail anywhere: a report, a message to any person or agent, a pull request, an issue,
     a commit, a connector or a file. The one exception is the value the maintainer named in step 3, written only to
     `portboard.json` together with the file's existing content. Do not print `portboard.json` or a response body that holds such values; count or summarise them instead.
-- When you need an action that is not "always allowed" (the merge and the deploy above, and the review comment and the
-  `사용자 승인:` record that the operator session or the reviewer it started posts under section 7, are the only exceptions), stop and report. Do not choose a permissive default.
+- When you need an action that is not "always allowed", stop and report. Do not choose a permissive default.
+  The only exceptions are the merge and the deploy above, the review comment that the operator session or the reviewer it
+  started posts under section 7, and the `사용자 승인:` record that only the operator session posts.
 <!-- TODO(maintainer): confirm the lists above. -->
 
 ## 2. Write paths
