@@ -3,7 +3,7 @@
 // chain, so two adds never interleave. A file that cannot be read is never overwritten.
 
 import { randomBytes } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { PATHS } from '../paths.ts';
 import { writePrivate } from '../atomic.ts';
 import { clipOrNull, EMAIL_MAX, NAME_MAX, PLAN_MAX } from './clip.ts';
@@ -31,6 +31,8 @@ export type Loaded = { accounts: StoredAccount[] } | { error: typeof UNREADABLE 
 export interface StoreOptions {
   path?: string;
   readFile?: (p: string) => Promise<string>;
+  /** default fs stat; for tests */
+  stat?: (p: string) => Promise<{ isFile(): boolean; mode: number }>;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -63,9 +65,19 @@ function parseAccount(v: unknown): StoredAccount | null {
   };
 }
 
-/** The added accounts. A missing file is an empty list; anything else that cannot be read is `accounts file unreadable`. */
+/**
+ * The added accounts. A missing file is an empty list; anything else that cannot be read is `accounts file unreadable`.
+ * That includes a file that is not a regular file, or that group or other users may read or write (mode & 0o077): a
+ * file edited by hand keeps 0600, or Portboard leaves it alone.
+ */
 export async function loadAccounts(o: StoreOptions = {}): Promise<Loaded> {
   const path = o.path ?? PATHS.accounts;
+  try {
+    const st = await (o.stat ?? stat)(path);
+    if (!st.isFile() || (st.mode & 0o077) !== 0) return { error: UNREADABLE };
+  } catch (err) {
+    return (err as { code?: unknown } | null)?.code === 'ENOENT' ? { accounts: [] } : { error: UNREADABLE };
+  }
   let raw: string;
   try {
     raw = await (o.readFile ?? ((p: string) => readFile(p, 'utf8')))(path);
@@ -99,7 +111,7 @@ let chain: Promise<unknown> = Promise.resolve();
 export function upsertAccount(a: Omit<StoredAccount, 'id' | 'addedAt'>, o: StoreOptions & { now?: () => number } = {}): Promise<StoredAccount> {
   const run = async (): Promise<StoredAccount> => {
     const path = o.path ?? PATHS.accounts;
-    const loaded = await loadAccounts({ path, readFile: o.readFile });
+    const loaded = await loadAccounts({ path, readFile: o.readFile, stat: o.stat });
     if ('error' in loaded) throw new Error(UNREADABLE);
     const list = loaded.accounts;
     const i = list.findIndex((x) => x.provider === a.provider && x.identity === a.identity);

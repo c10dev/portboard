@@ -180,6 +180,8 @@ html[data-readonly] .ctl-toggle-input[data-write] { opacity: 0; }
 .set-state.todo { color: var(--danger); }
 .set-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
 .set-cmd { font: 12px var(--mono); padding: 2px 6px; border-radius: 6px; background: var(--neutral-bg); overflow-wrap: anywhere; }
+/* the device code to type (Accounts › add): large and spaced; sizes come from the type scale */
+.acc-code { font-size: calc(var(--fs-5) * 2); letter-spacing: 0.12em; padding: 0.3em 0.5em; }
 
 /* 정보: label | value rows */
 .set-kv { display: grid; grid-template-columns: minmax(96px, max-content) minmax(0, 1fr); gap: 0; margin: 0; font-size: 14px; }

@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -21,7 +21,8 @@ for (const k of Object.keys(process.env)) if (k.startsWith('PORTBOARD_') && k !=
 const FILE = join(FAKE_HOME, 'accounts.json');
 process.env.PORTBOARD_ACCOUNTS = FILE;
 
-const { LOGIN_REQUESTS, parsePasted, resetFlowsForTest } = await import('../src/core/accounts/flows.ts');
+const { cancelLogin, LOGIN_REQUESTS, parsePasted, resetFlowsForTest } = await import('../src/core/accounts/flows.ts');
+const { callTool } = await import('../src/mcp/tools.ts');
 const { loadAccounts, upsertAccount } = await import('../src/core/accounts/store.ts');
 const { clearQuotaCache } = await import('../src/core/accounts/quota.ts');
 const { accountsFeature, setAccountsEnabledForTest, setAccountsOptionsForTest } = await import('../src/features/accounts.ts');
@@ -31,6 +32,7 @@ const { REMOTE_TOOLS } = await import('../src/remote/tools.ts');
 const { TAILSCALE_POLICY } = await import('../src/core/access.ts');
 const { AuditLog } = await import('../src/core/audit.ts');
 type ServerContext = import('../src/features/context.ts').ServerContext;
+type Core = import('../src/mcp/kit.ts').Core;
 
 const NOW = Date.parse('2026-11-20T09:00:00Z');
 let clock = NOW;
@@ -435,9 +437,9 @@ test('Codex: 403 and 404 are pending; another status fails; a bad answer fails; 
   assert.equal(body(await poll(id)).state, 'pending');
   assert.equal(callsTo(C.codex.pollUrl).length, 2, 'too early: no request');
   clock += 4000;
-  answers[C.codex.pollUrl] = () => json({}, 500);
+  answers[C.codex.pollUrl] = () => json({}, 400);
   const bad = await poll(id);
-  assert.deepEqual([bad.status, body(bad)], [200, { state: 'failed', error: 'login request failed (HTTP 500)' }]);
+  assert.deepEqual([bad.status, body(bad)], [200, { state: 'failed', error: 'login request failed (HTTP 400)' }]);
   assert.equal((await poll(id)).status, 404, 'a failed flow is gone');
 
   const t = await start('codex');
@@ -567,7 +569,8 @@ test('the same identity twice is one record: the tokens and shown values change,
 
 test('a broken accounts.json is never overwritten: the add fails and the file is as it was', async () => {
   for (const content of ['{not json', '[]', '{"version":2,"accounts":[]}', '{"version":1,"accounts":[{"id":1}]}', '{"version":1}']) {
-    writeFileSync(FILE, content);
+    rmSync(FILE, { force: true });
+    writeFileSync(FILE, content, { mode: 0o600 });
     answers = claudeOk();
     const s = await start('claude');
     const state = new URL(body(s).authorizeUrl).searchParams.get('state')!;
@@ -719,4 +722,292 @@ test('the remote server offers no login or accounts tool, and the local tool lis
   const ro = REGISTRY.tools.find((t) => t.def.name === 'list_accounts')!.def;
   assert.equal(ro.annotations.readOnlyHint, true);
   assert.ok(!('remote' in (accountsFeature.tools ?? [])[0]) || !(accountsFeature.tools ?? [])[0].remote);
+});
+
+
+// ---- review fixes (#135) ----
+
+const mkdirRO = () => {
+  const dir = mkdtempSync(join(FAKE_HOME, 'ro-'));
+  chmodSync(dir, 0o500);
+  return dir;
+};
+
+test('fixed headers: Codex sends only Content-Type, Claude the exchange pair, Copilot Accept, Content-Type and User-Agent', async () => {
+  answers = { ...claudeOk(), ...codexOk(), ...copilotOk() };
+  const cs = await start('claude');
+  await finish(body(cs).flowId, `${PASTED_CODE}#${new URL(body(cs).authorizeUrl).searchParams.get('state')}`);
+  assert.deepEqual(callsTo(C.claude.tokenUrl)[0].headers, { Accept: 'application/json', 'Content-Type': 'application/json' });
+  rmSync(FILE);
+  const x = await start('codex');
+  const g = await start('copilot');
+  clock += 5000;
+  await poll(body(x).flowId);
+  await poll(body(g).flowId);
+  const json_ = { 'Content-Type': 'application/json' };
+  const form_ = { 'Content-Type': 'application/x-www-form-urlencoded' };
+  assert.deepEqual(callsTo(C.codex.userCodeUrl)[0].headers, json_);
+  assert.deepEqual(callsTo(C.codex.pollUrl)[0].headers, json_);
+  assert.deepEqual(callsTo(C.codex.tokenUrl)[0].headers, form_);
+  const gh = { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'portboard' };
+  assert.deepEqual(callsTo(C.copilot.deviceUrl)[0].headers, gh);
+  assert.deepEqual(callsTo(C.copilot.tokenUrl)[0].headers, gh);
+});
+
+test('a cancel while the vendor is answering stops the save: poll and finish say the flow is not found', async () => {
+  answers = codexOk();
+  let id = '';
+  answers[C.codex.tokenUrl] = () => (cancelLogin(id), json({ access_token: CODEX_ACCESS, id_token: CODEX_ID }));
+  const x = await start('codex');
+  id = body(x).flowId;
+  clock += 5000;
+  let r = await poll(id);
+  assert.deepEqual([r.status, body(r)], [404, { error: 'login flow not found' }]);
+  assert.throws(() => statSync(FILE));
+
+  answers = copilotOk();
+  answers[C.copilot.userUrl] = () => (cancelLogin(id), json({ id: 9 }));
+  const g = await start('copilot');
+  id = body(g).flowId;
+  clock += 5000;
+  r = await poll(id);
+  assert.equal(r.status, 404);
+  assert.throws(() => statSync(FILE));
+
+  answers = claudeOk();
+  answers[C.claude.profileUrl] = () => (cancelLogin(id), json({}));
+  const c = await start('claude');
+  id = body(c).flowId;
+  r = await finish(id, `${PASTED_CODE}#${new URL(body(c).authorizeUrl).searchParams.get('state')}`);
+  assert.deepEqual([r.status, body(r)], [404, { error: 'login flow not found' }]);
+  assert.throws(() => statSync(FILE));
+});
+
+test('Copilot: a network error, a timeout, a 5xx and a 429 leave the flow open as pending; the next poll can succeed', async () => {
+  answers = copilotOk();
+  const s = await start('copilot');
+  const id = body(s).flowId;
+  const down: [string, () => Response][] = [
+    ['a network error', () => { throw new TypeError(`fetch failed ${COPILOT_ACCESS}`); }],
+    ['a timeout', () => { throw new DOMException('The operation timed out.', 'TimeoutError'); }],
+    ['HTTP 502', () => json({}, 502)],
+    ['HTTP 429', () => json({}, 429)],
+  ];
+  let interval = 5;
+  for (const [why, a] of down) {
+    answers[C.copilot.tokenUrl] = a;
+    clock += interval * 1000;
+    const r = keep(await poll(id));
+    interval += 5;
+    assert.deepEqual(body(r), { state: 'pending', interval }, why);
+  }
+  answers[C.copilot.tokenUrl] = copilotOk()[C.copilot.tokenUrl];
+  clock += interval * 1000;
+  assert.equal(body(await poll(id)).state, 'done');
+  noLeak('an answer', outputs.splice(0).join(' '));
+});
+
+test('Copilot: authorization_pending in an HTTP 400 is pending; slow_down takes the larger of +5 and the answer; the flow expires', async () => {
+  answers = copilotOk();
+  const s = await start('copilot');
+  const id = body(s).flowId;
+  answers[C.copilot.tokenUrl] = () => json({ error: 'authorization_pending' }, 400);
+  clock += 5000;
+  assert.deepEqual(body(await poll(id)), { state: 'pending', interval: 5 });
+  answers[C.copilot.tokenUrl] = () => json({ error: 'slow_down', interval: 30 }, 400);
+  clock += 5000;
+  assert.deepEqual(body(await poll(id)), { state: 'pending', interval: 30 });
+  answers[C.copilot.tokenUrl] = () => json({ error: 'slow_down', interval: 7 });
+  clock += 30_000;
+  assert.deepEqual(body(await poll(id)), { state: 'pending', interval: 35 });
+  // an unknown error in a 400 ends the flow
+  answers[C.copilot.tokenUrl] = () => json({ error: 'unsupported_grant_type' }, 400);
+  clock += 35_000;
+  assert.deepEqual(body(await poll(id)), { state: 'failed', error: 'login response unusable' });
+  assert.equal((await poll(id)).status, 404);
+  // a 400 with no error at all is a failed request
+  const t = await start('copilot');
+  answers[C.copilot.tokenUrl] = () => json({}, 400);
+  clock += 5000;
+  assert.deepEqual(body(await poll(body(t).flowId)), { state: 'failed', error: 'login request failed (HTTP 400)' });
+  // a flow open past its life expires on the next poll
+  const u = await start('copilot');
+  answers[C.copilot.tokenUrl] = () => json({}, 503);
+  clock += 5000;
+  assert.equal(body(await poll(body(u).flowId)).state, 'pending');
+  clock += 16 * 60_000;
+  assert.deepEqual(body(await poll(body(u).flowId)), { state: 'expired', error: 'login flow expired' });
+});
+
+test('Codex: a 5xx or 429 on the poll is pending with a longer interval; a failure after the vendor answered is final', async () => {
+  answers = codexOk();
+  const s = await start('codex');
+  const id = body(s).flowId;
+  for (const status of [500, 429]) {
+    answers[C.codex.pollUrl] = () => json({}, status);
+    clock += 60_000;
+    assert.equal(body(await poll(id)).state, 'pending', `HTTP ${status}`);
+  }
+  answers[C.codex.pollUrl] = codexOk()[C.codex.pollUrl];
+  answers[C.codex.tokenUrl] = () => json({}, 503);
+  clock += 60_000;
+  assert.deepEqual(body(await poll(id)), { state: 'failed', error: 'login request failed (HTTP 503)' });
+});
+
+test('a user code goes back to the vendor as it came; only the shown value is cut; over 64 characters the start fails', async () => {
+  const long = 'U'.repeat(50);
+  answers = codexOk();
+  answers[C.codex.userCodeUrl] = () => json({ device_auth_id: DEVICE_AUTH_ID, user_code: long, interval: 5 });
+  const s = await start('codex');
+  assert.equal(body(s).userCode, `${'U'.repeat(40)}…`);
+  clock += 5000;
+  await poll(body(s).flowId);
+  assert.equal(JSON.parse(callsTo(C.codex.pollUrl)[0].body).user_code, long);
+
+  answers[C.codex.userCodeUrl] = () => json({ device_auth_id: DEVICE_AUTH_ID, user_code: 'U'.repeat(65) });
+  const bad = await start('codex');
+  assert.deepEqual([bad.status, body(bad)], [502, { error: 'login response unusable' }]);
+  answers = copilotOk();
+  answers[C.copilot.deviceUrl] = () => json({ device_code: DEVICE_CODE, user_code: 'U'.repeat(65) });
+  assert.equal(body(await start('copilot')).error, 'login response unusable');
+  // 64 is fine
+  answers[C.copilot.deviceUrl] = () => json({ device_code: DEVICE_CODE, user_code: 'U'.repeat(64) });
+  assert.equal((await start('copilot')).status, 200);
+});
+
+test('expires_in is used only when it is finite, above 0 and at most a year; else one hour', async () => {
+  for (const [v, secs] of [[1e300, 3600], [0, 3600], [-5, 3600], ['x', 3600], [null, 3600], [31_536_001, 3600], [31_536_000, 31_536_000], [120, 120]] as const) {
+    rmSync(FILE, { force: true });
+    answers = claudeOk();
+    answers[C.claude.tokenUrl] = () => json({ access_token: CLAUDE_ACCESS, expires_in: v, account: { uuid: 'u' } });
+    const s = await start('claude');
+    const f = await finish(body(s).flowId, `${PASTED_CODE}#${new URL(body(s).authorizeUrl).searchParams.get('state')}`);
+    assert.equal(body(f).account.expiresAt, new Date(NOW + secs * 1000).toISOString(), String(v));
+  }
+  rmSync(FILE);
+  answers = codexOk();
+  answers[C.codex.tokenUrl] = () => json({ access_token: CODEX_ACCESS, id_token: CODEX_ID, expires_in: 1e300 });
+  const x = await start('codex');
+  clock += 5000;
+  await poll(body(x).flowId);
+  assert.equal((await stored())[0].tokens.expiresAt, new Date(clock + 3600_000).toISOString());
+});
+
+test('Claude: the account uuid may come from the profile; with neither the exchange is unusable', async () => {
+  answers = claudeOk();
+  answers[C.claude.tokenUrl] = () => json({ access_token: CLAUDE_ACCESS, refresh_token: CLAUDE_REFRESH, expires_in: 100 });
+  answers[C.claude.profileUrl] = () => json({ account: { uuid: 'uuid-from-profile' }, organization: { rate_limit_tier: 'pro' } });
+  let s = await start('claude');
+  let f = await finish(body(s).flowId, `${PASTED_CODE}#${new URL(body(s).authorizeUrl).searchParams.get('state')}`);
+  assert.equal(f.status, 200);
+  assert.deepEqual([(await stored())[0].identity, body(f).account.plan], ['uuid-from-profile', 'pro']);
+
+  rmSync(FILE);
+  answers[C.claude.profileUrl] = () => json({ organization: {} });
+  s = await start('claude');
+  f = await finish(body(s).flowId, `${PASTED_CODE}#${new URL(body(s).authorizeUrl).searchParams.get('state')}`);
+  assert.deepEqual([f.status, body(f)], [502, { error: 'login response unusable' }]);
+  answers[C.claude.profileUrl] = () => json({}, 500);
+  s = await start('claude');
+  f = await finish(body(s).flowId, `${PASTED_CODE}#${new URL(body(s).authorizeUrl).searchParams.get('state')}`);
+  assert.equal(body(f).error, 'login response unusable');
+  assert.throws(() => statSync(FILE));
+});
+
+test('an accounts.json that group or others can read is unreadable and is not overwritten', async () => {
+  await upsertAccount({ provider: 'codex', alias: null, identity: 'i', email: null, plan: null, tokens: { access: 'a', refresh: null, idToken: null, expiresAt: null } }, { path: FILE });
+  const before = readFileSync(FILE, 'utf8');
+  assert.ok('accounts' in (await loadAccounts({ path: FILE })));
+  for (const m of [0o644, 0o640, 0o604, 0o660, 0o666]) {
+    chmodSync(FILE, m);
+    assert.deepEqual(await loadAccounts({ path: FILE }), { error: 'accounts file unreadable' }, m.toString(8));
+  }
+  chmodSync(FILE, 0o644);
+  answers = claudeOk();
+  const s = await start('claude');
+  const f = await finish(body(s).flowId, `${PASTED_CODE}#${new URL(body(s).authorizeUrl).searchParams.get('state')}`);
+  assert.deepEqual([f.status, body(f)], [500, { error: 'accounts file unreadable' }]);
+  assert.equal(readFileSync(FILE, 'utf8'), before);
+  assert.deepEqual(body(await list()).accounts.filter((a: any) => a.source === 'added').map((a: any) => a.id), ['added-unreadable']);
+  chmodSync(FILE, 0o600);
+  assert.ok('accounts' in (await loadAccounts({ path: FILE })));
+  // an injected stat that fails for another reason is unreadable too
+  assert.deepEqual(await loadAccounts({ path: FILE, stat: async () => { throw Object.assign(new Error('x'), { code: 'EACCES' }); } }), { error: 'accounts file unreadable' });
+});
+
+test('list_accounts with an added account holds no token and no marker', async () => {
+  answers = { ...claudeOk(), [QUOTA_URL.claude]: () => json({ five_hour: { utilization: 3, resets_at: '2026-11-20T12:00:00Z' } }) };
+  const s = await start('claude', 'tool-check');
+  await finish(body(s).flowId, `${PASTED_CODE}#${new URL(body(s).authorizeUrl).searchParams.get('state')}`);
+  const out = await callTool('list_accounts', {}, {} as Core);
+  assert.equal(out.isError, undefined);
+  const text = out.content[0].text;
+  assert.ok(text.includes('tool-check'));
+  assert.ok(text.includes('"source":"added"'));
+  noLeak('the tool output', text);
+  for (const x of ['uuid-claude-1', CODE_VERIFIER]) assert.ok(!text.includes(x));
+});
+
+test('all three flows: nothing secret in console output, answers or the audit log; the PKCE verifier too', async () => {
+  const logged: string[] = [];
+  const saved = { log: console.log, info: console.info, warn: console.warn, error: console.error, debug: console.debug };
+  for (const k of Object.keys(saved) as (keyof typeof saved)[]) console[k] = (...a: unknown[]) => void logged.push(a.map(String).join(' '));
+  let verifier = '';
+  try {
+    answers = { ...claudeOk(), ...codexOk(), ...copilotOk() };
+    const cs = keep(await start('claude'));
+    keep(await finish(body(cs).flowId, `${PASTED_CODE}#${new URL(body(cs).authorizeUrl).searchParams.get('state')}`));
+    verifier = JSON.parse(callsTo(C.claude.tokenUrl)[0].body).code_verifier;
+    const x = keep(await start('codex'));
+    const g = keep(await start('copilot'));
+    clock += 5000;
+    keep(await poll(body(x).flowId));
+    keep(await poll(body(g).flowId));
+    keep(await list());
+    answers[C.copilot.tokenUrl] = () => { throw new TypeError(`boom ${COPILOT_ACCESS} ${DEVICE_CODE}`); };
+    const h = await start('copilot');
+    clock += 5000;
+    keep(await poll(body(h).flowId));
+  } finally {
+    Object.assign(console, saved);
+  }
+  assert.ok(verifier.length >= 43);
+  const text = outputs.splice(0).map((o) => o.replace(/https:\/\/claude\.ai\/oauth\/authorize\?[^"]*/, ''));
+  for (const o of [...text, ...logged, auditText()]) {
+    noLeak('an output', o);
+    assert.ok(!o.includes(verifier), 'the PKCE verifier is out');
+  }
+});
+
+test('a failed write is its own text, apart from an unreadable file', { skip: process.getuid?.() === 0 }, async () => {
+  const dir = mkdirRO();
+  try {
+    setAccountsOptionsForTest(() => ({ fetch: fake, now, accountsPath: join(dir, 'accounts.json') }));
+    answers = { ...claudeOk(), ...codexOk() };
+    const s = await start('claude');
+    const f = await finish(body(s).flowId, `${PASTED_CODE}#${new URL(body(s).authorizeUrl).searchParams.get('state')}`);
+    assert.deepEqual([f.status, body(f)], [500, { error: 'accounts file not written' }]);
+    const x = await start('codex');
+    clock += 5000;
+    assert.deepEqual(body(await poll(body(x).flowId)), { state: 'failed', error: 'accounts file not written' });
+    assert.throws(() => statSync(join(dir, 'accounts.json')));
+  } finally {
+    chmodSync(dir, 0o700);
+    mkdirSync(dir, { recursive: true });
+  }
+});
+
+test('expired flows are swept at the start of every call', async () => {
+  answers = { ...claudeOk(), ...codexOk() };
+  for (let i = 0; i < 3; i++) await start('claude');
+  clock += 11 * 60_000;
+  // the old three are gone as this call begins: a cancel, a poll on nothing, a finish on nothing
+  assert.deepEqual(body(await cancel('x')), { ok: true });
+  for (let i = 0; i < 3; i++) assert.equal((await start('claude')).status, 200);
+  clock += 11 * 60_000;
+  assert.equal((await poll('x')).status, 404);
+  for (let i = 0; i < 3; i++) assert.equal((await start('claude')).status, 200);
+  clock += 11 * 60_000;
+  assert.equal((await finish('x', 'y')).status, 404);
+  for (let i = 0; i < 3; i++) assert.equal((await start('claude')).status, 200);
 });

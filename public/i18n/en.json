@@ -105,6 +105,7 @@
   "accounts.login.error.flowExpired": "The sign-in ran out of time. Start again.",
   "accounts.login.error.invalid": "That request wasn't valid.",
   "accounts.login.error.notFound": "This sign-in is no longer open. Start again.",
+  "accounts.login.error.notWritten": "accounts.json can't be written, so the account was not saved.",
   "accounts.login.error.state": "The code belongs to another sign-in. Start again.",
   "accounts.login.error.timedOut": "The sign-in request timed out.",
   "accounts.login.error.tooMany": "Too many sign-ins are open. Finish or cancel one first.",

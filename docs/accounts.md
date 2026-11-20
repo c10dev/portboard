@@ -31,14 +31,14 @@ A missing file is "not signed in" (`none`) on Linux. A file that is not valid JS
 
 ## Where it asks
 
-Two read-only `GET` requests, one per signed-in CLI, to the hosts below. No other host is contacted.
+One read-only `GET` per Claude or Codex login (a signed-in CLI, or an added account), to the hosts below. Copilot accounts send none. No other host is contacted for limits. Adding an account sends sign-in requests to other hosts, listed under [Add an account](#add-an-account).
 
 | CLI | URL |
 |---|---|
 | Claude Code | `https://api.anthropic.com/api/oauth/usage` |
 | Codex | `https://chatgpt.com/backend-api/wham/usage` |
 
-- An answer is reused for 5 minutes. The cache is per login: it is keyed by the provider and a hash of the access token (kept in memory only), so another login or a refreshed token never sees an earlier value. An entry that was not used for 24 hours is dropped at the next request, and at most 64 entries are kept (the least recently used go first).
+- An answer is reused for 5 minutes. The cache is per login: it is keyed by the provider and a hash of the access token (kept in memory only), so another login or a refreshed token never sees an earlier value. An entry that was not used for 24 hours is dropped at the next request, and the cache holds at most 64 entries (before a new one is added, the least recently used are dropped until 63 are left).
 - The cache and the failure wait are per process. The dashboard is one process; each Claude Code session starts its own stdio MCP server, which is another. Each has its own cache and its own wait, so two processes can each send a request in the same minute.
 - After any failure, a 401 or 403 included, nothing is sent for 5 minutes. Each further failure doubles the wait, up to 60 minutes; one success clears it. Meanwhile the last good answer is shown marked as stale. Simultaneous requests share one request.
 - A 200 answer with no window Portboard knows counts as a failure (`quota response unusable`): it does not replace the last good answer.
@@ -61,9 +61,10 @@ In Settings › Accounts, the owner can add a Claude, a ChatGPT/Codex or a GitHu
 
 - **Where it asks.** Claude: `claude.ai` (the sign-in page, opened in your browser), `api.anthropic.com` (token exchange and profile). ChatGPT/Codex: `auth.openai.com` only. Copilot: `github.com` and `api.github.com`. No other host.
 - **Where it keeps the tokens.** In `accounts.json` in the config folder (`~/.config/portboard/accounts.json`; a preview has its own config folder; `PORTBOARD_ACCOUNTS` moves it), mode `0600`, written through an atomic private write. It holds the access token, the refresh token, the id token (Codex), the identity (Claude account uuid, Codex account id, GitHub user id), the name, the email and the plan. Nothing else has a copy.
-- **A broken file is never overwritten.** If `accounts.json` is not valid, adding fails with `accounts file unreadable`, the file stays as it was, and the list shows one line, "added-unreadable", instead of the added accounts.
+- **A broken file is never overwritten.** If `accounts.json` is not valid, is not a regular file, or can be read or written by group or other users (any `0o077` mode bit), adding fails with `accounts file unreadable`, the file stays as it was, and the list shows one line, "added-unreadable", instead of the added accounts. If you edit the file by hand, keep it at 0600 (`chmod 600`), or Portboard will not read it.
+- **A write that fails** (a read-only folder, a full disk) fails with `accounts file not written`, and no account is added.
 - **The same account twice is one account.** Adding the same provider and identity again replaces the tokens and the shown values; the id, the date added and the name stay (unless you give a new name).
-- **A flow lives in memory only.** The PKCE verifier, the state, the device ids and the codes stay in the Portboard process for at most 10 minutes (Claude) or 15 minutes (device codes), at most three open flows per provider. Closing the Settings window cancels the flow. A flow ends when it succeeds, fails, is denied, expires or is cancelled, and a Claude flow is used up by its first finish, whatever the outcome.
+- **A flow lives in memory only.** The PKCE verifier, the state, the device ids and the codes stay in the Portboard process for at most 10 minutes (Claude) or 15 minutes (device codes), at most three open flows per provider. Closing the Settings window cancels the flow, and a flow cancelled while the vendor is still answering is not saved. Every call to a login route first drops the flows that are past their life. A flow ends when it succeeds, fails, is denied, expires or is cancelled, and a Claude flow is used up by its first finish, whatever the outcome. A device-code poll that fails because of a network error, a timeout, a 5xx or a 429 does not end the flow: it answers `pending` with a longer interval, and the next poll asks again.
 - **Limits.** A Claude or Codex added account asks for limits like a CLI login does (same requests, same cache and wait), with its stored access token. Copilot has no limits to show: it is listed with its status only, and no usage request is sent for it.
 - **Tokens are not refreshed.** The access token of an added account is used as it is. After a few hours it expires, and the account shows `expired` ("access token expired"). Refreshing is a later milestone. Until then, add the account again to get a new token.
 - **Removing one.** There is no remove button yet. Edit `accounts.json` by hand: delete the account's record from `accounts`, keeping the file valid JSON. Portboard reads the file on every request, so no restart is needed.
@@ -80,7 +81,8 @@ An error is one of these fixed sentences. None holds a response body, a header, 
 | `credentials file unreadable` | a CLI login file is not valid or lacks a needed key |
 | `login store not read on this platform` | off Linux, a CLI login file is missing (the login may be in the Keychain, which Portboard does not read) |
 | `quota request refused (HTTP n)`, `quota request failed (HTTP n)`, `quota request failed`, `quota rate limited`, `quota request timed out`, `quota response too large`, `quota response unusable`, `access token expired` | a usage request |
-| `accounts file unreadable` | `accounts.json` is not valid (adding fails; the list shows one line) |
+| `accounts file unreadable` | `accounts.json` is not valid, is not a regular file, or is readable or writable by group or others (adding fails; the list shows one line) |
+| `accounts file not written` | `accounts.json` could not be written (adding fails; nothing was saved) |
 | `login state mismatch` | the pasted code belongs to another sign-in (HTTP 400) |
 | `login flow expired`, `login flow not found` | the flow ran out of time, or is not open (HTTP 410, 404) |
 | `login denied` | you denied the sign-in on the vendor's page |

@@ -123,7 +123,7 @@ export const accountsFeature: FeatureModule = {
       body: { limit: 4096 },
       async handler({ body }) {
         if (!enabledFn()) return reply(404, { error: 'accounts disabled' });
-        cancelLogin((body as { flowId?: unknown } | null)?.flowId);
+        cancelLogin((body as { flowId?: unknown } | null)?.flowId, loginOptions());
         return ok({ ok: true });
       },
     },

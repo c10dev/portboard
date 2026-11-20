@@ -79,12 +79,12 @@ export function clearQuotaCache(): void {
   inflight.clear();
 }
 
-/** Entries not used for a day go; then the least recently used go until 64 are left (an entry per token ever seen) */
+/** Entries not used for a day go; then the least recently used go until 63 are left, so the entry about to be added makes 64 at most */
 function prune(now: number): void {
   for (const [k, e] of cache) if (now - e.lastUsed > IDLE_MS) cache.delete(k);
-  if (cache.size <= MAX_ENTRIES) return;
+  if (cache.size < MAX_ENTRIES) return;
   const oldest = [...cache.entries()].sort((a, b) => a[1].lastUsed - b[1].lastUsed);
-  for (const [k] of oldest.slice(0, cache.size - MAX_ENTRIES)) cache.delete(k);
+  for (const [k] of oldest.slice(0, cache.size - MAX_ENTRIES + 1)) cache.delete(k);
 }
 
 /** For tests: how many tokens the cache holds */

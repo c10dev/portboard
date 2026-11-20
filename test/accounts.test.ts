@@ -698,7 +698,7 @@ test('the quota cache drops a token unused for 24 hours at the next request, and
     t += 1000;
     await fetchQuota(mk(i), { fetch: f.fetch, now: clock });
   }
-  assert.ok(quotaCacheSize() <= 65, `size ${quotaCacheSize()}`);
+  assert.ok(quotaCacheSize() <= 64, `size ${quotaCacheSize()}`);
   const calls = f.calls.length;
   t += 1000;
   await fetchQuota(mk(69), { fetch: f.fetch, now: clock });

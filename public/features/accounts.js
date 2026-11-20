@@ -37,6 +37,7 @@ const ERRORS = [
   [/^credentials file unreadable$/, () => t('accounts.error.unreadable')],
   [/not read on this platform$/, () => t('accounts.error.platform')],
   [/^accounts file unreadable$/, () => t('accounts.login.error.file')],
+  [/^accounts file not written$/, () => t('accounts.login.error.notWritten')],
   [/^login state mismatch$/, () => t('accounts.login.error.state')],
   [/^login flow expired$/, () => t('accounts.login.error.flowExpired')],
   [/^login flow not found$/, () => t('accounts.login.error.notFound')],
@@ -133,13 +134,14 @@ const mmss = (ms) => {
 let flow = null;
 let gen = 0;
 
+/** Stop the timers first, then forget the flow; cancel on the server when it may still be open there */
 function endFlow(cancel) {
   gen += 1;
   if (!flow) return;
   const f = flow;
-  flow = null;
   clearTimeout(f.pollTimer);
   clearInterval(f.tick);
+  flow = null;
   if (cancel) post('api/accounts/login/cancel', { flowId: f.id }).catch(() => {});
 }
 
@@ -202,15 +204,15 @@ function paste(r) {
     try {
       await postOrThrow('api/accounts/login/finish', { flowId: flow.id, code });
     } catch (err) {
-      // the flow is used up whatever the outcome: the owner starts again
+      // the server uses the flow up whatever the outcome: the owner starts again, nothing to cancel
       if (gen === mine) {
-        flow = null;
+        endFlow(false);
         choices(failure(reason(err)));
       }
       return;
     }
     if (gen !== mine) return;
-    flow = null;
+    endFlow(false);
     choices(h('p', { class: 'set-note' }, t('accounts.add.done')));
     refresh();
   }, { write: true });
@@ -229,11 +231,7 @@ function paste(r) {
 function device(r) {
   const f = flow;
   const deadline = Date.parse(r.expiresAt);
-  const code = h('code', { class: 'set-cmd', id: 'accountsUserCode' }, r.userCode);
-  // large and spaced, to read across a desk and type: the design system's mono face, set through the style object
-  code.style.fontSize = '28px';
-  code.style.letterSpacing = '0.12em';
-  code.style.padding = '8px 14px';
+  const code = h('code', { class: 'set-cmd acc-code', id: 'accountsUserCode' }, r.userCode);
   const left = h('span', { class: 'set-state' }, '');
   const copy = button(t('accounts.add.copy'), async () => {
     try {
@@ -261,8 +259,9 @@ function device(r) {
     try {
       out = await postOrThrow('api/accounts/login/poll', { flowId: f.id });
     } catch (err) {
+      // the request failed: the flow may still be open on the server, so it is cancelled
       if (gen === mine) {
-        flow = null;
+        endFlow(true);
         choices(failure(reason(err)));
       }
       return;
@@ -270,7 +269,7 @@ function device(r) {
     if (gen !== mine) return;
     if (out.state === 'pending') return schedule(out.interval ?? r.interval ?? 5);
     // the server drops the flow on any other answer: nothing to cancel
-    flow = null;
+    endFlow(false);
     if (out.state === 'done') {
       choices(h('p', { class: 'set-note' }, t('accounts.add.done')));
       refresh();

@@ -43,6 +43,9 @@ export const LOGIN_REQUESTS = {
     clientId: 'app_EMoamEEZ73f0CkXaXp7hrann',
     verificationUrl: 'https://auth.openai.com/codex/device',
     redirectUri: 'https://auth.openai.com/deviceauth/callback',
+    // opencodex sends only Content-Type on the three requests
+    jsonHeaders: (): Record<string, string> => ({ 'Content-Type': 'application/json' }),
+    formHeaders: (): Record<string, string> => ({ 'Content-Type': 'application/x-www-form-urlencoded' }),
   },
   copilot: {
     deviceUrl: 'https://github.com/login/device/code',
@@ -52,7 +55,11 @@ export const LOGIN_REQUESTS = {
     scope: 'read:user',
     verificationUrl: (userCode: string) => `https://github.com/login/device?user_code=${encodeURIComponent(userCode)}`,
     grantType: 'urn:ietf:params:oauth:grant-type:device_code',
-    headers: (): Record<string, string> => ({ Accept: 'application/json', 'User-Agent': 'portboard' }),
+    formHeaders: (): Record<string, string> => ({
+      Accept: 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'portboard',
+    }),
     userHeaders: (token: string): Record<string, string> => ({
       Authorization: `Bearer ${token}`,
       Accept: 'application/vnd.github+json',
@@ -75,6 +82,7 @@ export type LoginErrorText =
   | 'login request timed out'
   | 'login response unusable'
   | 'accounts file unreadable'
+  | 'accounts file not written'
   | 'too many login flows'
   | 'invalid login request';
 
@@ -85,14 +93,18 @@ const STATUS: [RegExp, number][] = [
   [/^login flow expired$/, 410],
   [/^too many login flows$/, 429],
   [/^accounts file unreadable$/, 500],
+  [/^accounts file not written$/, 500],
   [/^login denied$/, 400],
 ];
 
 export class LoginError extends Error {
   readonly text: LoginErrorText;
   readonly status: number;
-  constructor(text: LoginErrorText) {
+  /** a network error, a timeout, a 5xx or a 429: worth asking again (a device-code poll waits and tries once more) */
+  readonly transient: boolean;
+  constructor(text: LoginErrorText, transient = false) {
     super(text);
+    this.transient = transient;
     this.text = text;
     this.status = STATUS.find(([re]) => re.test(text))?.[1] ?? 502;
   }
@@ -102,6 +114,9 @@ const CLAUDE_LIFE_MS = 10 * 60_000;
 const DEVICE_LIFE_MS = 15 * 60_000;
 const MAX_FLOWS = 3;
 const MAX_BODY = 512 * 1024;
+/** the longest user code taken from a vendor, as sent */
+const USER_CODE_MAX = 64;
+const MAX_EXPIRES_IN_S = 31_536_000;
 const PROFILE_MAX_BODY = 64 * 1024;
 const TOKEN_TIMEOUT_MS = 30_000;
 const PROFILE_TIMEOUT_MS = 10_000;
@@ -119,6 +134,8 @@ export interface LoginOptions {
 }
 
 interface Flow {
+  /** the key in `flows`: set when the flow is opened */
+  id: string;
   provider: Provider;
   kind: 'paste' | 'device';
   alias: string | null;
@@ -128,8 +145,10 @@ interface Flow {
   state?: string;
   /** codex */
   deviceAuthId?: string;
-  /** codex and copilot: what the owner types */
+  /** codex: the code exactly as the vendor sent it (sent back to the vendor as it is) */
   userCode?: string;
+  /** codex and copilot: the cut, control-free text shown to the owner */
+  shownCode?: string;
   /** copilot */
   deviceCode?: string;
   /** device flows: seconds between two vendor requests, and the earliest time the next one may go out */
@@ -137,6 +156,8 @@ interface Flow {
   nextPollAt: number;
   /** a vendor request for this flow is running */
   busy: boolean;
+  /** device flows: true until the first vendor answer of a poll arrived (only a failure before it is retried) */
+  asking: boolean;
 }
 
 const flows = new Map<string, Flow>();
@@ -210,7 +231,7 @@ interface Answer {
 async function vendor(
   o: LoginOptions,
   url: string,
-  init: { method: 'GET' | 'POST'; headers: Record<string, string>; body?: string; redirect: 'manual' | 'error'; timeoutMs: number; max?: number },
+  init: { method: 'GET' | 'POST'; headers: Record<string, string>; body?: string; redirect: 'manual' | 'error'; timeoutMs: number; max?: number; bodyOnError?: boolean },
 ): Promise<Answer> {
   let res: Response;
   try {
@@ -222,9 +243,9 @@ async function vendor(
       signal: AbortSignal.timeout(init.timeoutMs),
     });
   } catch (err) {
-    throw new LoginError(isTimeout(err) ? 'login request timed out' : 'login request failed');
+    throw new LoginError(isTimeout(err) ? 'login request timed out' : 'login request failed', true);
   }
-  if (!res.ok) {
+  if (!res.ok && !init.bodyOnError) {
     await res.body?.cancel().catch(() => {});
     return { ok: false, status: res.status, body: null };
   }
@@ -232,18 +253,23 @@ async function vendor(
   try {
     raw = await readLimited(res, init.max ?? MAX_BODY);
   } catch (err) {
-    throw new LoginError(isTimeout(err) ? 'login request timed out' : 'login request failed');
+    throw new LoginError(isTimeout(err) ? 'login request timed out' : 'login request failed', true);
   }
-  if (raw === null) throw new LoginError('login response unusable');
+  if (raw === null) {
+    if (!res.ok) return { ok: false, status: res.status, body: null };
+    throw new LoginError('login response unusable');
+  }
+  let parsed: unknown = null;
   try {
-    return { ok: true, status: res.status, body: JSON.parse(raw) };
+    parsed = JSON.parse(raw);
   } catch {
-    return { ok: true, status: res.status, body: null };
+    // not JSON: null
   }
+  return { ok: res.ok, status: res.status, body: parsed };
 }
 
 const form = (fields: Record<string, string>) => new URLSearchParams(fields).toString();
-const failedHttp = (status: number): LoginError => new LoginError(`login request failed (HTTP ${status})`);
+const failedHttp = (status: number): LoginError => new LoginError(`login request failed (HTTP ${status})`, status >= 500 || status === 429);
 
 /** The body of a 2xx answer as an object; anything else is an error */
 function objectOf(a: Answer): Record<string, unknown> {
@@ -254,26 +280,33 @@ function objectOf(a: Answer): Record<string, unknown> {
 
 // ---- the flow table ----
 
-/** Flows past their life go; the timing is the injected clock's */
-function sweep(now: number): void {
-  for (const [id, f] of flows) if (f.expiresAt <= now) flows.delete(id);
+/**
+ * Flows past their life go, at the start of every call. The flow a call is about is kept for that call, which answers
+ * `expired` for it (and drops it); the timing is the injected clock's.
+ */
+function sweep(now: number, keep?: unknown): void {
+  for (const [id, f] of flows) if (f.expiresAt <= now && id !== keep) flows.delete(id);
 }
 
-function open(f: Flow, now: number): string {
+function open(f: Omit<Flow, 'id'>, now: number): string {
   sweep(now);
   let n = 0;
   for (const x of flows.values()) if (x.provider === f.provider) n++;
   if (n >= MAX_FLOWS) throw new LoginError('too many login flows');
   const id = randomBytes(16).toString('hex');
-  flows.set(id, f);
+  flows.set(id, { ...f, id });
   return id;
 }
+
+/** The flow is still the one in the table: not cancelled and not swept since the call began */
+const alive = (f: Flow): boolean => flows.get(f.id) === f;
 
 const aliasOf = (alias: unknown): string | null => (typeof alias === 'string' ? clipOrNull(alias.trim(), NAME_MAX) : null);
 
 /** Start a flow. The result holds only what the owner needs to go on. */
 export async function startLogin(provider: Provider, alias: unknown, o: LoginOptions = {}): Promise<StartResult> {
   const now = nowOf(o);
+  sweep(now);
   if (provider === 'claude') return startClaude(aliasOf(alias), now);
   if (provider === 'codex') return startCodex(aliasOf(alias), now, o);
   if (provider === 'copilot') return startCopilot(aliasOf(alias), now, o);
@@ -286,7 +319,7 @@ function startClaude(alias: string | null, now: number): StartResult {
   const state = b64url(randomBytes(32));
   const challenge = b64url(createHash('sha256').update(verifier).digest());
   const expiresAt = now + CLAUDE_LIFE_MS;
-  const flowId = open({ provider: 'claude', kind: 'paste', alias, expiresAt, verifier, state, interval: 0, nextPollAt: 0, busy: false }, now);
+  const flowId = open({ provider: 'claude', kind: 'paste', alias, expiresAt, verifier, state, interval: 0, nextPollAt: 0, busy: false, asking: false }, now);
   const url = new URL(spec.authorizeUrl);
   url.search = new URLSearchParams({
     code: 'true',
@@ -307,7 +340,7 @@ async function startCodex(alias: string | null, now: number, o: LoginOptions): P
   if ([...flows.values()].filter((f) => f.provider === 'codex').length >= MAX_FLOWS) throw new LoginError('too many login flows');
   const a = await vendor(o, spec.userCodeUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: spec.jsonHeaders(),
     body: JSON.stringify({ client_id: spec.clientId }),
     redirect: 'manual',
     timeoutMs: REQUEST_TIMEOUT_MS,
@@ -315,12 +348,12 @@ async function startCodex(alias: string | null, now: number, o: LoginOptions): P
   const body = objectOf(a);
   const deviceAuthId = str(body.device_auth_id);
   const userCode = str(body.user_code) ?? str(body.usercode);
-  if (!deviceAuthId || !userCode) throw new LoginError('login response unusable');
+  if (!deviceAuthId || !userCode || userCode.length > USER_CODE_MAX) throw new LoginError('login response unusable');
   const interval = intervalOf(body.interval);
   const at = nowOf(o);
   const expiresAt = at + DEVICE_LIFE_MS;
   const shown = clip(userCode, NAME_MAX);
-  const flowId = open({ provider: 'codex', kind: 'device', alias, expiresAt, deviceAuthId, userCode: shown, interval, nextPollAt: at + interval * 1000, busy: false }, at);
+  const flowId = open({ provider: 'codex', kind: 'device', alias, expiresAt, deviceAuthId, userCode, shownCode: shown, interval, nextPollAt: at + interval * 1000, busy: false, asking: false }, at);
   return { flowId, provider: 'codex', kind: 'device', userCode: shown, verificationUrl: spec.verificationUrl, interval, expiresAt: iso(expiresAt) };
 }
 
@@ -330,7 +363,7 @@ async function startCopilot(alias: string | null, now: number, o: LoginOptions):
   if ([...flows.values()].filter((f) => f.provider === 'copilot').length >= MAX_FLOWS) throw new LoginError('too many login flows');
   const a = await vendor(o, spec.deviceUrl, {
     method: 'POST',
-    headers: { ...spec.headers(), 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: spec.formHeaders(),
     body: form({ client_id: spec.clientId, scope: spec.scope }),
     redirect: 'manual',
     timeoutMs: REQUEST_TIMEOUT_MS,
@@ -338,15 +371,15 @@ async function startCopilot(alias: string | null, now: number, o: LoginOptions):
   const body = objectOf(a);
   const userCode = str(body.user_code);
   const deviceCode = str(body.device_code);
-  if (!userCode || !deviceCode) throw new LoginError('login response unusable');
+  if (!userCode || !deviceCode || userCode.length > USER_CODE_MAX) throw new LoginError('login response unusable');
   const interval = intervalOf(body.interval);
   const at = nowOf(o);
   const life = Math.min(seconds(body.expires_in, DEVICE_LIFE_MS / 1000), 30 * 60) * 1000;
   const expiresAt = at + life;
   const shown = clip(userCode, NAME_MAX);
-  const flowId = open({ provider: 'copilot', kind: 'device', alias, expiresAt, deviceCode, userCode: shown, interval, nextPollAt: at + interval * 1000, busy: false }, at);
+  const flowId = open({ provider: 'copilot', kind: 'device', alias, expiresAt, deviceCode, shownCode: shown, interval, nextPollAt: at + interval * 1000, busy: false, asking: false }, at);
   // the address is built here from the code: the answer's own address is not trusted
-  return { flowId, provider: 'copilot', kind: 'device', userCode: shown, verificationUrl: spec.verificationUrl(shown), interval, expiresAt: iso(expiresAt) };
+  return { flowId, provider: 'copilot', kind: 'device', userCode: shown, verificationUrl: spec.verificationUrl(userCode), interval, expiresAt: iso(expiresAt) };
 }
 
 // ---- Claude: finish ----
@@ -380,10 +413,14 @@ export function parsePasted(text: string): { code: string; state: string | null 
   return code ? { code, state: state || null } : null;
 }
 
-const expiresIn = (now: number, v: unknown) => iso(now + seconds(v, 3600) * 1000);
+/** `expires_in` as an ISO time: a finite number above 0 and at most a year, else one hour */
+function expiresIn(now: number, v: unknown): string {
+  const n = num(v);
+  return iso(now + (n !== null && n > 0 && n <= MAX_EXPIRES_IN_S ? n : 3600) * 1000);
+}
 
-/** The plan from the profile answer; any failure is null (the account is added without a plan) */
-async function claudePlan(token: string, o: LoginOptions): Promise<string | null> {
+/** The plan and the account uuid from the profile answer; any failure is nulls (the account is added without a plan) */
+async function claudeProfile(token: string, o: LoginOptions): Promise<{ plan: string | null; uuid: string | null }> {
   try {
     const a = await vendor(o, LOGIN_REQUESTS.claude.profileUrl, {
       method: 'GET',
@@ -392,19 +429,33 @@ async function claudePlan(token: string, o: LoginOptions): Promise<string | null
       timeoutMs: PROFILE_TIMEOUT_MS,
       max: PROFILE_MAX_BODY,
     });
-    if (!a.ok || !isObj(a.body) || !isObj(a.body.organization)) return null;
-    return clipOrNull(str(a.body.organization.rate_limit_tier) ?? str(a.body.organization.organization_type), PLAN_MAX);
+    if (!a.ok || !isObj(a.body)) return { plan: null, uuid: null };
+    const org = isObj(a.body.organization) ? a.body.organization : {};
+    return {
+      plan: clipOrNull(str(org.rate_limit_tier) ?? str(org.organization_type), PLAN_MAX),
+      uuid: isObj(a.body.account) ? str(a.body.account.uuid) : null,
+    };
   } catch {
-    return null;
+    return { plan: null, uuid: null };
   }
 }
 
 /** Finish a Claude flow with the text the owner pasted. The flow is used up whatever the outcome. */
 export async function finishLogin(flowId: unknown, pasted: unknown, o: LoginOptions = {}): Promise<StoredAccount> {
   const now = nowOf(o);
+  sweep(now, flowId);
   const f = typeof flowId === 'string' ? flows.get(flowId) : undefined;
-  if (!f || f.kind !== 'paste' || typeof flowId !== 'string') throw new LoginError('login flow not found');
-  flows.delete(flowId);
+  if (!f || f.kind !== 'paste' || f.busy) throw new LoginError('login flow not found');
+  // used up whatever the outcome; until then it stays in the table so a cancel can still stop the save
+  f.busy = true;
+  try {
+    return await finishFlow(f, pasted, now, o);
+  } finally {
+    flows.delete(f.id);
+  }
+}
+
+async function finishFlow(f: Flow, pasted: unknown, now: number, o: LoginOptions): Promise<StoredAccount> {
   if (f.expiresAt <= now) throw new LoginError('login flow expired');
   if (typeof pasted !== 'string' || pasted.length > 4096) throw new LoginError('invalid login request');
   const p = parsePasted(pasted);
@@ -428,22 +479,26 @@ export async function finishLogin(flowId: unknown, pasted: unknown, o: LoginOpti
   const body = objectOf(a);
   const access = str(body.access_token);
   const account = isObj(body.account) ? body.account : {};
-  const identity = str(account.uuid);
-  if (!access || !identity) throw new LoginError('login response unusable');
-  const plan = await claudePlan(access, o);
+  if (!access) throw new LoginError('login response unusable');
+  const profile = await claudeProfile(access, o);
+  // the token answer's account first, the profile's when it has none
+  const identity = str(account.uuid) ?? profile.uuid;
+  if (!identity) throw new LoginError('login response unusable');
   return save(
-    { provider: 'claude', alias: f.alias, identity, email: clipOrNull(str(account.email_address), EMAIL_MAX), plan, tokens: { access, refresh: str(body.refresh_token), idToken: null, expiresAt: expiresIn(nowOf(o), body.expires_in) } },
+    f,
+    { provider: 'claude', alias: f.alias, identity, email: clipOrNull(str(account.email_address), EMAIL_MAX), plan: profile.plan, tokens: { access, refresh: str(body.refresh_token), idToken: null, expiresAt: expiresIn(nowOf(o), body.expires_in) } },
     o,
   );
 }
 
-async function save(a: Omit<StoredAccount, 'id' | 'addedAt'>, o: LoginOptions): Promise<StoredAccount> {
+/** Store the account, unless the flow was cancelled while the vendor answered. A read failure and a write failure have their own texts. */
+async function save(f: Flow, a: Omit<StoredAccount, 'id' | 'addedAt'>, o: LoginOptions): Promise<StoredAccount> {
+  if (!alive(f)) throw new LoginError('login flow not found');
   const store: StoreOptions & { now?: () => number } = { path: o.accountsPath, now: o.now };
   try {
     return await upsertAccount(a, store);
-  } catch {
-    // the file could not be read, or could not be written: either way nothing was changed that we know of
-    throw new LoginError(UNREADABLE);
+  } catch (err) {
+    throw new LoginError((err as Error | null)?.message === UNREADABLE ? UNREADABLE : 'accounts file not written');
   }
 }
 
@@ -454,22 +509,32 @@ const done = (account: StoredAccount): PollResult => ({ state: 'done', account }
 /** Ask once. Within the interval of the last request nothing is sent and the answer is `pending`. */
 export async function pollLogin(flowId: unknown, o: LoginOptions = {}): Promise<PollResult> {
   const now = nowOf(o);
+  sweep(now, flowId);
   const f = typeof flowId === 'string' ? flows.get(flowId) : undefined;
-  if (!f || f.kind !== 'device' || typeof flowId !== 'string') throw new LoginError('login flow not found');
+  if (!f || f.kind !== 'device') throw new LoginError('login flow not found');
   if (f.expiresAt <= now) {
-    flows.delete(flowId);
+    flows.delete(f.id);
     return { state: 'expired', error: 'login flow expired' };
   }
   if (f.busy || now < f.nextPollAt) return { state: 'pending', interval: f.interval };
   f.busy = true;
+  f.asking = true;
   f.nextPollAt = now + f.interval * 1000;
   try {
     const r = f.provider === 'codex' ? await pollCodex(f, o) : await pollCopilot(f, o);
-    if (r.state !== 'pending') flows.delete(flowId);
+    if (r.state !== 'pending') flows.delete(f.id);
     else r.interval = f.interval;
     return r;
   } catch (err) {
-    flows.delete(flowId);
+    // cancelled while the vendor answered: nothing was saved, and the owner is told the flow is gone
+    if (err instanceof LoginError && err.text === 'login flow not found') throw err;
+    // a failure before the vendor answered, of a kind that passes: the flow stays and the next poll tries again
+    if (err instanceof LoginError && err.transient && f.asking && alive(f)) {
+      f.interval = Math.min(MAX_INTERVAL_S, f.interval + SLOW_DOWN_S);
+      f.nextPollAt = nowOf(o) + f.interval * 1000;
+      return { state: 'pending', interval: f.interval };
+    }
+    flows.delete(f.id);
     return { state: 'failed', error: err instanceof LoginError ? err.text : 'login request failed' };
   } finally {
     f.busy = false;
@@ -480,19 +545,20 @@ async function pollCodex(f: Flow, o: LoginOptions): Promise<PollResult> {
   const spec = LOGIN_REQUESTS.codex;
   const a = await vendor(o, spec.pollUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: spec.jsonHeaders(),
     body: JSON.stringify({ device_auth_id: f.deviceAuthId, user_code: f.userCode }),
     redirect: 'manual',
     timeoutMs: REQUEST_TIMEOUT_MS,
   });
   if (!a.ok && (a.status === 403 || a.status === 404)) return { state: 'pending' };
   const grant = objectOf(a);
+  f.asking = false;
   const code = str(grant.authorization_code);
   const verifier = str(grant.code_verifier);
   if (!code || !verifier) throw new LoginError('login response unusable');
   const t = await vendor(o, spec.tokenUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+    headers: spec.formHeaders(),
     body: form({ grant_type: 'authorization_code', client_id: spec.clientId, code, code_verifier: verifier, redirect_uri: spec.redirectUri }),
     redirect: 'manual',
     timeoutMs: REQUEST_TIMEOUT_MS,
@@ -510,6 +576,7 @@ async function pollCodex(f: Flow, o: LoginOptions): Promise<PollResult> {
   const identity = pick('chatgpt_account_id', 'https://api.openai.com/auth') ?? orgId;
   if (!identity) throw new LoginError('login response unusable');
   const account = await save(
+    f,
     {
       provider: 'codex',
       alias: f.alias,
@@ -527,19 +594,27 @@ async function pollCopilot(f: Flow, o: LoginOptions): Promise<PollResult> {
   const spec = LOGIN_REQUESTS.copilot;
   const a = await vendor(o, spec.tokenUrl, {
     method: 'POST',
-    headers: { ...spec.headers(), 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: spec.formHeaders(),
     body: form({ client_id: spec.clientId, device_code: f.deviceCode ?? '', grant_type: spec.grantType }),
     redirect: 'manual',
     timeoutMs: REQUEST_TIMEOUT_MS,
+    bodyOnError: true,
   });
-  const body = objectOf(a);
-  const access = str(body.access_token);
+  // like opencodex: the body's `error` is read first, whatever the HTTP status (a pending answer may be a 400)
+  const body = isObj(a.body) ? a.body : {};
+  const access = a.ok ? str(body.access_token) : null;
   if (!access) {
-    switch (str(body.error)) {
+    const code = str(body.error);
+    if (code === null) {
+      if (!a.ok) throw failedHttp(a.status);
+      throw new LoginError('login response unusable');
+    }
+    f.asking = false;
+    switch (code) {
       case 'authorization_pending':
         return { state: 'pending' };
       case 'slow_down':
-        f.interval = Math.min(MAX_INTERVAL_S, f.interval + SLOW_DOWN_S);
+        f.interval = Math.min(MAX_INTERVAL_S, Math.max(f.interval + SLOW_DOWN_S, num(body.interval) ?? 0));
         f.nextPollAt = nowOf(o) + f.interval * 1000;
         return { state: 'pending' };
       case 'expired_token':
@@ -550,6 +625,7 @@ async function pollCopilot(f: Flow, o: LoginOptions): Promise<PollResult> {
         throw new LoginError('login response unusable');
     }
   }
+  f.asking = false;
   const u = objectOf(
     await vendor(o, spec.userUrl, { method: 'GET', headers: spec.userHeaders(access), redirect: 'error', timeoutMs: REQUEST_TIMEOUT_MS }),
   );
@@ -557,6 +633,7 @@ async function pollCopilot(f: Flow, o: LoginOptions): Promise<PollResult> {
   if (!id) throw new LoginError('login response unusable');
   const email = typeof u.email === 'string' && u.email.includes('@') ? clipOrNull(u.email, EMAIL_MAX) : null;
   const account = await save(
+    f,
     { provider: 'copilot', alias: f.alias, identity: id, email, plan: null, tokens: { access, refresh: str(body.refresh_token), idToken: null, expiresAt: null } },
     o,
   );
@@ -564,6 +641,7 @@ async function pollCopilot(f: Flow, o: LoginOptions): Promise<PollResult> {
 }
 
 /** Drop a flow. True when there was one. */
-export function cancelLogin(flowId: unknown): boolean {
+export function cancelLogin(flowId: unknown, o: LoginOptions = {}): boolean {
+  sweep(nowOf(o));
   return typeof flowId === 'string' && flows.delete(flowId);
 }

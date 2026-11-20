@@ -102,6 +102,7 @@
   "accounts.login.error.flowExpired": "로그인 시간이 지났어요. 다시 시작하세요.",
   "accounts.login.error.invalid": "올바르지 않은 요청이에요.",
   "accounts.login.error.notFound": "이 로그인은 더 이상 열려 있지 않아요. 다시 시작하세요.",
+  "accounts.login.error.notWritten": "accounts.json에 쓸 수 없어서 계정을 저장하지 못했어요.",
   "accounts.login.error.state": "다른 로그인의 코드예요. 다시 시작하세요.",
   "accounts.login.error.timedOut": "로그인 요청 시간이 초과됐어요.",
   "accounts.login.error.tooMany": "열린 로그인이 너무 많아요. 하나를 끝내거나 취소하세요.",
