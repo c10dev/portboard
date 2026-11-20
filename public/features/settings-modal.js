@@ -40,6 +40,7 @@ export const SECTIONS = [
   },
   { id: 'notify', write: true, body: 'notifyBody', script: 'digest.js', lead: () => [t('settings.lead.notify')] },
   { id: 'claude', write: true, body: 'claudeBody', script: 'claude-autostop.js', lead: () => [t('settings.lead.claude')] },
+  { id: 'accounts', body: 'accountsBody', script: 'accounts.js', lead: () => [t('settings.lead.accounts')] },
   { id: 'secrets', body: 'secretsBody', script: 'secrets.js', lead: () => [t('settings.lead.secrets')] },
   { id: 'display', body: 'displayBody', lead: () => [t('settings.lead.display')] },
   { id: 'about', body: 'aboutBody', script: 'about.js' },

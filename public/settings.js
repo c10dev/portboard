@@ -3,7 +3,7 @@
 // legacySection; test/ui-settings.test.ts keeps the two lists equal). A classic script in <head>, before anything paints.
 
 (function () {
-  var IDS = ['start', 'remote', 'write-devices', 'port-rules', 'notify', 'claude', 'secrets', 'display', 'about'];
+  var IDS = ['start', 'remote', 'write-devices', 'port-rules', 'notify', 'claude', 'accounts', 'secrets', 'display', 'about'];
   var id = location.hash.replace(/^#(settings\/?)?/, '');
   location.replace('./' + location.search + '#settings/' + (IDS.indexOf(id) >= 0 ? id : 'start'));
 })();

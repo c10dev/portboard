@@ -151,6 +151,7 @@ test('local tools/list order (FEATURES order) is the order clients have always s
     'adoption_stats',
     'list_port_rules', 'set_port_rule',
     'memory_usage',
+    'list_accounts',
   ]);
 });
 

@@ -100,6 +100,8 @@ export const SITE_DEFAULTS = {
     self: { kind: null as MachineKind | null, tags: [] as string[], maxSessions: null as number | null },
     cloud: { enabled: false, tags: ['sandbox', 'parallel', 'isolated'] as string[] },
   },
+  /** AI subscription accounts view (docs/accounts.md): reads the local Claude Code and Codex logins; off until enabled */
+  accounts: { enabled: false },
   /** where_to_run's score weights over recommend.ts DEFAULT_WEIGHTS (only numbers between -1 and 1 are taken) */
   recommend: { weights: {} as Record<string, number> },
 };
@@ -167,6 +169,11 @@ export function machinesConfig(raw: Record<string, unknown> | undefined): typeof
   };
 }
 
+/** portboard.json `accounts`: on only for `enabled: true` */
+export function accountsConfig(raw: Record<string, unknown> | undefined): typeof SITE_DEFAULTS.accounts {
+  return { enabled: raw?.enabled === true };
+}
+
 /** portboard.json `recommend`: weights between -1 and 1 by name (recommend.ts says which names it knows) */
 export function recommendConfig(raw: Record<string, unknown> | undefined): typeof SITE_DEFAULTS.recommend {
   const w = raw?.weights && typeof raw.weights === 'object' && !Array.isArray(raw.weights) ? (raw.weights as Record<string, unknown>) : {};
@@ -202,6 +209,7 @@ export interface SiteFile {
   agents?: AgentTarget[];
   agent?: Record<string, unknown>;
   machines?: Record<string, unknown>;
+  accounts?: Record<string, unknown>;
   recommend?: Record<string, unknown>;
 }
 
@@ -251,6 +259,8 @@ export interface Site {
   agent: typeof SITE_DEFAULTS.agent;
   /** portboard.json `machines` (machine_status, where_to_run) */
   machines: typeof SITE_DEFAULTS.machines;
+  /** portboard.json `accounts` (list_accounts, GET /api/accounts) */
+  accounts: typeof SITE_DEFAULTS.accounts;
   /** portboard.json `recommend` (where_to_run's weights) */
   recommend: typeof SITE_DEFAULTS.recommend;
   /** where each value came from */
@@ -268,7 +278,7 @@ export interface Site {
 type Env = Record<string, string | undefined>;
 
 const STRING_KEYS = ['host', 'tailnet', 'user', 'checkout', 'poolUrl', 'dashboardUrl', 'publicUrl', 'locale', 'utcOffset'] as const;
-const OBJECT_KEYS = ['pve', 'windows', 'agent', 'machines', 'recommend'] as const;
+const OBJECT_KEYS = ['pve', 'windows', 'agent', 'machines', 'accounts', 'recommend'] as const;
 
 /** Parses portboard.json. A key of the wrong type is dropped (and reported); the rest still apply. */
 export function parseSiteFile(text: string | null): { file: SiteFile; found: boolean; error: string | null } {
@@ -398,6 +408,7 @@ export function resolveSite(input: ResolveInput = {}): Site {
     agents: f.agents ?? D.agents,
     agent: agentServeConfig(f.agent),
     machines: machinesConfig(f.machines),
+    accounts: accountsConfig(f.accounts),
     recommend: recommendConfig(f.recommend),
     sources: {
       host: hostSrc,

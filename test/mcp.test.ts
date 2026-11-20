@@ -258,6 +258,7 @@ test('stdio server answers initialize and tools/list, then exits when stdin clos
     'list_port_rules',
     'set_port_rule',
     'memory_usage',
+    'list_accounts',
   ]);
 });
 

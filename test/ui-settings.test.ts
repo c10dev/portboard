@@ -14,7 +14,7 @@ import { L } from './fixtures/locale.ts';
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
 
 test('route: #settings/<id>; #settings alone and unknown ids are 시작하기; other hashes are not ours', () => {
-  assert.deepEqual(SETTINGS_IDS, ['start', 'remote', 'write-devices', 'port-rules', 'notify', 'claude', 'secrets', 'display', 'about']);
+  assert.deepEqual(SETTINGS_IDS, ['start', 'remote', 'write-devices', 'port-rules', 'notify', 'claude', 'accounts', 'secrets', 'display', 'about']);
   assert.equal(SETTINGS_LABELS['write-devices'], L('쓰기 허용 기기', 'Write-enabled devices'));
   assert.equal(DEFAULT_SECTION, 'start');
   assert.equal(settingsHash('remote'), '#settings/remote');
