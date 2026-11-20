@@ -9,6 +9,7 @@ Terms in this file:
 - "Maintainer": the person who reviews and merges pull requests.
 - "Machine owner": the caller that `classify` in `src/core/access.ts` accepts for writes.
 - "Reservation owner": `<main repo folder>@<branch>`, as in [docs/agents.md](docs/agents.md).
+- "Operator": a background agent session that the maintainer runs to work on this repository for them.
 
 ## 1. What an agent may run
 
@@ -123,6 +124,12 @@ To add or change a feature:
 ## 7. Commits and pull requests
 
 - Agents do not merge, tag, publish to npm or create releases.
+  The one exception is the operator. The operator may merge a pull request, and it never tags, publishes or releases.
+  - A grade 2 pull request: only after the maintainer approves it in writing. Before the merge, the operator adds a comment that starts with `사용자 승인:` and quotes the approval.
+  - A grade 1 pull request: after an independent review comment on the pull request and a passing CI run.
+  - Grade 2 is a change to account, proxy or secret code, `src/remote/**`, `src/core/access.ts`, `src/features/router.ts`,
+    `REMOTE_READS`, runtime dependencies, `AGENTS.md`, `CONTRIBUTING.md`, `SECURITY.md` or `docs/security.md`. Grade 1 is any other change.
+  - The first line of a grade 2 pull request body is `등급 2: <reason>`.
 - Add one fragment in `changelog.d/` per pull request. Use the issue number or a short kebab-case topic, as the existing fragments do.
   Never use a generated branch name such as `claude/project-thread-…`: it says nothing about the change.
 <!-- TODO(maintainer): CONTRIBUTING.md, changelog.d/README.md, docs/architecture.md and the PR template name fragments differently. Pick one. -->
