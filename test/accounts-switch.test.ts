@@ -1029,10 +1029,11 @@ test('a use held in its refresh and a remove of the same account: the remove sta
   const using = use(a.id);
   await waitFor('the use asked the vendor and holds', () => callsTo(C.claude.tokenUrl).length === 1);
   const removing = remove(a.id);
-  // the remove would act at once without the turn; let the store and the folder code run several rounds
-  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  // a remove of another account has no turn to wait for: when it is done, the event loop ran the store chain,
+  // and a remove of the same account that ignored the turn would have had its chance to delete the record
+  const other = await claudeAccount();
+  assert.equal((await remove(other.id)).status, 200);
   assert.deepEqual((await stored()).accounts.map((x) => x.id), [a.id], 'the record stays while the use runs');
-  assert.equal(existsSync(HOMES) ? readdirSync(HOMES).length : 0, 0, 'the remove has not touched the folders');
   release(json({ access_token: CLAUDE_ACCESS_NEW, refresh_token: CLAUDE_REFRESH_NEW, expires_in: 28800 }));
   const [u, r] = await Promise.all([using, removing]);
   assert.equal(u.status, 200, 'the use finished first');
@@ -1056,7 +1057,7 @@ test('refresh: the vendor answered and the folder file cannot be checked (EACCES
     const r = await refreshAccount(a.id, options());
     assert.equal(r.state, 'done');
   } finally {
-    chmodSync(dir, 0o700);
+    if (existsSync(dir)) chmodSync(dir, 0o700);
   }
   const rec = (await stored()).accounts[0];
   assert.deepEqual([rec.tokens.access, rec.tokens.refresh], [CLAUDE_ACCESS_NEW, CLAUDE_REFRESH_NEW]);

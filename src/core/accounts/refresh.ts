@@ -121,8 +121,9 @@ async function run(id: string, o: HomesOptions & { forUse?: boolean }): Promise<
     const saved = await updateAccount(
       id,
       (x) => {
-        // a use marked the account while the vendor answered: the refresh token it spent is replaced, so the new tokens
-        // go into the record (the use writes the folder file from the record) and `home` stays
+        // no folder mark and a folder login file known to be there: the CLI owns the tokens, so this answer is not saved
+        // (with the mark, a use marked the account while the vendor answered: the refresh token it spent is replaced,
+        // so the new tokens below go into the record, the use writes the folder file from the record, and `home` stays)
         if (!x.home && fileThere) {
           skipped = true;
           return x;
