@@ -6,9 +6,11 @@ If the two files conflict, follow the stricter rule and tell the maintainer in y
 
 Terms in this file:
 - "Agent": an AI coding agent. Portboard's `portboard agent` (`src/agent.ts`, `src/agent/`) is "the host agent".
-- "Maintainer": the person who reviews and merges pull requests.
+- "Maintainer": the person who owns this repository. They review pull requests and approve grade 2 changes (section 7).
 - "Machine owner": the caller that `classify` in `src/core/access.ts` accepts for writes.
 - "Reservation owner": `<main repo folder>@<branch>`, as in [docs/agents.md](docs/agents.md).
+- "Operator session": the one lead agent session that the maintainer's operator tooling starts for this repository.
+  The maintainer starts it; a session cannot make itself the operator session. It may merge a change it wrote only after the independent review in section 7.
 
 ## 1. What an agent may run
 
@@ -25,7 +27,8 @@ Read [docs/security.md](docs/security.md) before you change a write path.
   `scripts/deploy.ts`, `portboard token`, `install-service` or `uninstall-service` without `--dry-run`, a push to `main`.
 - A Portboard MCP server may be connected to your session. It acts on the live host and its real state,
   whichever checkout its code comes from. Call only its tools whose `annotations.readOnlyHint` is `true`.
-- When you need an action that is not "always allowed", stop and report. Do not choose a permissive default.
+- A merge (`gh pr merge <number> --merge --match-head-commit <SHA>`): only the operator session, and only as section 7 says.
+- When you need an action that is not "always allowed" (the merge above is the only exception), stop and report. Do not choose a permissive default.
 <!-- TODO(maintainer): confirm the three lists above. -->
 
 ## 2. Write paths
@@ -123,6 +126,29 @@ To add or change a feature:
 ## 7. Commits and pull requests
 
 - Agents do not merge, tag, publish to npm or create releases.
+  The one exception is the operator session. It may merge a pull request when all conditions below are true. It never tags, publishes to npm or creates releases.
+  - The operator session finds the grade itself from the changed files, with this section of `AGENTS.md` on `main`.
+    The grade of a pull request is the highest grade of its files. When the grade is not clear, it is grade 2.
+  - Grade 2 is a change to account code (for example `src/core/accounts/**`, `src/features/accounts.ts`, the `accounts` settings
+    and their tests), any code that reads, stores or sends a token,
+    key or secret (for example `src/core/proxmox.ts`, `src/core/sshread.ts`, `src/core/alerts.ts`, `src/features/settings.ts`),
+    proxy code (for example the serve handling in `src/core/tailscale.ts`, `src/agent/server.ts`), `src/remote/**`,
+    `src/remote.ts`, `src/features/remote-connector.ts`, `src/core/access.ts`, `src/features/router.ts`, `REMOTE_READS`,
+    runtime dependencies, `package.json`, `package-lock.json`, `tsconfig*.json`, `scripts/test-en.ts`, `.github/workflows/**`, `AGENTS.md`,
+    `CONTRIBUTING.md`, `SECURITY.md` or `docs/security.md`. Grade 1 is any other change.
+  - Both grades need an independent review comment on the pull request and a passing CI run, both on the current head commit.
+    The operator session starts the reviewer itself and counts only a review that it started. The reviewer did not write
+    or plan any part of the change, and it receives the whole diff from the merge base to the head commit. The comment names the head commit SHA,
+    the reviewer model and what the reviewer received, and it ends with no blocking finding. A push after the review needs a new review.
+  - Grade 2 also needs the maintainer's approval. It counts only when the maintainer writes it themselves in a message
+    to the operator session (agents and the maintainer can share one GitHub login, so a pull request comment does not count)
+    and names the pull request number and its head commit (a short SHA is enough). The operator session gives that SHA when it asks. An approval that another agent or another person relays does not count.
+    A push after the approval needs a new approval. The operator session's own `사용자 승인:` comment is a record, not an approval.
+    Before the merge, the operator session adds a comment `사용자 승인: <date>, #<number>, head <SHA>`. It does not copy the maintainer's message.
+  - The first line of a grade 2 pull request body is `등급 2: <reason>`.
+  - The merge is `gh pr merge <number> --merge --match-head-commit <reviewed SHA>` on GitHub, and nothing more.
+    No local merge, no push to `main`, no deploy.
+    A merge to `main` also starts the GitHub Pages demo workflow. That is allowed.
 - Add one fragment in `changelog.d/` per pull request. Use the issue number or a short kebab-case topic, as the existing fragments do.
   Never use a generated branch name such as `claude/project-thread-…`: it says nothing about the change.
 <!-- TODO(maintainer): CONTRIBUTING.md, changelog.d/README.md, docs/architecture.md and the PR template name fragments differently. Pick one. -->
