@@ -620,11 +620,11 @@ test('both routes are write routes with a body limit that the registry sends thr
   assert.equal(big.status, 400);
 });
 
-// ---- 7. the six follow-ups (coord #141) ----
+// ---- 7. the six follow-ups ----
 
 const copilotStart = (expiresIn = 900) => ({ [C.copilot.deviceUrl]: () => json({ device_code: 'DEVICECODE-SECRET-0001', user_code: 'WXYZ-5678', expires_in: expiresIn, interval: 5 }) });
 
-test('#141.1 the page cancels the flow when the finish request fails (source check of public/features/accounts.js)', () => {
+test('the page cancels the flow when the finish request fails (source check of public/features/accounts.js)', () => {
   const src = readFileSync(new URL('../public/features/accounts.js', import.meta.url), 'utf8');
   const fin = src.slice(src.indexOf("await postOrThrow('api/accounts/login/finish'"));
   const catchBlock = fin.slice(fin.indexOf('catch (err)'), fin.indexOf('return;'));
@@ -647,7 +647,7 @@ test('the accounts page never puts a "null" text above the add-account row: plac
   assert.match(src, /function choices\(note\) \{[\s\S]*?place\(\s*note \?\? null,/);
 });
 
-test('#141.2 Copilot: a 5xx or 429 whose error is not one of the four codes is pending; the four codes keep their meaning', async () => {
+test('Copilot: a 5xx or 429 whose error is not one of the four codes is pending; the four codes keep their meaning', async () => {
   answers = copilotStart();
   const s = await startLogin('copilot', undefined, { fetch: fake, now, accountsPath: FILE });
   let interval = 5;
@@ -677,7 +677,7 @@ test('#141.2 Copilot: a 5xx or 429 whose error is not one of the four codes is p
   }
 });
 
-test('#141.3 a Copilot flow lives 900 seconds at most, whatever the vendor says', async () => {
+test('a Copilot flow lives 900 seconds at most, whatever the vendor says', async () => {
   answers = copilotStart(1800);
   const s = await startLogin('copilot', undefined, { fetch: fake, now, accountsPath: FILE });
   assert.equal(s.expiresAt, iso(NOW + 900_000));
@@ -686,14 +686,14 @@ test('#141.3 a Copilot flow lives 900 seconds at most, whatever the vendor says'
   assert.equal(t.expiresAt, iso(NOW + 300_000), 'a shorter life from the vendor is kept');
 });
 
-test('#141.3 the docs say what the code does: a transient failure is one before the first vendor answer, and the life is 15 minutes', () => {
+test('the docs say what the code does: a transient failure is one before the first vendor answer, and the life is 15 minutes', () => {
   const doc = readFileSync(new URL('../docs/accounts.md', import.meta.url), 'utf8');
   assert.match(doc, /before the vendor's first answer/);
   assert.match(doc, /Copilot flow lives at most 15 minutes|at most 15 minutes/);
   assert.ok(!doc.includes('30 minutes'));
 });
 
-test('#141.4 the usage cache holds 64 entries at most even when many tokens are added at the same time', async () => {
+test('the usage cache holds 64 entries at most even when many tokens are added at the same time', async () => {
   const mk = (i: number) => ({ provider: 'claude' as const, id: `t${i}`, status: 'ok' as const, email: null, plan: null, tier: null, expiresAt: null, refreshExpiresAt: null, accountId: null, accessToken: `tok-${i}`, error: null });
   let release: () => void = () => {};
   const gate = new Promise<void>((res) => { release = res; });
@@ -708,13 +708,13 @@ test('#141.4 the usage cache holds 64 entries at most even when many tokens are 
   assert.equal(quotaCacheSize(), 64);
 });
 
-test('#141.5 docs/platforms.md names accounts.json (every platform) and account-homes in the accounts row', () => {
+test('docs/platforms.md names accounts.json (every platform) and account-homes in the accounts row', () => {
   const row = readFileSync(new URL('../docs/platforms.md', import.meta.url), 'utf8').split('\n').find((l) => l.startsWith('| Accounts'));
   assert.ok(row);
   assert.ok(row.includes('accounts.json') && row.includes('account-homes'));
 });
 
-test('#141.6 the non-owner test sends a Codex start, so a request that got through would ask the vendor (source check)', () => {
+test('the non-owner test sends a Codex start, so a request that got through would ask the vendor (source check)', () => {
   const src = readFileSync(new URL('./accounts-login.test.ts', import.meta.url), 'utf8');
   const at = src.indexOf('a caller who is not the owner, or sends no X-Portboard');
   const block = src.slice(at, src.indexOf('accounts.enabled off', at));
@@ -722,7 +722,7 @@ test('#141.6 the non-owner test sends a Codex start, so a request that got throu
   assert.doesNotMatch(block, /provider: 'claude'/);
 });
 
-// ---- 8. fix round (coord #151): the file shape, the races, a folder that is gone, the delete order ----
+// ---- 8. fix round: the file shape, the races, a folder that is gone, the delete order ----
 
 const profile = (org: Record<string, unknown>) => ({
   [C.claude.tokenUrl]: () => json({ access_token: CLAUDE_ACCESS, refresh_token: CLAUDE_REFRESH, expires_in: 28800, account: { uuid: `uuid-fix-${seq++}`, email_address: 'p@example.com' } }),
@@ -905,9 +905,9 @@ test('remove deletes the folder first and the record only after: a folder that c
   assert.deepEqual((await stored()).accounts, []);
 });
 
-// ---- #154 / #155: the follow-ups of PR #45's review ----
+// ---- the follow-ups of PR #45 review ----
 
-test('#154 a use and a remove of the same account at once leave no folder without a record (50 rounds, both orders)', async () => {
+test('a use and a remove of the same account at once leave no folder without a record (50 rounds, both orders)', async () => {
   for (let i = 0; i < 50; i++) {
     const a = await claudeAccount();
     await Promise.all(i % 2 ? [use(a.id), remove(a.id)] : [remove(a.id), use(a.id)]);
@@ -916,7 +916,7 @@ test('#154 a use and a remove of the same account at once leave no folder withou
   }
 });
 
-test('#154 a refresh that was running when the use marked the account: the folder file gets the latest refresh token', async () => {
+test('a refresh that was running when the use marked the account: the folder file gets the latest refresh token', async () => {
   const a = await claudeAccount({ expiresAt: iso(NOW + 3600_000) });
   let release: (r: Response) => void = () => {};
   answers = { [C.claude.tokenUrl]: () => new Promise<Response>((res) => { release = res; }) };
@@ -942,7 +942,7 @@ test('#154 a refresh that was running when the use marked the account: the folde
   assert.equal(callsTo(C.claude.tokenUrl).length, 1);
 });
 
-test('#154 a folder file that cannot be checked (EACCES, not ENOENT) counts as a folder: the account is not refreshed', { skip: process.getuid?.() === 0 }, async () => {
+test('a folder file that cannot be checked (EACCES, not ENOENT) counts as a folder: the account is not refreshed', { skip: process.getuid?.() === 0 }, async () => {
   const a = await claudeAccount({ expiresAt: iso(NOW - 1000) });
   const dir = join(HOMES, a.id);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -975,7 +975,7 @@ const waitFor = async (what: string, ok: () => boolean | Promise<boolean>) => {
   assert.ok(await ok(), what);
 };
 
-test('#154 a late refresh that the vendor refuses: the use answers sign-in-again, takes the mark back, saves needsReauth and writes no folder file', async () => {
+test('a late refresh that the vendor refuses: the use answers sign-in-again, takes the mark back, saves needsReauth and writes no folder file', async () => {
   const a = await claudeAccount({ expiresAt: iso(NOW + 3600_000) });
   let release: (r: Response) => void = () => {};
   answers = { [C.claude.tokenUrl]: () => new Promise<Response>((res) => { release = res; }) };
@@ -991,7 +991,7 @@ test('#154 a late refresh that the vendor refuses: the use answers sign-in-again
   assert.equal(rec.tokens.refresh, CLAUDE_REFRESH);
 });
 
-test('#154 a use whose record was removed behind its back after it wrote the folder deletes that folder', async () => {
+test('a use whose record was removed behind its back after it wrote the folder deletes that folder', async () => {
   const a = await claudeAccount({ expiresAt: iso(NOW + 3600_000) });
   let release: (r: Response) => void = () => {};
   answers = { [C.claude.tokenUrl]: () => new Promise<Response>((res) => { release = res; }) };
@@ -1011,7 +1011,7 @@ test('#154 a use whose record was removed behind its back after it wrote the fol
   assert.equal(existsSync(join(HOMES, a.id)), false, 'the folder of a record that is gone is deleted');
 });
 
-test('#154 a plain file where the folder belongs (ENOTDIR) is not a folder account: it is refreshed like one without a folder', async () => {
+test('a plain file where the folder belongs (ENOTDIR) is not a folder account: it is refreshed like one without a folder', async () => {
   const a = await claudeAccount({ expiresAt: iso(NOW - 1000) });
   mkdirSync(HOMES, { recursive: true, mode: 0o700 });
   writeFileSync(join(HOMES, a.id), 'A FILE');
@@ -1022,7 +1022,63 @@ test('#154 a plain file where the folder belongs (ENOTDIR) is not a folder accou
   assert.equal(row.command, null);
 });
 
-test('#154 remove: a link inside the folder is deleted as a link and the file outside stays', async () => {
+test('a use held in its refresh and a remove of the same account: the remove starts only after the use has finished', async () => {
+  const a = await claudeAccount({ expiresAt: iso(NOW - 1000) });
+  let release: (r: Response) => void = () => {};
+  answers = { [C.claude.tokenUrl]: () => new Promise<Response>((res) => { release = res; }) };
+  const using = use(a.id);
+  await waitFor('the use asked the vendor and holds', () => callsTo(C.claude.tokenUrl).length === 1);
+  const removing = remove(a.id);
+  // the remove would act at once without the turn; let the store and the folder code run several rounds
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  assert.deepEqual((await stored()).accounts.map((x) => x.id), [a.id], 'the record stays while the use runs');
+  assert.equal(existsSync(HOMES) ? readdirSync(HOMES).length : 0, 0, 'the remove has not touched the folders');
+  release(json({ access_token: CLAUDE_ACCESS_NEW, refresh_token: CLAUDE_REFRESH_NEW, expires_in: 28800 }));
+  const [u, r] = await Promise.all([using, removing]);
+  assert.equal(u.status, 200, 'the use finished first');
+  assert.equal(r.status, 200);
+  assert.deepEqual((await stored()).accounts, []);
+  assert.equal(existsSync(join(HOMES, a.id)), false, 'no folder left for the removed record');
+});
+
+test('refresh: the vendor answered and the folder file cannot be checked (EACCES): the new tokens are saved', { skip: process.getuid?.() === 0 }, async () => {
+  const a = await claudeAccount({ expiresAt: iso(NOW - 1000) });
+  const dir = join(HOMES, a.id);
+  answers = {
+    [C.claude.tokenUrl]: () => {
+      // the folder appears while the vendor answers, so the check before the request found none
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      chmodSync(dir, 0o000);
+      return json({ access_token: CLAUDE_ACCESS_NEW, refresh_token: CLAUDE_REFRESH_NEW, expires_in: 28800 });
+    },
+  };
+  try {
+    const r = await refreshAccount(a.id, options());
+    assert.equal(r.state, 'done');
+  } finally {
+    chmodSync(dir, 0o700);
+  }
+  const rec = (await stored()).accounts[0];
+  assert.deepEqual([rec.tokens.access, rec.tokens.refresh], [CLAUDE_ACCESS_NEW, CLAUDE_REFRESH_NEW]);
+});
+
+test('refresh: the vendor answered and the CLI login file is in the folder: the new tokens are not saved', async () => {
+  const a = await claudeAccount({ expiresAt: iso(NOW - 1000) });
+  const dir = join(HOMES, a.id);
+  answers = {
+    [C.claude.tokenUrl]: () => {
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      writeFileSync(join(dir, '.credentials.json'), '{"claudeAiOauth":{}}');
+      return json({ access_token: CLAUDE_ACCESS_NEW, refresh_token: CLAUDE_REFRESH_NEW, expires_in: 28800 });
+    },
+  };
+  const r = await refreshAccount(a.id, options());
+  assert.equal(r.state, 'unusable');
+  const rec = (await stored()).accounts[0];
+  assert.deepEqual([rec.tokens.access, rec.tokens.refresh], [CLAUDE_ACCESS, CLAUDE_REFRESH]);
+});
+
+test('remove: a link inside the folder is deleted as a link and the file outside stays', async () => {
   const a = await claudeAccount();
   await use(a.id);
   const outside = mkdtempSync(join(FAKE_HOME, 'outside-'));
@@ -1034,7 +1090,7 @@ test('#154 remove: a link inside the folder is deleted as a link and the file ou
   assert.equal(readFileSync(join(outside, 'keep.txt'), 'utf8'), 'KEEP');
 });
 
-test('#155 an added Claude account whose plan is the tier text (as the sign-in stores it) shows no tier', async () => {
+test('an added Claude account whose plan is the tier text (as the sign-in stores it) shows no tier', async () => {
   const a = await claudeAccount({}, { plan: 'default_claude_max_5x' });
   answers = { [QUOTA_REQUESTS.claude.url]: () => json(CLAUDE_USAGE) };
   const row = (await report()).find((x) => x.id === a.id)!;
@@ -1042,7 +1098,7 @@ test('#155 an added Claude account whose plan is the tier text (as the sign-in s
   assert.equal((await stored()).accounts[0].tier, 'default_claude_max_5x', 'the stored value stays');
 });
 
-test('#155 an added Claude account shows its stored tier; with a folder it shows the rateLimitTier of the folder file', async () => {
+test('an added Claude account shows its stored tier; with a folder it shows the rateLimitTier of the folder file', async () => {
   const a = await claudeAccount();
   const old = await claudeAccount({}, { tier: null, subscriptionType: null });
   answers = { [QUOTA_REQUESTS.claude.url]: () => json(CLAUDE_USAGE) };

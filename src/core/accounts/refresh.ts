@@ -113,8 +113,8 @@ async function run(id: string, o: HomesOptions & { forUse?: boolean }): Promise<
   const access = body ? str(body.access_token) : null;
   if (!body || !access) return { state: 'transient' };
   const at = (o.now ?? Date.now)();
-  // a login file in the folder of a record without the mark: it is the CLI's original, and this answer is not written
-  // (a file that is not known to be there is not a reason to drop tokens: the old refresh token is spent, so they are kept in the record)
+  // no `home` mark and a login file in the folder: it is the CLI's original, so this answer is skipped (the `if` below)
+  // (a file that is not known to be there, state 'unknown', does not skip: the old refresh token is spent, so the new tokens are kept in the record)
   const fileThere = !o.forUse && (await homeFileState(a, o)) === 'file';
   try {
     let skipped = false;
