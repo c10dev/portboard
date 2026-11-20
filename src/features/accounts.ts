@@ -7,17 +7,20 @@
 //   POST /api/accounts/login/finish {flowId, code}     (Claude) → {account}
 //   POST /api/accounts/login/poll   {flowId}           (device code) → {state, account?, error?, interval?}
 //   POST /api/accounts/login/cancel {flowId}           → {ok: true}
+//   POST /api/accounts/use          {id} → {account, command}: the account's own CLI folder and the command that starts the CLI as it
+//   POST /api/accounts/remove       {id} → {ok: true}: the record and the folder Portboard made for it
 //   MCP list_accounts               the same report, local stdio server only: no `remote`, so the remote server never
 //                                   offers it. There is no MCP tool that adds an account.
 //
-// The four POST routes are `write: true`: the router checks X-Portboard and the owner, and writes the audit line, before
-// a handler runs. Their body keys (flowId, code, provider, alias) are not in the audit log's ID_KEYS, so the line holds
+// The six POST routes are `write: true`: the router checks X-Portboard and the owner, and writes the audit line, before
+// a handler runs. Their body keys (flowId, code, provider, alias, id) are not in the audit log's ID_KEYS, so the line holds
 // the key names and never the pasted code. The tokens stay inside src/core/accounts/. An answer holds only the
 // allowlisted fields (view.ts), never a StoredAccount.
 
 import { classify } from '../core/access.ts';
 import { cancelLogin, finishLogin, LoginError, pollLogin, startLogin, type Provider } from '../core/accounts/flows.ts';
-import { accountsReport, addedView } from '../core/accounts/view.ts';
+import { AccountError, removeAccountById, useAccount } from '../core/accounts/homes.ts';
+import { accountsReport, addedView, homeView } from '../core/accounts/view.ts';
 import { SITE } from '../core/site.ts';
 import { text } from '../mcp/kit.ts';
 import { ok, reply } from './router.ts';
@@ -44,9 +47,12 @@ function loginOptions() {
   return { fetch: o.fetch, now: o.now, accountsPath: o.accountsPath };
 }
 
+/** What "use" and "remove" get: the whole report options, as they read the account's folder the way the report does */
+const homesOptions = () => optionsFn();
+
 const PROVIDERS: Provider[] = ['claude', 'codex', 'copilot'];
 const failed = (err: unknown): Reply => {
-  if (err instanceof LoginError) return reply(err.status, { error: err.text });
+  if (err instanceof LoginError || err instanceof AccountError) return reply(err.status, { error: err.text });
   // not one of ours: the text stays out of the answer and the audit line (it could hold a token or a path)
   return reply(502, { error: 'login request failed' });
 };
@@ -63,7 +69,7 @@ export const accountsFeature: FeatureModule = {
         // The same owner decision as the audit log's read: plan, email and limits are the owner's business.
         const c = classify(req, await ctx.owner(), await ctx.policy());
         if (!c.owner) return reply(403, { error: 'owner only', reason: c.reason ?? '' });
-        return ok(await accountsReport(optionsFn()));
+        return ok(await accountsReport({ ...optionsFn(), refresh: true }));
       },
     },
     {
@@ -127,6 +133,38 @@ export const accountsFeature: FeatureModule = {
         return ok({ ok: true });
       },
     },
+    {
+      method: 'POST',
+      path: '/api/accounts/use',
+      write: true,
+      body: { limit: 4096 },
+      async handler({ body }) {
+        if (!enabledFn()) return reply(404, { error: 'accounts disabled' });
+        try {
+          const o = homesOptions();
+          const r = await useAccount((body as { id?: unknown } | null)?.id, o);
+          // the same rules as the list: read back from the folder file
+          return ok({ account: homeView(r.account, r.login, null, (o.now ?? Date.now)(), { active: true, command: r.command }), command: r.command });
+        } catch (err) {
+          return failed(err);
+        }
+      },
+    },
+    {
+      method: 'POST',
+      path: '/api/accounts/remove',
+      write: true,
+      body: { limit: 4096 },
+      async handler({ body }) {
+        if (!enabledFn()) return reply(404, { error: 'accounts disabled' });
+        try {
+          await removeAccountById((body as { id?: unknown } | null)?.id, homesOptions());
+          return ok({ ok: true });
+        } catch (err) {
+          return failed(err);
+        }
+      },
+    },
   ],
   tools: [
     {
@@ -139,7 +177,8 @@ export const accountsFeature: FeatureModule = {
           'remaining limits (used percent and reset time of the 5-hour and weekly windows; none for Copilot). It reads the CLIs\' ' +
           'two login files (~/.claude/.credentials.json, ~/.codex/auth.json) and Portboard\'s own accounts file, and asks each ' +
           'vendor\'s unofficial usage endpoint (api.anthropic.com, chatgpt.com), cached for 5 minutes. It never refreshes a ' +
-          'token and never returns a token. Read-only: it cannot add an account. When accounts.enabled is off in ' +
+          'token (only the dashboard does that, for an added account with no folder) and never returns a token. Each added account also says whether it is `active` and, once the owner chose "use this account" ' +
+          'in the dashboard, the `command` that starts its CLI in its own folder. Read-only: it cannot add, use or remove an account. When accounts.enabled is off in ' +
           'portboard.json it answers "accounts disabled" and reads nothing.',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },
         annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },

@@ -43,6 +43,8 @@ export interface Paths {
   remoteConfig: string;
   /** accounts.json: the AI accounts added in the dashboard, with their tokens (0600; src/core/accounts/store.ts, docs/accounts.md) */
   accounts: string;
+  /** account-homes/: one folder per added account that "use this account" made, with the CLI login file in it (0700; src/core/accounts/homes.ts, docs/accounts.md) */
+  accountHomes: string;
 
   // read only (the owner edits it)
   /** portboard.json: host, tailnet, checkout, repos root and other site values (site.ts, docs/config.md) */
@@ -109,6 +111,7 @@ export function resolvePaths(env: Env = process.env, home = homedir()): Paths {
     reservations: env.PORTBOARD_RESERVATIONS ?? join(configDir, 'reservations.json'),
     remoteConfig: env.PORTBOARD_REMOTE_CONFIG ?? join(configDir, 'remote.json'),
     accounts: env.PORTBOARD_ACCOUNTS ?? join(configDir, 'accounts.json'),
+    accountHomes: env.PORTBOARD_ACCOUNT_HOMES ?? join(configDir, 'account-homes'),
     site: env.PORTBOARD_SITE ?? join(configDir, 'portboard.json'),
     // A preview's own (it starts without one: no allowlist), never production's.
     access: env.PORTBOARD_ACCESS ?? join(configDir, 'access.json'),
