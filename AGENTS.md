@@ -23,13 +23,31 @@ Read [docs/security.md](docs/security.md) before you change a write path.
   ([docs/setup.md#preview-instances](docs/setup.md#preview-instances)). It needs Linux.
   Do not use 8790 (production) or 8797 (the host agent's default, `src/core/site.ts`).
   A preview keeps its own state, but its write routes act on the real host. Do not call them.
-- Never: `tailscale serve`, `tailscale funnel`, `systemctl`, `systemd-run`, `docker stop`, `scripts/deploy.sh`,
+- Never (the operator session's deploy below is the one exception for `scripts/deploy.sh`): `tailscale serve`, `tailscale funnel`, `systemctl`, `systemd-run`, `docker stop`, `scripts/deploy.sh`,
   `scripts/deploy.ts`, `portboard token`, `install-service` or `uninstall-service` without `--dry-run`, a push to `main`.
 - A Portboard MCP server may be connected to your session. It acts on the live host and its real state,
   whichever checkout its code comes from. Call only its tools whose `annotations.readOnlyHint` is `true`.
 - A merge (`gh pr merge <number> --merge --match-head-commit <SHA>`): only the operator session, and only as section 7 says.
-- When you need an action that is not "always allowed" (the merge above is the only exception), stop and report. Do not choose a permissive default.
-<!-- TODO(maintainer): confirm the three lists above. -->
+- A deploy of `main`: only the operator session. It deploys only `main` as it is on GitHub, and only through `scripts/deploy.sh`:
+  1. In the main checkout run `git fetch origin main`, then `git merge --ff-only origin/main`. Stop and report when the tree
+     is not clean, the branch is not `main`, the merge fails, or `git rev-parse HEAD` differs from `git rev-parse origin/main`.
+     Do not stash, reset or check out anything to make it pass.
+  2. Run `scripts/deploy.sh --no-push`. Its tests, live smoke checks (`scripts/deploy-smoke.ts`) and automatic rollback stay on.
+     If it fails, is refused or rolls back, stop and report. Do not run it again and do not act on its printed hints.
+  3. Only for a config change: the maintainer names the key and its value themselves in a message to the operator session
+     (a relayed request or a pull request comment does not count). After step 2 passed on the same HEAD, add or set only that key
+     in the production `~/.config/portboard/portboard.json`, keep every other key, and write the file in one atomic step
+     with mode 0600 (a temporary file in the same folder, then a rename). Then run
+     `scripts/deploy.sh --restart portboard --no-push`. If it fails or is refused for any reason, restore the file's previous
+     content (remove the key if it was absent), run the same command once, then stop and report.
+  4. Check the result with GET requests to `127.0.0.1:8790` only.
+  - Use no other `deploy.sh` flags. Everything else in the Never list above stays forbidden, including direct `systemctl`,
+    `tailscale serve`, `tailscale funnel`, `portboard token`, npm publish, tags, releases and a push to `main`.
+  - Record no token, email or account detail anywhere: a report, a message to any person or agent, a pull request, an issue,
+    a commit, a connector or a file. The one exception is the value the maintainer named in step 3, written only to
+    `portboard.json` together with the file's existing content. Do not print `portboard.json` or a response body that holds such values; count or summarise them instead.
+- When you need an action that is not "always allowed" (the merge and the deploy above are the only exceptions), stop and report. Do not choose a permissive default.
+<!-- TODO(maintainer): confirm the lists above. -->
 
 ## 2. Write paths
 
@@ -103,7 +121,7 @@ To add or change a feature:
 - `npm test` uses fixtures, PATH shims and fakes. It proves wiring and parsing only.
   It does not prove real `ss`, `tailscale`, `systemd`, `docker`, Proxmox or macOS behaviour.
 - `scripts/deploy-smoke.ts` and `scripts/remote-smoke.ts` run against the live server with real secrets.
-  Run them only when the maintainer asks.
+  Run them only when the maintainer asks. The operator session's deploy (section 1) runs `deploy-smoke.ts` inside `scripts/deploy.sh`.
 - The tarball smoke in `.github/workflows/release.yml` checks packaging on a CI runner. It is not a live check.
 - In your report, give each claim its level: fixture, fake or live (which command, on which kind of host).
 - Report skipped tests as skipped, for example `test/proxmox.test.ts` without `openssl`.
@@ -134,7 +152,8 @@ To add or change a feature:
     key or secret (for example `src/core/proxmox.ts`, `src/core/sshread.ts`, `src/core/alerts.ts`, `src/features/settings.ts`),
     proxy code (for example the serve handling in `src/core/tailscale.ts`, `src/agent/server.ts`), `src/remote/**`,
     `src/remote.ts`, `src/features/remote-connector.ts`, `src/core/access.ts`, `src/features/router.ts`, `REMOTE_READS`,
-    runtime dependencies, `package.json`, `package-lock.json`, `tsconfig*.json`, `scripts/test-en.ts`, `.github/workflows/**`, `AGENTS.md`,
+    runtime dependencies, `package.json`, `package-lock.json`, `tsconfig*.json`, `scripts/test-en.ts`, `scripts/deploy.sh`,
+    `scripts/deploy*.ts`, `deploy/**`, `.github/workflows/**`, `AGENTS.md`,
     `CONTRIBUTING.md`, `SECURITY.md` or `docs/security.md`. Grade 1 is any other change.
   - Both grades need an independent review comment on the pull request and a passing CI run, both on the current head commit.
     The operator session starts the reviewer itself and counts only a review that it started. The reviewer did not write
@@ -147,7 +166,7 @@ To add or change a feature:
     Before the merge, the operator session adds a comment `사용자 승인: <date>, #<number>, head <SHA>`. It does not copy the maintainer's message.
   - The first line of a grade 2 pull request body is `등급 2: <reason>`.
   - The merge is `gh pr merge <number> --merge --match-head-commit <reviewed SHA>` on GitHub, and nothing more.
-    No local merge, no push to `main`, no deploy.
+    The merge itself includes no local merge, no push to `main` and no deploy. A deploy is a separate action (section 1).
     A merge to `main` also starts the GitHub Pages demo workflow. That is allowed.
 - Add one fragment in `changelog.d/` per pull request. Use the issue number or a short kebab-case topic, as the existing fragments do.
   Never use a generated branch name such as `claude/project-thread-…`: it says nothing about the change.
