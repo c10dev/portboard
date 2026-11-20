@@ -61,7 +61,7 @@
   "access.token.badMode": "모르는 접근 모드 \"{mode}\" (tailscale 또는 token): tailscale로 동작해요",
   "accounts.disabled": "계정 보기가 꺼져 있어요. portboard.json에서 accounts.enabled를 true로 켜고 Portboard를 다시 시작하세요.",
   "accounts.docs": "계정 안내 ↗",
-  "accounts.error.expired": "액세스 토큰이 만료됐어요. CLI에서 다시 로그인하세요.",
+  "accounts.error.expired": "액세스 토큰이 만료됐어요. CLI를 한 번 실행하면 새로 받아요.",
   "accounts.error.failed": "사용량 요청이 실패했어요.",
   "accounts.error.failedHttp": "사용량 요청이 실패했어요 (HTTP {code}).",
   "accounts.error.platform": "이 운영체제의 로그인 저장소는 Portboard가 읽지 않아요.",

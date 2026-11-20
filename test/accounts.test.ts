@@ -567,3 +567,29 @@ test('the expiry line says "expired" only for a date in the past, and the platfo
   assert.match(src, /Date\.parse\(a\.expiresAt\) < Date\.now\(\)/);
   assert.match(src, /not read on this platform/);
 });
+
+// ---- second review ----
+
+test('strings from the login files are cut like strings from an answer', async () => {
+  const long = jwt({ email: `${'e'.repeat(1000)}@example.com`, 'https://api.openai.com/auth': { chatgpt_plan_type: `pl\u0000us${'x'.repeat(100)}` } });
+  const files = home({ claude: claudeFile({ subscriptionType: `ma\u0007x${'y'.repeat(100)}`, rateLimitTier: 't\u001fier' }), codex: codexFile({ id_token: long }) });
+  const [c, x] = await detectLogins(files);
+  assert.equal(c.plan, `max${'y'.repeat(37)}…`);
+  assert.equal(c.tier, 'tier');
+  assert.equal(x.email?.length, 255);
+  assert.ok(x.email?.endsWith('…'));
+  assert.equal(x.plan, `plus${'x'.repeat(36)}…`);
+});
+
+test('a failed answer closes its body: 401 and 500', async () => {
+  const [login] = await detectLogins(home({ claude: claudeFile() }));
+  for (const status of [401, 500]) {
+    clearQuotaCache();
+    const res = json({ error: 'x' }, status);
+    let cancelled = false;
+    const cancel = res.body!.cancel.bind(res.body);
+    Object.defineProperty(res.body!, 'cancel', { value: (...a: []) => ((cancelled = true), cancel(...a)) });
+    await fetchQuota(login, { fetch: fakeFetch(() => res).fetch, now });
+    assert.ok(cancelled, `HTTP ${status}: body cancelled`);
+  }
+});

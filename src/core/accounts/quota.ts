@@ -3,6 +3,7 @@
 // never: an error is one of a closed set of short fixed texts, with no response body, header or token in it.
 
 import { createHash } from 'node:crypto';
+import { clip, EMAIL_MAX, NAME_MAX, PLAN_MAX } from './clip.ts';
 import type { LocalLogin } from './detect.ts';
 
 // The two URLs and every request header live in this block and nowhere else. The shapes follow opencodex commit
@@ -63,9 +64,6 @@ interface Entry {
 
 const FAIL_MIN_MS = 5 * 60_000;
 const FAIL_MAX_MS = 60 * 60_000;
-const NAME_MAX = 40;
-const PLAN_MAX = 40;
-const EMAIL_MAX = 254;
 
 /** Keyed by provider and a hash of the access token, so a new login or a refreshed token starts clean. Memory only. */
 const cache = new Map<string, Entry>();
@@ -75,12 +73,6 @@ const inflight = new Map<string, Promise<QuotaResult>>();
 export function clearQuotaCache(): void {
   cache.clear();
   inflight.clear();
-}
-
-/** Text from a response: control characters out, cut at `max` with an ellipsis */
-function clip(v: string, max: number): string {
-  const clean = v.replace(/[\u0000-\u001f\u007f]/g, '');
-  return clean.length > max ? `${clean.slice(0, max)}…` : clean;
 }
 
 // ---- parsing ----
@@ -205,6 +197,7 @@ async function request(l: LocalLogin, doFetch: typeof fetch): Promise<Parsed> {
     const name = (err as { name?: unknown } | null)?.name;
     return { ok: false, error: name === 'AbortError' || name === 'TimeoutError' ? 'quota request timed out' : 'quota request failed' };
   }
+  if (!res.ok) await res.body?.cancel().catch(() => {});
   if (res.status === 401 || res.status === 403) return { ok: false, status: 'expired', error: `quota request refused (HTTP ${res.status})` };
   if (res.status === 429) return { ok: false, error: 'quota rate limited' };
   if (!res.ok) return { ok: false, error: `quota request failed (HTTP ${res.status})` };

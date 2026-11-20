@@ -14,7 +14,7 @@ there turned off with a clear reason instead of failing.
 | Logs of a plain process writing to a file | `/proc/<pid>/fd/1`, `2` | `lsof -d 1,2` | no |
 | Dev servers (`start_dev_server`) | `systemd-run --user` | `501`: not available | not available |
 | Memory view (`/api/memory`, `memory_usage`) | `/proc` | `501`: not available | `/proc` of the host |
-| Accounts (`/api/accounts`, `list_accounts`, off by default) | the two CLI login files | `unreadable`: logins are in the Keychain, not read | the container's two files, if any |
+| Accounts (`/api/accounts`, `list_accounts`, off by default) | the two CLI login files | the file is read when it exists; when it is missing, `unreadable` (the Keychain is not read) | the container's two files, if any |
 | Network map and usage history (who is connected) | `ss -tnpiH state established` | empty for now | `ss` |
 | Expose with `tailscale serve` | yes | yes, with the `tailscale` CLI | no |
 | `portboard install-service` | systemd user units | launchd agents | — |

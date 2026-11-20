@@ -43,7 +43,7 @@ Two read-only `GET` requests, one per signed-in CLI, to the hosts below. No othe
 - A 200 answer with no window Portboard knows counts as a failure (`quota response unusable`): it does not replace the last good answer.
 - Text from an answer is cut: window names and plans at 40 characters, an email at 254, control characters removed.
 - A request times out after 8 seconds, follows no redirect and reads at most 512 KiB.
-- A token that has already expired is not sent. Portboard never refreshes one: sign in again in the CLI.
+- A token that has already expired is not sent. Portboard never refreshes one. An expired access token clears when you run the CLI once. When the refresh token has expired too (`needsReauth`), sign in again in the CLI.
 - The URLs and request headers are in one block at the top of `src/core/accounts/quota.ts`. Their shape follows [opencodex](https://github.com/lidge-jun/opencodex) commit d61cca12 (MIT).
 
 **These are not documented, supported APIs.** They are the endpoints the vendors' own CLIs use. They can change or stop working without notice, and a vendor may treat unusual use of them as a reason to limit an account. Turn the view on only if you accept that risk.

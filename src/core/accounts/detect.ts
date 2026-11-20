@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { clipOrNull, EMAIL_MAX, PLAN_MAX } from './clip.ts';
 
 /** Internal record. Never send it out as it is: it holds the access token. */
 export interface LocalLogin {
@@ -111,8 +112,8 @@ async function detectClaude(o: Required<DetectOptions>): Promise<LocalLogin> {
     id: 'claude-local',
     status: 'ok',
     email: null,
-    plan: str(c.subscriptionType),
-    tier: str(c.rateLimitTier),
+    plan: clipOrNull(str(c.subscriptionType), PLAN_MAX),
+    tier: clipOrNull(str(c.rateLimitTier), PLAN_MAX),
     expiresAt: iso(expires),
     refreshExpiresAt: iso(epochMs(c.refreshTokenExpiresAt)),
     accountId: null,
@@ -155,8 +156,8 @@ async function detectCodex(o: Required<DetectOptions>): Promise<LocalLogin> {
     provider: 'codex',
     id: accountId ? `codex-${createHash('sha256').update(accountId).digest('hex').slice(0, 12)}` : 'codex-local',
     status: 'ok',
-    email: pick('email', 'https://api.openai.com/profile'),
-    plan: pick('chatgpt_plan_type', 'https://api.openai.com/auth'),
+    email: clipOrNull(pick('email', 'https://api.openai.com/profile'), EMAIL_MAX),
+    plan: clipOrNull(pick('chatgpt_plan_type', 'https://api.openai.com/auth'), PLAN_MAX),
     tier: null,
     expiresAt: iso(exp),
     refreshExpiresAt: null,

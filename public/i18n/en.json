@@ -64,7 +64,7 @@
   "access.token.badMode": "Unknown access mode \"{mode}\" (tailscale or token); using tailscale",
   "accounts.disabled": "Accounts are off. Set accounts.enabled to true in portboard.json and restart Portboard.",
   "accounts.docs": "Accounts guide ↗",
-  "accounts.error.expired": "The access token expired. Sign in again in the CLI.",
+  "accounts.error.expired": "The access token expired. Run the CLI once to refresh it.",
   "accounts.error.failed": "The usage request failed.",
   "accounts.error.failedHttp": "The usage request failed (HTTP {code}).",
   "accounts.error.platform": "Portboard doesn't read this system's login store.",
