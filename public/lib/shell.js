@@ -260,11 +260,13 @@ export function mountShell(doc = document, win = window) {
     if (!hasInspector) return;
     if (narrowInsp.matches) { root.dataset.inspOverlay = ''; delete root.dataset.sideOverlay; }
     else if (!state.insp) { state.insp = true; saveState(storage, state); }
+    root.dataset.inspMotion = '';
     paint();
   }
   function closeInspector() {
     if (narrowInsp.matches) delete root.dataset.inspOverlay;
     else { state.insp = false; saveState(storage, state); }
+    root.dataset.inspMotion = '';
     paint();
   }
   function toggleInspector() {
@@ -278,7 +280,7 @@ export function mountShell(doc = document, win = window) {
     paint();
   }
   // a new window width can move either pane between column and overlay (the overlays drop then)
-  win.addEventListener?.('resize', () => { if (relayout()) paint(); else paintWidths(); });
+  win.addEventListener?.('resize', () => { if (relayout()) { delete root.dataset.inspMotion; paint(); } else paintWidths(); });
   phone.addEventListener('change', () => paint());
 
   // ---- resize handles: drag (3 px before it counts), a plain click, or ← → / Home / End on the focused handle ----

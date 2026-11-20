@@ -61,7 +61,11 @@
     "insp-w": "Width of the right inspector (0px while closed, 300px with data-insp=\"open\").",
     "col-max": "Maximum width of the main column.",
     "col-wide": "Maximum width of the main column on the devices tab.",
-    "col-pad": "Side padding of the main column: 20px, 0 from 641px to 767px, 16px at 640px and below."
+    "col-pad": "Side padding of the main column: 20px, 0 from 641px to 767px, 16px at 640px and below.",
+    "dur-1": "Motion: short step (.12s). Colour and fade feedback: selected row, hover reveals, fades, panel exit.",
+    "dur-2": "Motion: medium step (.16s). Panels that move in: the inspector (column and sheet) and the sidebar drawer.",
+    "ease-out": "Motion: entry curve, the CSS keyword ease-out. Use it for anything that appears or moves in.",
+    "ease-in": "Motion: exit curve, the CSS keyword ease-in. Use it for anything that leaves, with the dur-1 step."
   },
   "shadow": [
     {

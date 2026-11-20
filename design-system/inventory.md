@@ -38,7 +38,7 @@
 | 반경 | 3~5단계 | 9 | `design-system/tokens.notes.json` | `radius-4/6/7/8/10/12/14/pill/round`. 이름은 디자인 시스템에만 있고 앱은 리터럴을 쓴다. 기준보다 많다: 4/6/7/8과 10/12/14가 합칠 후보다. |
 | 그림자 | 2~3개 + 초점 링 | 4 | `design-system/tokens.notes.json` | `shadow-dialog/toast/drawer/sheet`. 디자인 시스템에만 있고 앱은 리터럴을 쓴다. 없음: 초점 링 토큰. 설정 모달, 메뉴, 기기 상세, 현재 탭, 세그먼트, 토글 손잡이의 그림자는 리터럴이다. |
 | 크기 | 터치 최소, 컨트롤 높이, 글 폭 | 0 | — | 없음: 컨트롤 높이 32px가 리터럴로 되풀이된다(`public/settings.css:55,65,115,130,151`, `public/shell.css:119`). 44px 최소 높이는 명령 팔레트 행 한 곳뿐이다(`public/palette.css:34`). |
-| 모션 | README 표: 시간, easing, reduced | 0 | `design-system/README.md` "Motion and states" | 없음: 변수도 표도 없다. 실제 값: .1s, .12s, .15s, .16s, .18s, .2s(지연 .4s), 1.6s ease-out, 0s(지연 2.5s) (`public/shell.css:147,257,307,373,378,407`, `public/settings.css:100,103`, `public/palette.css:74`). reduced-motion은 일부만 처리한다(`public/shell.css:158,390,423,461`, `public/palette.css:76`). drawer와 sheet, ⋯ 메뉴, 설정 토글은 처리하지 않는다. |
+| 모션 | README 표: 시간, easing, reduced | 4 | `design-system/README.md` "Motion and states" 표 | 토큰 `--dur-1`, `--dur-2`, `--ease-out`, `--ease-in`(`public/shell.css` :root)과 표가 있다. 표는 행 선택과 인스펙터만 덮는다. 남은 리터럴: .1s, .15s, .18s, .2s, 1.6s(`public/settings.css`, `public/palette.css`, toast). 사이드바 drawer와 ⋯ 메뉴, 설정 토글은 reduced-motion을 처리하지 않는다. |
 | 키울 때: 원시 팔레트 | 색 40개 이상 또는 테마 3개 이상 | 0 | — | 없음: 아직 필요하지 않다. 색 25개, 테마 2개. |
 | 키울 때: 레이아웃, z-index | | 6 / 0 | `public/shell.css:9-14` | 레이아웃 `bar-h`, `side-w`, `insp-w`, `col-max`, `col-wide`, `col-pad`. z-index 토큰은 없음: 리터럴 1, 3, 5, 24, 25, 26, 27, 30, 40, 60. 메뉴가 3(`public/style.css:161`)과 60(`public/settings.css:140`)으로 갈린다. |
 
@@ -91,7 +91,7 @@
 - [x] 목소리 (영어, 한국어): "Content fundamentals".
 - [ ] 색과 대비 표 (테마별): 색 절은 있다. 대비 표는 없고 "4.5:1에 닿는다"는 문장 하나뿐이다. 그 문장의 바탕 목록에 `ok-bg`, `warn-bg`가 없다.
 - [x] 글자, 간격, 반경, 그림자: "Type", "Shape and space". 간격 토큰이 없다고 적었다.
-- [ ] 상태와 모션: 상태 문장은 있다. 모션 표(시간, easing, reduced-motion에서 멈추는 것)는 없다.
+- [ ] 상태와 모션: 상태 문장과 모션 표(시간, easing, reduced-motion)는 있다. 표 밖 리터럴과 reduced-motion 누락이 남았다.
 - [x] 로고와 아이콘: "Iconography", `design-system/assets/Logos/README.md`.
 - [ ] 레이아웃 (앱의 모든 화면): 셸 골격과 브레이크포인트는 있다. 화면별로는 서비스 탭과 기기 탭만 나온다. 개발 탭(`dev.html`), 서비스 상세(`service.html`), 설정 창은 없다.
 - [ ] 컴포넌트 목록: 목록이 없다. "Components" 절은 설명 문단뿐이다.

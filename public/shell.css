@@ -12,6 +12,10 @@
   --col-max: 808px;
   --col-wide: 960px;
   --col-pad: 20px;
+  --dur-1: .12s;
+  --dur-2: .16s;
+  --ease-out: ease-out;
+  --ease-in: ease-in;
 }
 :root[data-side="closed"] { --side-w: 0px; }
 :root[data-insp="open"] { --insp-w: 300px; }
@@ -169,6 +173,21 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
 /* ---- inspector ---- */
 .insp { grid-column: 3; display: none; background: var(--surface); border-left: 0.5px solid var(--line); }
 :root[data-insp="open"] .insp { display: block; }
+/* column inspector: fades in with a short slide, leaves faster. data-insp-motion is set by lib/shell.js on a user
+   open or close only, so a page load never plays it. Reduced motion keeps the fade and drops the slide. */
+@media (min-width: 1200px) {
+  :root[data-insp-motion][data-insp-mode="column"] .insp {
+    opacity: 0; transform: translateX(8px);
+    transition: opacity var(--dur-1) var(--ease-in), transform var(--dur-1) var(--ease-in), display var(--dur-1) allow-discrete;
+  }
+  :root[data-insp-motion][data-insp-mode="column"][data-insp="open"] .insp {
+    opacity: 1; transform: none;
+    transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out), display var(--dur-2) allow-discrete;
+  }
+  @starting-style {
+    :root[data-insp-motion][data-insp-mode="column"][data-insp="open"] .insp { opacity: 0; transform: translateX(8px); }
+  }
+}
 .insp-head {
   position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px;
   padding: 10px 10px 8px 14px; background: var(--surface); border-bottom: 1px solid var(--line);
@@ -231,7 +250,13 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
   .list .row .actions .btn, .list .row .actions button, .list .row .menu summary { padding: 3px 9px; font-size: var(--fs-2); }
   .list .row .uptime-line, .list .row .users, .list .row .last-used, .list .row > .more { display: none; }
   .list .row:hover { background: color-mix(in srgb, var(--text) 3%, transparent); }
+  .list .row { transition: background-color var(--dur-1) var(--ease-out), box-shadow var(--dur-1) var(--ease-out); }
+  .list .row .port { transition: color var(--dur-1) var(--ease-out); }
+  /* a selection made with the arrow keys is instant: it repeats many times a minute (app.js sets data-keynav) */
+  .list[data-keynav] .row, .list[data-keynav] .row .port { transition: none; }
   .list .row.selected { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); box-shadow: inset 3px 0 0 var(--accent); }
+  .list .row.selected .port, .list .row.sub.selected .port { color: var(--accent); }
+  .list .row:not(.missing):active { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
   .list .row.missing .badges > * { display: inline-flex; }
   .list .row.missing { cursor: default; }
   .list .row.sub .port { font-size: var(--fs-3); color: var(--text-2); }
@@ -254,9 +279,10 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
   :root[data-insp] .insp {
     display: block; position: fixed; z-index: 25; top: var(--bar-h); right: 0; bottom: 0; height: auto;
     width: min(360px, 92vw); border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgb(0 0 0 / .08);
-    transform: translateX(105%); transition: transform .16s ease; visibility: hidden;
+    transform: translateX(105%); visibility: hidden;
+    transition: transform var(--dur-1) var(--ease-in), visibility 0s linear var(--dur-1);
   }
-  :root[data-insp-overlay] .insp { transform: none; visibility: visible; }
+  :root[data-insp-overlay] .insp { transform: none; visibility: visible; transition: transform var(--dur-2) var(--ease-out), visibility 0s; }
 }
 /* ---- under 768: no column padding (the pane keeps 8 px on both sides), 16 px inputs (no iOS zoom) ---- */
 @media (max-width: 767.98px) {
@@ -298,9 +324,16 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
   :root[data-insp][data-insp-mode="overlay"] .insp {
     display: block; position: fixed; z-index: 25; top: var(--bar-h); right: 0; bottom: 0; height: auto;
     width: min(360px, 92vw); border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgb(0 0 0 / .08);
-    transform: translateX(105%); transition: transform .16s ease; visibility: hidden;
+    transform: translateX(105%); visibility: hidden;
+    transition: transform var(--dur-1) var(--ease-in), visibility 0s linear var(--dur-1);
   }
-  :root[data-insp-mode="overlay"][data-insp-overlay] .insp { transform: none; visibility: visible; }
+  :root[data-insp-mode="overlay"][data-insp-overlay] .insp { transform: none; visibility: visible; transition: transform var(--dur-2) var(--ease-out), visibility 0s; }
+}
+/* reduced motion: the column inspector keeps its fade without the slide; the sheet appears without sliding */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-insp-motion][data-insp-mode="column"] .insp { transform: none; }
+  @starting-style { :root[data-insp-motion][data-insp-mode="column"][data-insp="open"] .insp { transform: none; } }
+  :root[data-insp][data-insp-mode="overlay"] .insp, :root[data-insp][data-insp-mode="overlay"][data-insp-overlay] .insp { transition: none; }
 }
 /* the handles: a 7 px strip over the pane's edge, a 1 px accent line on hover, focus and while dragging */
 .pane-handle { display: none; position: fixed; z-index: 27; top: var(--bar-h); bottom: 0; width: 7px; cursor: col-resize; touch-action: none; outline: none; }
@@ -335,7 +368,7 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
 .keys-sec dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; margin: 0; align-items: center; font-size: var(--fs-3); }
 .keys-sec dt { color: var(--text); }
 .keys-sec dd { margin: 0; display: flex; gap: 4px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
-.keys-sec kbd, .pal-keys kbd {
+.keys-sec kbd, .pal-keys kbd, .insp-empty kbd {
   font: 11px var(--mono); padding: 1px 5px; border: 1px solid var(--line); border-radius: 4px; background: var(--neutral-bg); color: var(--muted);
 }
 .keys-or { color: var(--text-3); font-size: var(--fs-1); }
@@ -460,6 +493,7 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
 }
 @media (prefers-reduced-motion: reduce) {
   .list .row .pin, .list .row .bell { transition: none; }
+  .list .row { transition: background-color var(--dur-1) linear; }
 }
 
 /* ---- phone: the 서비스 list as one bordered list, not a stack of cards (the UI review, 2026-10) ----
@@ -489,6 +523,11 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
 
 /* 기기 in the sidebar is the network tree the 기기 tab shows in full: on that tab the sidebar leaves it out */
 :root:has(.side-view[data-view="devices"][aria-current]) #sideDevices { display: none; }
+
+/* a port whose down alert just cleared: its row flashes once (app.js adds .recovered; same value as the palette flash) */
+.list .row.recovered { animation: row-recover 1.6s ease-out; }
+@keyframes row-recover { from { background: var(--info-bg); } to { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { .list .row.recovered { animation: none; } }
 
 /* The Mac app (lib/macapp.js): no title bar, so this bar is the window's one bar. 78 px stay clear for the traffic
    lights (the app centres them in the 48 px bar), the empty parts drag the window (the app hit-tests every mouse-down

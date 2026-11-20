@@ -208,7 +208,7 @@ export function buildTokens(ref: string, date: string, notes: Notes = JSON.parse
       },
       shadow: { note: 'Literal box-shadow values: only floating layers get a shadow; surfaces are set apart by line borders.', tokens: notes.shadow },
       radius: { note: 'Literal border-radius values in the stylesheets; these names exist only in the design system.', tokens: notes.radius },
-      layout: { note: 'Shell sizes from public/shell.css :root.', tokens: layout },
+      layout: { note: 'Shell sizes and motion steps (dur-*, ease-*) from public/shell.css :root.', tokens: layout },
       meta: {
         source: 'github', repo: 'c10dev/portboard', ref, package: '.',
         paths: { tokens: ['public/style.css', 'public/settings.css', 'public/shell.css'], fonts: [], assets: ['public/icon.svg'], docs: ['design-system/'] },
