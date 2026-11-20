@@ -28,7 +28,14 @@ Read [docs/security.md](docs/security.md) before you change a write path.
 - A Portboard MCP server may be connected to your session. It acts on the live host and its real state,
   whichever checkout its code comes from. Call only its tools whose `annotations.readOnlyHint` is `true`.
 - A merge (`gh pr merge <number> --merge --match-head-commit <SHA>`): only the operator session, and only as section 7 says.
-- When you need an action that is not "always allowed" (the merge above is the only exception), stop and report. Do not choose a permissive default.
+- A deploy of `main`: only the operator session. It deploys only `main` as it is on GitHub, and only through `scripts/deploy.sh`:
+  1. In the main checkout, with no uncommitted change, run `git merge --ff-only origin/main`.
+  2. Run `scripts/deploy.sh --no-push`. Its tests, smoke checks and automatic rollback stay on.
+  3. For a config change that the maintainer asked for, edit only the key they named in `portboard.json` in the config dir,
+     keep mode 0600, then run `scripts/deploy.sh --restart portboard --no-push`.
+  - Direct `systemctl`, `tailscale serve`, `tailscale funnel`, `portboard token`, npm publish, tags, releases and a push to `main` stay forbidden.
+  - The report says what was deployed and the smoke result. It holds no token, email or account detail.
+- When you need an action that is not "always allowed" (the merge and the deploy above are the only exceptions), stop and report. Do not choose a permissive default.
 <!-- TODO(maintainer): confirm the three lists above. -->
 
 ## 2. Write paths
