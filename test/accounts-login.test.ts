@@ -619,7 +619,8 @@ test('a caller who is not the owner, or sends no X-Portboard, gets 403 and no ve
   ];
   for (const path of WRITES) {
     for (const [who, headers, addr] of callers) {
-      const r = await send(path, { provider: 'claude', flowId: 'x', code: 'x' }, headers, addr);
+      // codex: a start that got past the check would ask the vendor (the claude start asks none), so `calls.length === 0` proves the refusal
+      const r = await send(path, { provider: 'codex', flowId: 'x', code: 'x' }, headers, addr);
       assert.equal(r.status, 403, `${path}: ${who}`);
     }
   }

@@ -6,8 +6,12 @@
 // ChatGPT/Codex and GitHub Copilot show a device code and ask the server once per interval. Closing the settings
 // modal stops the asking and cancels the flow. The pasted code goes to the server in the request body only: it is not
 // kept, logged or put in a URL here.
+//
+// An added Claude or Codex account has two more buttons (POST /api/accounts/use and /remove): "use this account" makes
+// the account's own CLI folder and shows the command that starts the CLI in it (with a copy button); "remove" asks first.
 
 import { getInit, post, postOrThrow } from '../lib/api.js';
+import { modal } from '../lib/dialog.js';
 import { $, button, el, extLink, h } from '../lib/dom.js';
 import { locale, t } from '../lib/i18n.js';
 
@@ -48,6 +52,11 @@ const ERRORS = [
   [/^login response unusable$/, () => t('accounts.login.error.unusable')],
   [/^too many login flows$/, () => t('accounts.login.error.tooMany')],
   [/^invalid login request$/, () => t('accounts.login.error.invalid')],
+  [/^account not found$/, () => t('accounts.error.notFound')],
+  [/^local login cannot be removed$/, () => t('accounts.error.local')],
+  [/^account cannot be used by the CLI$/, () => t('accounts.error.noCli')],
+  [/^account needs sign-in again$/, () => t('accounts.error.needsSignIn')],
+  [/^account home not written$/, () => t('accounts.error.home')],
 ];
 
 function errorText(s) {
@@ -68,6 +77,71 @@ function windowRow(w) {
   return h('span', null, t('accounts.window.line', { name, used, left: 100 - used }), reset ? ` · ${t('accounts.window.resets', { at: reset })}` : null);
 }
 
+const CONFIRM = `
+<dialog id="accountsConfirm" class="acc-confirm">
+  <p id="accountsConfirmText"></p>
+  <div class="set-row">
+    <button type="button" id="accountsConfirmNo">${t('accounts.add.cancel')}</button>
+    <button type="button" class="danger" id="accountsConfirmYes">${t('accounts.remove')}</button>
+  </div>
+</dialog>`;
+
+/** The confirm dialog: true when the owner chose "remove" */
+function confirmRemove(text) {
+  const d = modal('accountsConfirm', CONFIRM);
+  $('accountsConfirmText').textContent = text;
+  return new Promise((resolve) => {
+    d.addEventListener('close', () => resolve(d.returnValue === 'yes'), { once: true });
+    $('accountsConfirmYes').onclick = () => d.close('yes');
+    $('accountsConfirmNo').onclick = () => d.close('no');
+    d.returnValue = 'no';
+    d.showModal();
+  });
+}
+
+/** "Use this account" and "Remove" of an added Claude or Codex account (Copilot has no CLI: only "remove"); `say` shows an error next to them */
+function actions(a, say) {
+  const name = a.alias || a.email || (ADDED[a.provider] ?? a.provider);
+  const use = a.provider === 'copilot' ? null : button(t('accounts.use'), async () => {
+    say('');
+    use.disabled = true;
+    try {
+      await postOrThrow('api/accounts/use', { id: a.id });
+    } catch (err) {
+      use.disabled = false;
+      return say(errorText(reason(err)));
+    }
+    refresh();
+  }, { write: true });
+  const remove = button(t('accounts.remove'), async () => {
+    say('');
+    if (!(await confirmRemove(t('accounts.remove.confirm', { name })))) return;
+    remove.disabled = true;
+    try {
+      await postOrThrow('api/accounts/remove', { id: a.id });
+    } catch (err) {
+      remove.disabled = false;
+      say(errorText(reason(err)));
+    }
+    // the record may be gone even when the folder could not be deleted: the list shows what is there now
+    refresh();
+  }, { write: true, danger: true });
+  return h('div', { class: 'set-row acc-line' }, use, remove);
+}
+
+/** The command that starts the CLI as this account, with a copy button */
+function commandRow(command) {
+  const copy = button(t('accounts.add.copy'), async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      copy.textContent = t('accounts.add.copied');
+    } catch {
+      // clipboard blocked: the command is on screen to select
+    }
+  });
+  return h('div', { class: 'set-row acc-line' }, h('span', null, t('accounts.command.lead')), h('code', { class: 'set-cmd' }, command), copy);
+}
+
 function row(a) {
   const tone = a.needsReauth && a.status === 'ok' ? 'warn' : TONE[a.status] ?? 'warn';
   const who = [a.plan, a.tier, a.email].filter(Boolean).join(' · ');
@@ -76,6 +150,8 @@ function row(a) {
   const added = a.source === 'added';
   // an added account is not refreshed yet: the CLI hint would send the owner to the wrong place
   const err = added && a.error === 'access token expired' ? t('accounts.error.expiredAdded') : a.error ? errorText(a.error) : null;
+  const note = h('span', { class: 'set-state warn acc-line', role: 'alert' });
+  const say = (text) => { note.textContent = text; };
   return h(
     'li',
     { dataset: { account: a.id } },
@@ -87,6 +163,7 @@ function row(a) {
       'div',
       { class: 'set-extra' },
       added ? h('span', { class: 'set-state' }, t('accounts.added')) : null,
+      a.active ? h('span', { class: 'set-state ok' }, t('accounts.active')) : null,
       exp ? h('span', null, t(Date.parse(a.expiresAt) < Date.now() ? 'accounts.expiredAt' : 'accounts.expires', { date: exp })) : null,
       a.needsReauth ? h('span', { class: 'set-state warn' }, t('accounts.reauth')) : null,
       added && a.provider === 'copilot' ? h('span', null, t('accounts.copilot.noLimits')) : null,
@@ -94,6 +171,9 @@ function row(a) {
       q?.stale ? h('span', { class: 'set-state warn' }, t('accounts.stale', { at: when(q.fetchedAt) ?? '' })) : null,
       err ? h('span', { class: 'set-state warn' }, err) : null,
     ),
+    a.command ? commandRow(a.command) : null,
+    added ? actions(a, say) : null,
+    note,
   );
 }
 
@@ -204,9 +284,9 @@ function paste(r) {
     try {
       await postOrThrow('api/accounts/login/finish', { flowId: flow.id, code });
     } catch (err) {
-      // the server uses the flow up whatever the outcome: the owner starts again, nothing to cancel
+      // the request failed (the network, a 403, a big body) and the server may not have used the flow up: cancel it (cancel is idempotent)
       if (gen === mine) {
-        endFlow(false);
+        endFlow(true);
         choices(failure(reason(err)));
       }
       return;

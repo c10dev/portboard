@@ -87,6 +87,13 @@ function prune(now: number): void {
   for (const [k] of oldest.slice(0, cache.size - MAX_ENTRIES + 1)) cache.delete(k);
 }
 
+/** After a set: at most 64 entries, whatever was added at once. The entry just set stays; the least recently used go first. */
+function trim(keep: string): void {
+  if (cache.size <= MAX_ENTRIES) return;
+  const oldest = [...cache.entries()].filter(([k]) => k !== keep).sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+  for (const [k] of oldest.slice(0, cache.size - MAX_ENTRIES)) cache.delete(k);
+}
+
 /** For tests: how many tokens the cache holds */
 export function quotaCacheSize(): number {
   return cache.size;
@@ -287,6 +294,7 @@ export async function fetchQuota(l: LocalLogin, o: { fetch?: typeof fetch; now?:
       entry.failedUntil = now + entry.delay;
       entry.lastFail = { error: r.error, status };
       cache.set(key, entry);
+      trim(key);
       return failure(r.error, status);
     }
     entry.good = { at: now, windows: r.windows, plan: r.plan, email: r.email };
@@ -294,6 +302,7 @@ export async function fetchQuota(l: LocalLogin, o: { fetch?: typeof fetch; now?:
     entry.failedUntil = 0;
     entry.lastFail = null;
     cache.set(key, entry);
+    trim(key);
     return { quota: { windows: r.windows, fetchedAt: iso(now), stale: false }, plan: r.plan, email: r.email, status: 'ok', error: null };
   })().finally(() => inflight.delete(key));
   inflight.set(key, job);

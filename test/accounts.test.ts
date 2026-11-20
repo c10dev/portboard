@@ -202,7 +202,7 @@ test('the view is an allowlist: only the named fields, no account id', async () 
   const h = home({ claude: claudeFile(), codex: codexFile() });
   const r = await accountsReport({ ...h, fetch: fakeFetch(byHost).fetch, now });
   for (const a of r.accounts) {
-    assert.deepEqual(Object.keys(a).sort(), ['alias', 'email', 'error', 'expiresAt', 'id', 'needsReauth', 'plan', 'provider', 'quota', 'source', 'status', 'tier']);
+    assert.deepEqual(Object.keys(a).sort(), ['active', 'alias', 'command', 'email', 'error', 'expiresAt', 'id', 'needsReauth', 'plan', 'provider', 'quota', 'source', 'status', 'tier']);
     assert.equal(a.source, 'local-cli');
     assert.equal(a.alias, null);
   }
@@ -344,13 +344,15 @@ test('list_accounts is not on the remote server', () => {
   const def = REGISTRY.tools.find((t) => t.def.name === 'list_accounts')?.def;
   assert.deepEqual(def?.annotations, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true });
   assert.equal(accountsFeature.order, 2575);
-  // one read, and the four login writes (each `write: true`, so the router checks the owner and the header first)
+  // one read, the four login writes and the two writes of an added account (each `write: true`, so the router checks the owner and the header first)
   assert.deepEqual((accountsFeature.routes ?? []).map((r) => `${r.method} ${r.path}`), [
     'GET /api/accounts',
     'POST /api/accounts/login/start',
     'POST /api/accounts/login/finish',
     'POST /api/accounts/login/poll',
     'POST /api/accounts/login/cancel',
+    'POST /api/accounts/use',
+    'POST /api/accounts/remove',
   ]);
   assert.ok((accountsFeature.routes ?? []).filter((r) => r.method !== 'GET').every((r) => r.write === true));
 });
@@ -644,7 +646,7 @@ test('added accounts follow the CLI logins in the list: Claude and Codex ask for
   assert.equal(f.calls.find((c) => c.url === QUOTA_REQUESTS.codex.url)?.headers['ChatGPT-Account-Id'], 'acct-added-2');
   const out = JSON.stringify(r);
   for (const x of ['TESTACCESS', 'TESTREFRESH', 'uuid-added-1', 'acct-added-2', '4242']) assert.ok(!out.includes(x), `leaks ${x}`);
-  for (const a of r.accounts) assert.deepEqual(Object.keys(a).sort(), ['alias', 'email', 'error', 'expiresAt', 'id', 'needsReauth', 'plan', 'provider', 'quota', 'source', 'status', 'tier']);
+  for (const a of r.accounts) assert.deepEqual(Object.keys(a).sort(), ['active', 'alias', 'command', 'email', 'error', 'expiresAt', 'id', 'needsReauth', 'plan', 'provider', 'quota', 'source', 'status', 'tier']);
 });
 
 test('an added account whose access token has expired is expired and sends no request; Claude and Codex are not refreshed', async () => {

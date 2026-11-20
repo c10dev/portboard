@@ -1,0 +1,118 @@
+// Accounts (docs/accounts.md): the refresh of an added Claude or Codex account that has no folder of its own. An
+// account with a folder is never refreshed here: the CLI refreshes the file in the folder, and refresh tokens turn
+// over, so two refreshers would cut one of them off. The request URLs, client ids and headers are LOGIN_REQUESTS
+// (flows.ts); the request goes through the same `vendor()` helper (timeout, body limit, closed errors).
+
+import { expiresIn, LOGIN_REQUESTS, LoginError, TOKEN_TIMEOUT_MS, vendor, type LoginOptions } from './flows.ts';
+import { loadAccounts, updateAccount, type StoredAccount } from './store.ts';
+
+export type RefreshOutcome =
+  /** new tokens are saved; `account` is the record after the change */
+  | { state: 'done'; account: StoredAccount }
+  /** the vendor refused the refresh token (400 or 401): `needsReauth` is saved */
+  | { state: 'reauth' }
+  /** nothing to refresh with: no such account, no refresh token, Copilot, or an account with a folder */
+  | { state: 'unusable' }
+  /** a failure that passes (network, timeout, 5xx, 429, an answer without a token, a file that cannot be used): asked again later */
+  | { state: 'transient' };
+
+/** After a transient failure the quota path does not ask again for this long (a use asks at once) */
+const REST_MS = 5 * 60_000;
+
+const inflight = new Map<string, Promise<RefreshOutcome>>();
+const restUntil = new Map<string, number>();
+
+/** For tests */
+export function resetRefreshForTest(): void {
+  inflight.clear();
+  restUntil.clear();
+}
+
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const str = (v: unknown): string | null => (typeof v === 'string' && v ? v : null);
+
+/** True while a failed refresh of this account is resting (the quota path then skips it) */
+export function refreshResting(id: string, now: number): boolean {
+  return (restUntil.get(id) ?? 0) > now;
+}
+
+/**
+ * Refresh one account. Calls for the same account at once share one request. `rest`: honour the wait after a
+ * transient failure (the quota path); a use of the account passes false.
+ */
+export function refreshAccount(id: string, o: LoginOptions & { rest?: boolean } = {}): Promise<RefreshOutcome> {
+  const now = (o.now ?? Date.now)();
+  if (o.rest && refreshResting(id, now)) return Promise.resolve({ state: 'transient' });
+  const running = inflight.get(id);
+  if (running) return running;
+  const job = run(id, o)
+    .then((r) => {
+      if (r.state === 'transient') restUntil.set(id, now + REST_MS);
+      else restUntil.delete(id);
+      return r;
+    })
+    .finally(() => inflight.delete(id));
+  inflight.set(id, job);
+  return job;
+}
+
+async function run(id: string, o: LoginOptions): Promise<RefreshOutcome> {
+  const loaded = await loadAccounts({ path: o.accountsPath });
+  if ('error' in loaded) return { state: 'transient' };
+  const a = loaded.accounts.find((x) => x.id === id);
+  if (!a || a.provider === 'copilot' || a.home || !a.tokens.refresh) return { state: 'unusable' };
+  const refresh = a.tokens.refresh;
+  const spec = a.provider === 'claude' ? LOGIN_REQUESTS.claude : LOGIN_REQUESTS.codex;
+  const request =
+    a.provider === 'claude'
+      ? { headers: LOGIN_REQUESTS.claude.tokenHeaders(), body: { grant_type: 'refresh_token', client_id: LOGIN_REQUESTS.claude.clientId, refresh_token: refresh } }
+      : { headers: LOGIN_REQUESTS.codex.jsonHeaders(), body: { client_id: LOGIN_REQUESTS.codex.clientId, grant_type: 'refresh_token', refresh_token: refresh } };
+  let answer;
+  try {
+    answer = await vendor(o, spec.tokenUrl, {
+      method: 'POST',
+      headers: request.headers,
+      body: JSON.stringify(request.body),
+      redirect: 'manual',
+      timeoutMs: TOKEN_TIMEOUT_MS,
+    });
+  } catch (err) {
+    if (err instanceof LoginError) return { state: 'transient' };
+    throw err;
+  }
+  if (!answer.ok) {
+    if (answer.status !== 400 && answer.status !== 401) return { state: 'transient' };
+    try {
+      await updateAccount(id, (x) => ({ ...x, needsReauth: true }), { path: o.accountsPath });
+    } catch {
+      return { state: 'transient' };
+    }
+    return { state: 'reauth' };
+  }
+  const body = isObj(answer.body) ? answer.body : null;
+  const access = body ? str(body.access_token) : null;
+  if (!body || !access) return { state: 'transient' };
+  const at = (o.now ?? Date.now)();
+  try {
+    const saved = await updateAccount(
+      id,
+      (x) => {
+        const { needsReauth: _gone, ...rest } = x;
+        return {
+          ...rest,
+          tokens: {
+            access,
+            // no new refresh token: the old one stays
+            refresh: str(body.refresh_token) ?? x.tokens.refresh,
+            idToken: x.provider === 'codex' ? (str(body.id_token) ?? x.tokens.idToken) : x.tokens.idToken,
+            expiresAt: expiresIn(at, body.expires_in),
+          },
+        };
+      },
+      { path: o.accountsPath },
+    );
+    return saved ? { state: 'done', account: saved } : { state: 'unusable' };
+  } catch {
+    return { state: 'transient' };
+  }
+}

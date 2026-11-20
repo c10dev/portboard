@@ -2,7 +2,7 @@
 
 A view of the Claude Code and Codex logins on the machine Portboard runs on, and of the accounts you add in Portboard: plan, email (Codex), when the access token expires, and the remaining limits (the 5-hour window and the weekly window). It is off by default, it is for the owner only, and no token leaves the Portboard process.
 
-It never changes a CLI login: it does not touch `~/.claude` or `~/.codex`, never refreshes a token, and never signs a CLI in or out. The only file it writes is Portboard's own `accounts.json`, and only when the owner adds an account ([Add an account](#add-an-account)).
+It never changes a CLI login: it does not touch `~/.claude` or `~/.codex`, never refreshes the token of a CLI login, and never signs a CLI in or out. It writes only Portboard's own `accounts.json` and the folders under `account-homes/`, and only when the owner adds, uses, removes or (for an added account without a folder) refreshes an account ([Add an account](#add-an-account), [Use an account](#use-an-account), [Remove an account](#remove-an-account), [Refresh](#refresh)).
 
 ## Turn it on or off
 
@@ -44,7 +44,7 @@ One read-only `GET` per Claude or Codex login (a signed-in CLI, or an added acco
 - A 200 answer with no window Portboard knows counts as a failure (`quota response unusable`): it does not replace the last good answer.
 - Text from outside is cut before it is kept, whether it comes from an answer or from a login file: window names, plans and tiers are cut at 40 characters, an email at 254. Control characters are removed, and a cut string ends with `…`. A name you give an added account is cut at 40 characters the same way.
 - A request times out after 8 seconds, follows no redirect and reads at most 512 KiB.
-- A token that has already expired is not sent. Portboard never refreshes one. An expired access token clears when you run the CLI once. When the refresh token has expired too (`needsReauth`), sign in again in the CLI.
+- A token that has already expired is not sent. Portboard never refreshes the token of a CLI login (an added account without a folder is refreshed: see [Refresh](#refresh)). An expired access token clears when you run the CLI once. When the refresh token has expired too (`needsReauth`), sign in again in the CLI.
 - The URLs and request headers are in one block at the top of `src/core/accounts/quota.ts`. Their shape follows [opencodex](https://github.com/lidge-jun/opencodex) commit d61cca12 (MIT).
 
 **These are not documented, supported APIs.** They are the endpoints the vendors' own CLIs use. They can change or stop working without notice, and a vendor may treat unusual use of them as a reason to limit an account. Turn the view on only if you accept that risk.
@@ -64,13 +64,50 @@ In Settings › Accounts, the owner can add a Claude, a ChatGPT/Codex or a GitHu
 - **A broken file is never overwritten.** If `accounts.json` is not valid, is not a regular file, or can be read or written by group or other users (any `0o077` mode bit), adding fails with `accounts file unreadable`, the file stays as it was, and the list shows one line, "added-unreadable", instead of the added accounts. If you edit the file by hand, keep it at 0600 (`chmod 600`), or Portboard will not read it.
 - **A write that fails** (a read-only folder, a full disk) fails with `accounts file not written`, and no account is added.
 - **The same account twice is one account.** Adding the same provider and identity again replaces the tokens and the shown values; the id, the date added and the name stay (unless you give a new name).
-- **A flow lives in memory only.** The PKCE verifier, the state, the device ids and the codes stay in the Portboard process for at most 10 minutes (Claude) or 15 minutes (device codes), at most three open flows per provider. Closing the Settings window cancels the flow, and a flow cancelled while the vendor is still answering is not saved. Every call to a login route first drops the flows that are past their life. A flow ends when it succeeds, fails, is denied, expires or is cancelled, and a Claude flow is used up by its first finish, whatever the outcome. A device-code poll that fails because of a network error, a timeout, a 5xx or a 429 does not end the flow: it answers `pending` with a longer interval, and the next poll asks again.
+- **A flow lives in memory only.** The PKCE verifier, the state, the device ids and the codes stay in the Portboard process for at most 10 minutes (Claude) or 15 minutes (device codes; a GitHub Copilot flow lives at most 15 minutes, even when the vendor offers more), at most three open flows per provider. Closing the Settings window cancels the flow, and a flow cancelled while the vendor is still answering is not saved. Every call to a login route first drops the flows that are past their life. A flow ends when it succeeds, fails, is denied, expires or is cancelled, and a Claude flow is used up by its first finish, whatever the outcome. A device-code poll that fails because of a network error, a timeout, a 5xx or a 429 *before the vendor's first answer* to that poll does not end the flow: it answers `pending` with a longer interval, and the next poll asks again. A failure after the vendor has answered ends the flow. The exception is a GitHub Copilot answer with a 5xx or a 429 status whose `error` is not `authorization_pending`, `slow_down`, `expired_token` or `access_denied`: that is the vendor failing, not an answer, and it counts as a failure before the first answer.
 - **Limits.** A Claude or Codex added account asks for limits like a CLI login does (same requests, same cache and wait), with its stored access token. Copilot has no limits to show: it is listed with its status only, and no usage request is sent for it.
-- **Tokens are not refreshed.** The access token of an added account is used as it is. After a few hours it expires, and the account shows `expired` ("access token expired"). Refreshing is a later milestone. Until then, add the account again to get a new token.
-- **Removing one.** There is no remove button yet. Edit `accounts.json` by hand: delete the account's record from `accounts`, keeping the file valid JSON. Portboard reads the file on every request, so no restart is needed.
+- **Tokens.** An added Claude or Codex account is refreshed when its access token has expired ([Refresh](#refresh)). To remove an account, use the button ([Remove an account](#remove-an-account)).
 - The URLs, client ids and request headers of the three flows are in one block, `LOGIN_REQUESTS`, at the top of `src/core/accounts/flows.ts`. Their shape follows [opencodex](https://github.com/lidge-jun/opencodex) commit d61cca12 (MIT).
 
 Like the usage requests, these sign-in requests use the vendors' public client ids for their own CLIs. They are not documented, supported ways to sign in, and a vendor may refuse or limit them.
+
+## Use an account
+
+For an added Claude or Codex account, **Use this account** makes a folder for it, `account-homes/<account id>/` in the config folder (`~/.config/portboard/account-homes/`; `PORTBOARD_ACCOUNT_HOMES` moves it), mode `0700`, and writes the CLI's own login file into it (mode `0600`, through `writePrivate`). Then it shows the command that starts the CLI as that account, with a copy button:
+
+| Account | File in the folder | Command |
+|---|---|---|
+| Claude | `.credentials.json`: `{claudeAiOauth: {accessToken, refreshToken, expiresAt (ms), scopes, subscriptionType}}` | `CLAUDE_CONFIG_DIR='<folder>' claude` |
+| ChatGPT / Codex | `auth.json`: `{auth_mode: "chatgpt", tokens: {id_token, access_token, refresh_token, account_id}, last_refresh}` | `CODEX_HOME='<folder>' codex` |
+
+- **Nothing else changes.** `~/.claude`, `~/.codex`, the CLI processes that are running and the environment of Portboard stay as they are. Portboard never sets `CLAUDE_CONFIG_DIR` or `CODEX_HOME` itself and does not start or stop a CLI: you run the command in a terminal.
+- **Not verified with a real CLI yet.** The file shapes follow the keys the CLI logins are read from (see [What it reads](#what-it-reads)) and the shapes opencodex accepts. Whether Claude Code is signed in by `.credentials.json` alone, with no other file in the folder, has not been checked by running it. The owner checks it once.
+- **A file that is there is kept once.** Before a login file is written over another file, the old one is copied to `<name>.bak` in the same folder (mode `0600`). Only one `.bak` is kept.
+- **The file in the folder is the original.** The CLI refreshes it. Using an account again does not write over a login file that is there and readable, and the list reads the folder's file with the same rules as a CLI login (limits, expiry). Portboard does not refresh an account that has a folder: refresh tokens turn over, so two refreshers would cut one of them off. A folder file that is missing or cannot be read shows as `unreadable`.
+- **Active.** Choosing an account marks it `active` for its provider in `accounts.json` (`active: {claude?, codex?}`); one account per provider. Removing the active account clears the mark. The mark records the owner's choice. It does not say which login a running CLI uses.
+- **Who cannot be used.** A GitHub Copilot account has no CLI and no folder. An account without a refresh token (or, for Codex, without an id token) cannot be used by the CLI: `account cannot be used by the CLI`. An account that needs to sign in again: `account needs sign-in again`.
+- **The command holds a folder path** (the owner's answer only). It holds no token.
+
+## Remove an account
+
+**Remove** asks first. It deletes the account's record from `accounts.json` (and its `active` mark), then the account's folder. Only an added account can be removed: a CLI login (`claude-local`, `codex-…`) is `local login cannot be removed`. The folder is deleted only when all of these hold: it is a real folder (not a link), it is named `acc-` and 12 hex digits, and `realpath` of its parent is the `account-homes` folder. Otherwise it is left alone, and the answer is `account home not written` (the record is gone all the same). Portboard does not follow a link, and does not delete anything outside `account-homes`.
+
+## Refresh
+
+Only an added Claude or Codex account **without a folder** is refreshed, and only with a refresh token:
+
+- when the dashboard asks for limits and the access token has expired (never ahead of time); the MCP tool `list_accounts` is read-only and does not refresh;
+- and when you choose **Use this account** for an account whose access token has expired.
+
+| Account | Request |
+|---|---|
+| Claude | `POST` to the token URL of `LOGIN_REQUESTS.claude`, JSON `{grant_type: "refresh_token", client_id, refresh_token}`, the headers of `LOGIN_REQUESTS.claude.tokenHeaders()`. A new refresh token replaces the old one; with none, the old one stays |
+| ChatGPT / Codex | `POST` to the token URL of `LOGIN_REQUESTS.codex`, JSON `{client_id, grant_type: "refresh_token", refresh_token}`, the headers of `LOGIN_REQUESTS.codex.jsonHeaders()`. A new id token replaces the old one |
+
+- A refresh of one account runs once at a time: requests at the same moment share one.
+- The vendor answers 400 or 401 (for example `invalid_grant`): the account gets `needsReauth` in `accounts.json` and is not asked again. The list shows "Sign in again"; add the account again to clear it.
+- Any other failure (network, timeout, 5xx, 429, an answer without a token) is a transient failure: nothing is changed, and the dashboard waits 5 minutes before it asks again. Using the account asks at once.
+- The request uses the same helper as the sign-in requests (timeout, body limit, no redirect, closed error texts). No URL, client id or header is defined for it apart from `LOGIN_REQUESTS`.
 
 ## Errors
 
@@ -88,14 +125,19 @@ An error is one of these fixed sentences. None holds a response body, a header, 
 | `login denied` | you denied the sign-in on the vendor's page |
 | `login request failed (HTTP n)`, `login request failed`, `login request timed out`, `login response unusable` | a sign-in request failed, was not answered in time, or was answered with something Portboard cannot use (HTTP 502) |
 | `too many login flows` | three flows of that provider are already open (HTTP 429) |
-| `invalid login request` | the request body is not what the route takes (HTTP 400) |
+| `invalid login request` | the request body is not what the route takes, or an id that is not `acc-` and 12 hex digits (HTTP 400) |
+| `account not found` | no added account has that id (HTTP 404) |
+| `local login cannot be removed` | the id is a CLI login (HTTP 400) |
+| `account cannot be used by the CLI` | Copilot, or an account without the refresh or id token the CLI needs (HTTP 400) |
+| `account needs sign-in again` | the vendor refused the refresh token (HTTP 409) |
+| `account home not written` | the account's folder or login file could not be written, or the folder could not be deleted safely (HTTP 500) |
 
 ## Who can see it, and what leaves the process
 
-- **Owner only.** `GET /api/accounts` uses the same owner check as the audit log: anyone else gets `403 {error: "owner only", reason}` before any file is read. The four sign-in routes are write routes: the router refuses a caller who is not the owner, and a request without `X-Portboard: 1`, before the route's code runs.
+- **Owner only.** `GET /api/accounts` uses the same owner check as the audit log: anyone else gets `403 {error: "owner only", reason}` before any file is read. The six write routes (the four sign-in routes, `use` and `remove`) are `write: true`: the router refuses a caller who is not the owner, and a request without `X-Portboard: 1`, before the route's code runs.
 - **No remote MCP.** `list_accounts` is a local stdio tool. It is not in the remote server's tool list or in `RemoteCore`. No MCP tool adds an account.
-- **Allowlisted answer.** The answer holds `id`, `provider`, `source`, `alias`, `email`, `plan`, `tier`, `status`, `expiresAt`, `needsReauth`, `quota` and `error`, each copied by name. It has no token, no account id and no id token. The sign-in routes answer with the same view, never with the stored record.
-- **No logs.** Tokens are not written to a log, the audit log or an error text. An error is one short fixed sentence (for example `quota request failed (HTTP 500)`). The audit line of a sign-in request holds the names of the body keys (`flowId`, `code`, `provider`, `alias`) and none of their values, so a pasted code is never recorded.
+- **Allowlisted answer.** The answer holds `id`, `provider`, `source`, `alias`, `email`, `plan`, `tier`, `status`, `expiresAt`, `needsReauth`, `active`, `command`, `quota` and `error`, each copied by name. It has no token, no account id and no id token. The sign-in routes answer with the same view, never with the stored record.
+- **No logs.** Tokens are not written to a log, the audit log or an error text. An error is one short fixed sentence (for example `quota request failed (HTTP 500)`). The audit line of a sign-in, use or remove request holds the names of the body keys (`flowId`, `code`, `provider`, `alias`, `id`) and none of their values, so a pasted code and an account id are never recorded.
 
 See [security.md](security.md#accounts).
 
@@ -122,7 +164,7 @@ See [security.md](security.md#accounts).
 }
 ```
 
-`source` is `local-cli` (a CLI login) or `added` (added in Portboard; `id` is `acc-` and 12 hex digits, `alias` is its name). `provider` is `claude`, `codex` or `copilot`. `status` is `ok`, `expired` (the token is past its expiry, or the vendor answered 401 or 403), `none` or `unreadable`. `needsReauth` is true when the refresh token has expired too. `usedPct` is 0 to 100; the remaining share is 100 minus it. `usedPct` or `resetsAt` is `null` for a window when the vendor sends no usable value.
+`source` is `local-cli` (a CLI login) or `added` (added in Portboard; `id` is `acc-` and 12 hex digits, `alias` is its name). `provider` is `claude`, `codex` or `copilot`. `status` is `ok`, `expired` (the token is past its expiry, or the vendor answered 401 or 403), `none` or `unreadable`. `needsReauth` is true when the refresh token has expired too, or the vendor refused it. `active` is true for the added account chosen with "use this account" for its provider (always false for a CLI login). `command` is the shell command that starts the CLI as an added account that has a folder, else `null`. `usedPct` is 0 to 100; the remaining share is 100 minus it. `usedPct` or `resetsAt` is `null` for a window when the vendor sends no usable value.
 
 ### Sign-in routes
 
@@ -134,3 +176,12 @@ All four are `POST`, owner only, need `X-Portboard: 1`, and answer `404 {error: 
 | `/api/accounts/login/finish` | `{flowId, code}` (Claude) | `{account}`, one account as in the list |
 | `/api/accounts/login/poll` | `{flowId}` (device codes) | `{state: "pending" \| "done" \| "expired" \| "denied" \| "failed", account?, error?, interval?}`. A poll sooner than `interval` after the last request gets `pending` and no vendor request. `interval` grows by 5 seconds after a `slow_down` |
 | `/api/accounts/login/cancel` | `{flowId}` | `{ok: true}` |
+
+### Use and remove routes
+
+Both are `POST`, owner only, need `X-Portboard: 1`, and answer `404 {error: "accounts disabled"}` while `accounts.enabled` is off. The body is JSON of at most 4 KiB.
+
+| Route | Body | Answer |
+|---|---|---|
+| `/api/accounts/use` | `{id}` | `{account, command}`: the account as in the list (`active: true`, `command`) and the command |
+| `/api/accounts/remove` | `{id}` | `{ok: true}` |

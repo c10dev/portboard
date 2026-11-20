@@ -118,7 +118,7 @@ const MAX_BODY = 512 * 1024;
 const USER_CODE_MAX = 64;
 const MAX_EXPIRES_IN_S = 31_536_000;
 const PROFILE_MAX_BODY = 64 * 1024;
-const TOKEN_TIMEOUT_MS = 30_000;
+export const TOKEN_TIMEOUT_MS = 30_000;
 const PROFILE_TIMEOUT_MS = 10_000;
 const REQUEST_TIMEOUT_MS = 15_000;
 const DEFAULT_INTERVAL_S = 5;
@@ -228,7 +228,7 @@ interface Answer {
  * One vendor request. A network error or a timeout throws a LoginError. A body of a non-2xx answer is closed unread.
  * A 2xx body over `max` is `login response unusable`; a 2xx body that is not JSON is `body: null`.
  */
-async function vendor(
+export async function vendor(
   o: LoginOptions,
   url: string,
   init: { method: 'GET' | 'POST'; headers: Record<string, string>; body?: string; redirect: 'manual' | 'error'; timeoutMs: number; max?: number; bodyOnError?: boolean },
@@ -374,7 +374,7 @@ async function startCopilot(alias: string | null, now: number, o: LoginOptions):
   if (!userCode || !deviceCode || userCode.length > USER_CODE_MAX) throw new LoginError('login response unusable');
   const interval = intervalOf(body.interval);
   const at = nowOf(o);
-  const life = Math.min(seconds(body.expires_in, DEVICE_LIFE_MS / 1000), 30 * 60) * 1000;
+  const life = Math.min(seconds(body.expires_in, DEVICE_LIFE_MS / 1000), DEVICE_LIFE_MS / 1000) * 1000;
   const expiresAt = at + life;
   const shown = clip(userCode, NAME_MAX);
   const flowId = open({ provider: 'copilot', kind: 'device', alias, expiresAt, deviceCode, shownCode: shown, interval, nextPollAt: at + interval * 1000, busy: false, asking: false }, at);
@@ -414,7 +414,7 @@ export function parsePasted(text: string): { code: string; state: string | null 
 }
 
 /** `expires_in` as an ISO time: a finite number above 0 and at most a year, else one hour */
-function expiresIn(now: number, v: unknown): string {
+export function expiresIn(now: number, v: unknown): string {
   const n = num(v);
   return iso(now + (n !== null && n > 0 && n <= MAX_EXPIRES_IN_S ? n : 3600) * 1000);
 }
@@ -590,6 +590,8 @@ async function pollCodex(f: Flow, o: LoginOptions): Promise<PollResult> {
   return done(account);
 }
 
+const POLL_CODES = ['authorization_pending', 'slow_down', 'expired_token', 'access_denied'];
+
 async function pollCopilot(f: Flow, o: LoginOptions): Promise<PollResult> {
   const spec = LOGIN_REQUESTS.copilot;
   const a = await vendor(o, spec.tokenUrl, {
@@ -609,6 +611,8 @@ async function pollCopilot(f: Flow, o: LoginOptions): Promise<PollResult> {
       if (!a.ok) throw failedHttp(a.status);
       throw new LoginError('login response unusable');
     }
+    // a 5xx or a 429 whose `error` is not one of the four codes is the vendor failing, not an answer to the poll: the flow stays
+    if ((a.status >= 500 || a.status === 429) && !POLL_CODES.includes(code)) throw failedHttp(a.status);
     f.asking = false;
     switch (code) {
       case 'authorization_pending':

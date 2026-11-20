@@ -24,9 +24,16 @@ export interface StoredAccount {
   /** ISO */
   addedAt: string;
   tokens: { access: string; refresh: string | null; idToken: string | null; expiresAt: string | null };
+  /** the vendor refused the refresh token (400 or 401): the owner adds the account again */
+  needsReauth?: boolean;
+  /** "use this account" made the account's folder (src/core/accounts/homes.ts): the file in it is the original of the tokens */
+  home?: boolean;
 }
 
-export type Loaded = { accounts: StoredAccount[] } | { error: typeof UNREADABLE };
+/** The account that is in use, per provider */
+export type Active = { claude?: string; codex?: string };
+
+export type Loaded = { accounts: StoredAccount[]; active: Active } | { error: typeof UNREADABLE };
 
 export interface StoreOptions {
   path?: string;
@@ -52,6 +59,8 @@ function parseAccount(v: unknown): StoredAccount | null {
   const refresh = strOrNull(v.tokens.refresh);
   const idToken = strOrNull(v.tokens.idToken);
   const expiresAt = strOrNull(v.tokens.expiresAt);
+  const { needsReauth, home } = v;
+  if ((needsReauth !== undefined && typeof needsReauth !== 'boolean') || (home !== undefined && typeof home !== 'boolean')) return null;
   if (alias === undefined || email === undefined || plan === undefined || refresh === undefined || idToken === undefined || expiresAt === undefined) return null;
   return {
     id,
@@ -62,7 +71,21 @@ function parseAccount(v: unknown): StoredAccount | null {
     plan: clipOrNull(plan, PLAN_MAX),
     addedAt,
     tokens: { access: v.tokens.access, refresh, idToken, expiresAt },
+    ...(needsReauth === true ? { needsReauth: true } : {}),
+    ...(home === true ? { home: true } : {}),
   };
+}
+
+/** `active` of the file: absent is empty. A mark whose account is gone (the file was edited by hand) is dropped; a value that is not an object is a broken file (null). */
+function parseActive(v: unknown, accounts: StoredAccount[]): Active | null {
+  if (v === undefined) return {};
+  if (!isObj(v)) return null;
+  const out: Active = {};
+  for (const k of ['claude', 'codex'] as const) {
+    const id = v[k];
+    if (typeof id === 'string' && accounts.some((a) => a.id === id && a.provider === k)) out[k] = id;
+  }
+  return out;
 }
 
 /**
@@ -76,13 +99,13 @@ export async function loadAccounts(o: StoreOptions = {}): Promise<Loaded> {
     const st = await (o.stat ?? stat)(path);
     if (!st.isFile() || (st.mode & 0o077) !== 0) return { error: UNREADABLE };
   } catch (err) {
-    return (err as { code?: unknown } | null)?.code === 'ENOENT' ? { accounts: [] } : { error: UNREADABLE };
+    return (err as { code?: unknown } | null)?.code === 'ENOENT' ? { accounts: [], active: {} } : { error: UNREADABLE };
   }
   let raw: string;
   try {
     raw = await (o.readFile ?? ((p: string) => readFile(p, 'utf8')))(path);
   } catch (err) {
-    return (err as { code?: unknown } | null)?.code === 'ENOENT' ? { accounts: [] } : { error: UNREADABLE };
+    return (err as { code?: unknown } | null)?.code === 'ENOENT' ? { accounts: [], active: {} } : { error: UNREADABLE };
   }
   let doc: unknown;
   try {
@@ -97,8 +120,14 @@ export async function loadAccounts(o: StoreOptions = {}): Promise<Loaded> {
     if (!p) return { error: UNREADABLE };
     accounts.push(p);
   }
-  return { accounts };
+  const active = parseActive(doc.active, accounts);
+  if (!active) return { error: UNREADABLE };
+  return { accounts, active };
 }
+
+/** The text of the file. `active` is written only when it names an account. */
+const serialize = (accounts: StoredAccount[], active: Active): string =>
+  `${JSON.stringify({ version: 1, accounts, ...(active.claude || active.codex ? { active } : {}) }, null, 2)}\n`;
 
 /** Adds run one after another: the read and the write of one add finish before the next add reads. */
 let chain: Promise<unknown> = Promise.resolve();
@@ -124,10 +153,50 @@ export function upsertAccount(a: Omit<StoredAccount, 'id' | 'addedAt'>, o: Store
     next.plan = clipOrNull(next.plan, PLAN_MAX);
     if (i >= 0) list[i] = next;
     else list.push(next);
-    await writePrivate(path, () => `${JSON.stringify({ version: 1, accounts: list }, null, 2)}\n`);
+    await writePrivate(path, () => serialize(list, loaded.active));
     return next;
   };
+  return enqueue(run);
+}
+
+function enqueue<T>(run: () => Promise<T>): Promise<T> {
   const job = chain.then(run, run);
   chain = job.catch(() => {});
   return job;
+}
+
+/**
+ * Change one account inside the chain. `change` gets the record and the active marks and returns the new record, or
+ * null to remove it (a removed account that was active is no longer). Returns the record after the change, or null
+ * when there is no such account (nothing is written). Throws `accounts file unreadable` and writes nothing when the
+ * file cannot be read.
+ */
+export function updateAccount(
+  id: string,
+  change: (a: StoredAccount, active: Active) => StoredAccount | null,
+  o: StoreOptions = {},
+): Promise<StoredAccount | null> {
+  return enqueue(async () => {
+    const path = o.path ?? PATHS.accounts;
+    const loaded = await loadAccounts({ path, readFile: o.readFile, stat: o.stat });
+    if ('error' in loaded) throw new Error(UNREADABLE);
+    const i = loaded.accounts.findIndex((x) => x.id === id);
+    if (i < 0) return null;
+    const active = { ...loaded.active };
+    const next = change(loaded.accounts[i], active);
+    if (next) loaded.accounts[i] = next;
+    else {
+      loaded.accounts.splice(i, 1);
+      for (const k of ['claude', 'codex'] as const) if (active[k] === id) delete active[k];
+    }
+    await writePrivate(path, () => serialize(loaded.accounts, active));
+    return next;
+  });
+}
+
+/** Take an account out of accounts.json (and out of `active`). True when it was there. */
+export async function removeAccount(id: string, o: StoreOptions = {}): Promise<boolean> {
+  let found = false;
+  await updateAccount(id, () => ((found = true), null), o);
+  return found;
 }
