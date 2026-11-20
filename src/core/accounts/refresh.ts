@@ -1,10 +1,11 @@
 // Accounts (docs/accounts.md): the refresh of an added Claude or Codex account that has no folder of its own. An
 // account with a folder is never refreshed here: the CLI refreshes the file in the folder, and refresh tokens turn
-// over, so two refreshers would cut one of them off. The request URLs, client ids and headers are LOGIN_REQUESTS
+// over, so two refreshers would cut one of them off. (A refresh that was already running when a use marked the account
+// saves its new tokens in the record only, because the old refresh token is spent.) The request URLs, client ids and headers are LOGIN_REQUESTS
 // (flows.ts); the request goes through the same `vendor()` helper (timeout, body limit, closed errors).
 
 import { expiresIn, LOGIN_REQUESTS, LoginError, TOKEN_TIMEOUT_MS, vendor } from './flows.ts';
-import { hasHome, type HomesOptions } from './homes.ts';
+import { hasHome, homeFileState, type HomesOptions } from './homes.ts';
 import { loadAccounts, updateAccount, type StoredAccount } from './store.ts';
 
 export type RefreshOutcome =
@@ -12,6 +13,8 @@ export type RefreshOutcome =
   | { state: 'done'; account: StoredAccount }
   /** the vendor refused the refresh token (400 or 401): `needsReauth` is saved */
   | { state: 'reauth' }
+  /** the vendor refused the refresh token of an account that a use marked meanwhile: no record change, the use decides */
+  | { state: 'refused' }
   /** nothing to refresh with: no such account, no refresh token, Copilot, or an account with a folder */
   | { state: 'unusable' }
   /** a failure that passes (network, timeout, 5xx, 429, an answer without a token, a file that cannot be used): asked again later */
@@ -98,9 +101,9 @@ async function run(id: string, o: HomesOptions & { forUse?: boolean }): Promise<
   if (!answer.ok) {
     if (answer.status !== 400 && answer.status !== 401) return { state: 'transient' };
     try {
-      let skipped = false;
-      await updateAccount(id, (x) => (x.home ? ((skipped = true), x) : { ...x, needsReauth: true }), { path: o.accountsPath });
-      if (skipped) return { state: 'unusable' };
+      let marked = false;
+      await updateAccount(id, (x) => (x.home ? ((marked = true), x) : { ...x, needsReauth: true }), { path: o.accountsPath });
+      if (marked) return { state: 'refused' };
     } catch {
       return { state: 'transient' };
     }
@@ -110,14 +113,17 @@ async function run(id: string, o: HomesOptions & { forUse?: boolean }): Promise<
   const access = body ? str(body.access_token) : null;
   if (!body || !access) return { state: 'transient' };
   const at = (o.now ?? Date.now)();
-  // a use made the folder while the vendor answered: the file in it is the original now, and this answer is not written
-  if (!o.forUse && (await hasHome(a, o))) return { state: 'unusable' };
+  // a login file in the folder of a record without the mark: it is the CLI's original, and this answer is not written
+  // (a file that is not known to be there is not a reason to drop tokens: the old refresh token is spent, so they are kept in the record)
+  const fileThere = !o.forUse && (await homeFileState(a, o)) === 'file';
   try {
     let skipped = false;
     const saved = await updateAccount(
       id,
       (x) => {
-        if (x.home) {
+        // a use marked the account while the vendor answered: the refresh token it spent is replaced, so the new tokens
+        // go into the record (the use writes the folder file from the record) and `home` stays
+        if (!x.home && fileThere) {
           skipped = true;
           return x;
         }

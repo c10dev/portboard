@@ -61,10 +61,14 @@ function viewOf(l: LocalLogin, q: QuotaResult | null, now: number): AccountView 
 /** An added account as the dashboard sees it. Field by field: the tokens and the identity stay in the record. */
 export function addedView(a: StoredAccount, q: QuotaResult | null, now: number, extra: { active?: boolean; command?: string | null } = {}): AccountView {
   const v = addedFields(a, q, now, extra);
+  v.tier = tierToShow(v);
   // the vendor refused the refresh token: sign in again says more than "expired"
   if (a.needsReauth && v.status === 'expired') v.error = 'account needs sign-in again';
   return v;
 }
+
+/** The sign-in stores the tier text as the plan too: a tier that is the plan is not shown twice */
+const tierToShow = (v: Pick<AccountView, 'tier' | 'plan'>): string | null => (v.tier !== null && v.tier === v.plan ? null : v.tier);
 
 function addedFields(a: StoredAccount, q: QuotaResult | null, now: number, extra: { active?: boolean; command?: string | null }): AccountView {
   const expired = a.tokens.expiresAt !== null && Date.parse(a.tokens.expiresAt) < now;
@@ -75,7 +79,7 @@ function addedFields(a: StoredAccount, q: QuotaResult | null, now: number, extra
     alias: a.alias,
     email: a.email,
     plan: a.plan,
-    tier: null,
+    tier: a.tier ?? null,
     status: expired ? 'expired' : 'ok',
     expiresAt: a.tokens.expiresAt,
     needsReauth: a.needsReauth === true,
@@ -116,8 +120,10 @@ function loginOf(a: StoredAccount): LocalLogin | null {
  * (and the refresh expiry the CLI keeps) count. A file that is missing or cannot be read is `unreadable`.
  */
 export function homeView(a: StoredAccount, l: LocalLogin | null, q: QuotaResult | null, now: number, extra: { active?: boolean; command?: string | null }): AccountView {
-  if (!l || l.status !== 'ok') return { ...addedView(a, null, now, extra), status: 'unreadable', error: 'credentials file unreadable' };
+  if (!l || l.status !== 'ok') return { ...addedView(a, null, now, extra), tier: null, status: 'unreadable', error: 'credentials file unreadable' };
   const v = addedView({ ...a, tokens: { ...a.tokens, expiresAt: l.expiresAt } }, q, now, extra);
+  // the tier of the file in the folder (its `rateLimitTier`), as for a CLI login
+  v.tier = tierToShow({ tier: l.tier, plan: v.plan });
   if (l.refreshExpiresAt !== null && Date.parse(l.refreshExpiresAt) < now) v.needsReauth = true;
   return v;
 }
@@ -143,7 +149,7 @@ async function addedReport(
   let rec = a;
   const expired = a.tokens.expiresAt !== null && Date.parse(a.tokens.expiresAt) < now;
   if (o.refresh && a.provider !== 'copilot' && expired && a.tokens.refresh && !a.needsReauth) {
-    const r = await refreshAccount(a.id, { fetch: o.fetch, now: o.now, accountsPath: o.accountsPath, rest: true });
+    const r = await refreshAccount(a.id, { fetch: o.fetch, now: o.now, accountsPath: o.accountsPath, accountHomes: o.accountHomes, rest: true });
     if (r.state === 'done') rec = r.account;
     else if (r.state === 'reauth') rec = { ...a, needsReauth: true };
   }

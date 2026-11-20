@@ -235,7 +235,8 @@ function endFlow(cancel) {
   if (cancel) post('api/accounts/login/cancel', { flowId: f.id }).catch(() => {});
 }
 
-const place = (...nodes) => $('accountsAdd')?.replaceChildren(...nodes);
+/** null, undefined and false are dropped: replaceChildren(null) would make a "null" text node */
+const place = (...nodes) => $('accountsAdd')?.replaceChildren(...nodes.filter((n) => n !== null && n !== undefined && n !== false));
 const failure = (msg) => h('p', { class: 'set-note', role: 'alert' }, errorText(msg));
 const reason = (err) => String(err?.message ?? '');
 

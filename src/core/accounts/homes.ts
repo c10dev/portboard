@@ -3,9 +3,9 @@
 // `CODEX_HOME=<folder> codex` starts that CLI as that account. Portboard never sets either variable itself and never
 // touches ~/.claude or ~/.codex. Files go through writePrivate (0600, folder 0700). Once a folder exists, the file in it
 // is the original of the tokens: the CLI refreshes it, and Portboard reads it back with the same parser as the CLI logins
-// (detect.ts) and never refreshes that account.
+// (detect.ts) and never refreshes that account. A use and a remove of the same account run one after the other (`inTurn`).
 
-import { chmod, lstat, mkdir, readFile, realpath, rm } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readFile, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { PATHS } from '../paths.ts';
 import { writePrivate } from '../atomic.ts';
@@ -74,15 +74,22 @@ const FILE_NAME = { claude: '.credentials.json', codex: 'auth.json' } as const;
 /**
  * Does this account have a folder? Yes when "use" made it (`home`), and also when the login file is in the folder although
  * `home` was cleared (the account was added again): that file is the CLI's, so it is not refreshed or replaced behind its back.
+ * ENOENT and ENOTDIR (a plain file where the folder belongs) on the login file mean "no folder file". Any other error means
+ * "not known", and an account that may have a folder is treated as one (it is not refreshed).
  * The one place that decides it (the list, the refresh).
  */
 export async function hasHome(a: Pick<StoredAccount, 'id' | 'provider' | 'home'>, o: { accountHomes?: string } = {}): Promise<boolean> {
   if (a.provider === 'copilot' || !HOME_ID.test(a.id)) return false;
-  if (a.home) return true;
+  return a.home ? true : (await homeFileState(a, o)) !== 'none';
+}
+
+/** The login file in the folder of a record: it is there, it is not, or that is not known (an error other than ENOENT and ENOTDIR) */
+export async function homeFileState(a: Pick<StoredAccount, 'id' | 'provider'>, o: { accountHomes?: string } = {}): Promise<'file' | 'none' | 'unknown'> {
+  if (a.provider === 'copilot' || !HOME_ID.test(a.id)) return 'none';
   try {
-    return (await lstat(join(rootOf(o), a.id, FILE_NAME[a.provider]))).isFile();
-  } catch {
-    return false;
+    return (await lstat(join(rootOf(o), a.id, FILE_NAME[a.provider]))).isFile() ? 'file' : 'none';
+  } catch (err) {
+    return isCode(err, 'ENOENT') || isCode(err, 'ENOTDIR') ? 'none' : 'unknown';
   }
 }
 
@@ -159,9 +166,10 @@ async function writeHome(a: StoredAccount, file: HomeFile, root: string): Promis
 }
 
 /**
- * Delete the folder of an account. It goes only when it is a real folder (not a link), named like an account id, and its
- * own `realpath` is the `account-homes` folder's `realpath` plus its name (so no link on the way leads elsewhere).
- * A folder that is not there is fine. Anything else is not deleted and throws `account home not removed`.
+ * Delete the folder of an account. The protection is these three checks: the id matches `acc-` and 12 hex digits (so the
+ * name has no separator and no `..`), `lstat` says the path is a real folder and not a link or a file, and `fs.rm` does
+ * not follow a link when it deletes. A folder that is not there is fine. Anything else is not deleted and throws
+ * `account home not removed`.
  */
 export async function removeHome(id: string, root: string): Promise<void> {
   const fail = () => new AccountError('account home not removed');
@@ -176,7 +184,6 @@ export async function removeHome(id: string, root: string): Promise<void> {
   }
   try {
     if (st.isSymbolicLink() || !st.isDirectory()) throw new Error('not a folder');
-    if ((await realpath(path)) !== join(await realpath(root), id)) throw new Error('not under the root');
     await rm(path, { recursive: true });
   } catch {
     throw fail();
@@ -184,6 +191,21 @@ export async function removeHome(id: string, root: string): Promise<void> {
 }
 
 const unreadable = () => new LoginError(UNREADABLE);
+
+/** The last use or remove of each account that has not finished yet: the next one for the same id starts after it */
+const turns = new Map<string, Promise<unknown>>();
+
+/** Run `fn` after every earlier use or remove of this id has finished (whether it worked or not). Other ids do not wait. */
+function inTurn<T>(id: unknown, fn: () => Promise<T>): Promise<T> {
+  if (typeof id !== 'string') return fn();
+  const job = (turns.get(id) ?? Promise.resolve()).catch(() => {}).then(fn);
+  turns.set(id, job);
+  const clear = () => {
+    if (turns.get(id) === job) turns.delete(id);
+  };
+  job.then(clear, clear);
+  return job;
+}
 
 /** The stored record of a valid id; otherwise an error with a closed text */
 async function find(id: unknown, o: HomesOptions, what: 'use' | 'remove'): Promise<StoredAccount> {
@@ -208,15 +230,23 @@ async function change(id: string, o: HomesOptions, fn: Parameters<typeof updateA
 /**
  * "Use this account": the CLI login file in the account's own folder, the account marked active for its provider,
  * and the command that starts the CLI as it.
+ * - A use and a remove of the same account run one after the other.
  * - A use waits for a refresh of the same account that is running, then reads the record again.
  * - An account that has no folder yet is refreshed first when its access token has expired. Its record gets `home: true`
  *   before the file is written, so a refresh that starts later stops; when the write fails, the mark is taken back.
+ *   A refresh that was already running when the mark was saved puts its new tokens in the record only (refresh.ts), so the use
+ *   waits for it once more and writes the latest record to the file. A record that is gone after the write loses its new folder.
  * - An account whose folder is marked is not written again: the file in it is the original, and the CLI may have
  *   refreshed it since. When that file is missing or unreadable the old copy in accounts.json is not written back (its
  *   refresh token may be spent): the account needs to sign in again.
  * Returns the record, the command and the login read back from the folder file (the list's rules).
  */
-export async function useAccount(id: unknown, o: HomesOptions = {}): Promise<{ account: StoredAccount; command: string; login: LocalLogin | null }> {
+export function useAccount(id: unknown, o: HomesOptions = {}): Promise<{ account: StoredAccount; command: string; login: LocalLogin | null }> {
+  return inTurn(id, () => useNow(id, o));
+}
+
+async function useNow(id: unknown, o: HomesOptions): Promise<{ account: StoredAccount; command: string; login: LocalLogin | null }> {
+  let wrote = false;
   let a = await find(id, o, 'use');
   const running = pendingRefresh(a.id);
   if (running) {
@@ -238,22 +268,31 @@ export async function useAccount(id: unknown, o: HomesOptions = {}): Promise<{ a
   } else {
     if (a.tokens.refresh && a.tokens.expiresAt !== null && Date.parse(a.tokens.expiresAt) < now) {
       const r = await refreshAccount(a.id, { ...o, forUse: true });
-      if (r.state === 'reauth') throw new AccountError('account needs sign-in again');
+      if (r.state === 'reauth' || r.state === 'refused') throw new AccountError('account needs sign-in again');
       if (r.state === 'transient') throw new LoginError('login request failed', true);
       if (r.state === 'done') a = r.account;
     }
     if (!fileOf(a, now)) throw new AccountError('account cannot be used by the CLI');
     // the mark first (inside the store's chain), then the file; the record the mark returns is the latest
-    const marked = await change(a.id, o, (x) => ({ ...x, home: true }));
+    let marked = await change(a.id, o, (x) => ({ ...x, home: true }));
     if (!marked) throw new AccountError('account not found');
-    const file = fileOf(marked, now);
     try {
+      // a refresh that was already running when the mark was saved ends with new tokens in the record only: wait, then write the latest
+      const late = pendingRefresh(a.id);
+      if (late) {
+        // the vendor refused the refresh token that this use was about to write: nothing is written
+        if ((await late.catch(() => null))?.state === 'refused') throw new AccountError('account needs sign-in again');
+        marked = await find(a.id, o, 'use');
+      }
+      const file = fileOf(marked, now);
       if (!file) throw new AccountError('account cannot be used by the CLI');
       await writeHome(marked, file, root);
+      wrote = true;
     } catch (err) {
+      const refused = err instanceof AccountError && err.text === 'account needs sign-in again';
       await change(a.id, o, (x) => {
         const { home: _undo, ...rest } = x;
-        return rest;
+        return refused ? { ...rest, needsReauth: true } : rest;
       }).catch(() => null);
       throw err;
     }
@@ -262,7 +301,11 @@ export async function useAccount(id: unknown, o: HomesOptions = {}): Promise<{ a
     active[x.provider as 'claude' | 'codex'] = x.id;
     return { ...x, home: true };
   });
-  if (!saved) throw new AccountError('account not found');
+  if (!saved) {
+    // the record is gone: the folder this use just wrote has no account
+    if (wrote) await removeHome(a.id, root).catch(() => {});
+    throw new AccountError('account not found');
+  }
   return { account: saved, command, login: await readHomeLogin(saved, o) };
 }
 
@@ -270,7 +313,11 @@ export async function useAccount(id: unknown, o: HomesOptions = {}): Promise<{ a
  * Remove an added account: its folder first, then its record (and its active mark). The record goes only when the folder is
  * gone or was never there, so a folder that cannot be deleted safely leaves the account listed and the owner can try again.
  */
-export async function removeAccountById(id: unknown, o: HomesOptions = {}): Promise<void> {
+export function removeAccountById(id: unknown, o: HomesOptions = {}): Promise<void> {
+  return inTurn(id, () => removeNow(id, o));
+}
+
+async function removeNow(id: unknown, o: HomesOptions): Promise<void> {
   const a = await find(id, o, 'remove');
   await removeHome(a.id, rootOf(o));
   try {

@@ -4,7 +4,7 @@
 // No real endpoint is called and no real ~/.claude or ~/.codex is read.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -24,7 +24,8 @@ process.env.PORTBOARD_ACCOUNTS = FILE;
 process.env.PORTBOARD_ACCOUNT_HOMES = HOMES;
 
 const { finishLogin, LOGIN_REQUESTS, pollLogin, resetFlowsForTest, startLogin } = await import('../src/core/accounts/flows.ts');
-const { resetRefreshForTest } = await import('../src/core/accounts/refresh.ts');
+const { resetRefreshForTest, refreshAccount } = await import('../src/core/accounts/refresh.ts');
+const { useAccount } = await import('../src/core/accounts/homes.ts');
 const { loadAccounts, updateAccount, upsertAccount } = await import('../src/core/accounts/store.ts');
 const { clearQuotaCache, fetchQuota, quotaCacheSize, QUOTA_REQUESTS } = await import('../src/core/accounts/quota.ts');
 const { accountsReport } = await import('../src/core/accounts/view.ts');
@@ -517,7 +518,7 @@ test('remove: a CLI login cannot be removed, and a bad id is 400', async () => {
   defaultsIntact();
 });
 
-test('remove: a folder that is a link to somewhere else is not followed or deleted; the record goes and the answer says so', async () => {
+test('remove: a folder that is a link to somewhere else is not followed or deleted; the answer says so and the record stays', async () => {
   const outside = mkdtempSync(join(FAKE_HOME, 'outside-'));
   writeFileSync(join(outside, 'keep.txt'), 'KEEP');
   const a = await claudeAccount();
@@ -629,6 +630,21 @@ test('#141.1 the page cancels the flow when the finish request fails (source che
   const catchBlock = fin.slice(fin.indexOf('catch (err)'), fin.indexOf('return;'));
   assert.match(catchBlock, /endFlow\(true\)/);
   assert.doesNotMatch(catchBlock, /endFlow\(false\)/);
+});
+
+test('the accounts page never puts a "null" text above the add-account row: place drops null, undefined and false (source of public/features/accounts.js run with a fake node)', () => {
+  const src = readFileSync(new URL('../public/features/accounts.js', import.meta.url), 'utf8');
+  const line = src.split('\n').find((l) => l.startsWith('const place = '));
+  assert.ok(line, 'place is there');
+  const placed: unknown[][] = [];
+  const place = new Function('$', `${line}; return place;`)(() => ({ replaceChildren: (...n: unknown[]) => placed.push(n) }));
+  const node = { tag: 'p' };
+  place(null, node);
+  place(undefined, false, node, null);
+  place(node);
+  assert.deepEqual(placed, [[node], [node], [node]]);
+  // choices passes the note as it is (null when there is none): only place filters
+  assert.match(src, /function choices\(note\) \{[\s\S]*?place\(\s*note \?\? null,/);
 });
 
 test('#141.2 Copilot: a 5xx or 429 whose error is not one of the four codes is pending; the four codes keep their meaning', async () => {
@@ -786,7 +802,7 @@ test('a use waits for a refresh that is running and writes its (rotated) tokens;
   assert.equal(callsTo(C.claude.tokenUrl).length, 1, 'an account with a folder is not refreshed');
 });
 
-test('a refresh whose answer comes after the account got a folder writes nothing', async () => {
+test('a refresh whose answer comes after the account got a folder keeps its new tokens in the record and writes no folder file', async () => {
   const a = await claudeAccount({ expiresAt: iso(NOW - 1000) });
   let release: (r: Response) => void = () => {};
   answers = { [C.claude.tokenUrl]: () => new Promise<Response>((res) => { release = res; }), [QUOTA_REQUESTS.claude.url]: () => json(CLAUDE_USAGE) };
@@ -796,7 +812,9 @@ test('a refresh whose answer comes after the account got a folder writes nothing
   release(json({ access_token: CLAUDE_ACCESS_NEW, refresh_token: CLAUDE_REFRESH_NEW, expires_in: 3600 }));
   await listing;
   const rec = (await stored()).accounts[0];
-  assert.deepEqual([rec.tokens.access, rec.tokens.refresh, rec.home], [CLAUDE_ACCESS, CLAUDE_REFRESH, true]);
+  // the vendor spent the old refresh token, so the new ones are kept in the record (a use writes the folder file from it)
+  assert.deepEqual([rec.tokens.access, rec.tokens.refresh, rec.home], [CLAUDE_ACCESS_NEW, CLAUDE_REFRESH_NEW, true]);
+  assert.equal(existsSync(join(HOMES, a.id)), false);
 });
 
 test('a record that was added again keeps its folder: the login file in it is still the original (no refresh, command shown); the next use replaces it and keeps a .bak', async () => {
@@ -870,7 +888,7 @@ test('when the file cannot be written the `home` mark is taken back', async () =
   assert.deepEqual((await stored()).active, {});
 });
 
-test('remove deletes the folder first and the record only after: a folder that cannot go leaves the record, and the next try works (the folder itself is checked with realpath)', async () => {
+test('remove deletes the folder first and the record only after: a folder that cannot go leaves the record, and the next try works', async () => {
   const a = await claudeAccount();
   await use(a.id);
   const real = mkdtempSync(join(FAKE_HOME, 'real-'));
@@ -885,4 +903,162 @@ test('remove deletes the folder first and the record only after: a folder that c
   rmSync(join(HOMES, a.id));
   assert.equal((await remove(a.id)).status, 200, 'no folder at all is fine');
   assert.deepEqual((await stored()).accounts, []);
+});
+
+// ---- #154 / #155: the follow-ups of PR #45's review ----
+
+test('#154 a use and a remove of the same account at once leave no folder without a record (50 rounds, both orders)', async () => {
+  for (let i = 0; i < 50; i++) {
+    const a = await claudeAccount();
+    await Promise.all(i % 2 ? [use(a.id), remove(a.id)] : [remove(a.id), use(a.id)]);
+    assert.deepEqual((await stored()).accounts.filter((x) => x.id === a.id), [], `record gone, round ${i}`);
+    assert.equal(existsSync(join(HOMES, a.id)), false, `no orphan folder, round ${i}`);
+  }
+});
+
+test('#154 a refresh that was running when the use marked the account: the folder file gets the latest refresh token', async () => {
+  const a = await claudeAccount({ expiresAt: iso(NOW + 3600_000) });
+  let release: (r: Response) => void = () => {};
+  answers = { [C.claude.tokenUrl]: () => new Promise<Response>((res) => { release = res; }) };
+  let refreshing: Promise<unknown> | null = null;
+  // the use reads the clock once after it waited for running refreshes; a refresh that sees an expired token starts then
+  const o = {
+    ...options(),
+    now: () => {
+      if (!refreshing) refreshing = refreshAccount(a.id, { ...options(), now: () => NOW + 2 * 3600_000 });
+      return NOW;
+    },
+  };
+  const using = useAccount(a.id, o);
+  let spins = 0;
+  while ((callsTo(C.claude.tokenUrl).length === 0 || !(await stored()).accounts[0].home) && spins++ < 500) await new Promise((r) => setTimeout(r, 5));
+  assert.equal(callsTo(C.claude.tokenUrl).length, 1, 'the refresh asked the vendor before the mark');
+  assert.equal((await stored()).accounts[0].home, true, 'the use saved the mark and waits');
+  release(json({ access_token: CLAUDE_ACCESS_NEW, refresh_token: CLAUDE_REFRESH_NEW, expires_in: 28800 }));
+  await Promise.all([using, refreshing]);
+  const file = readJson(homeFile(a.id, '.credentials.json')).claudeAiOauth;
+  assert.deepEqual([file.accessToken, file.refreshToken], [CLAUDE_ACCESS_NEW, CLAUDE_REFRESH_NEW]);
+  assert.equal((await stored()).accounts[0].tokens.refresh, CLAUDE_REFRESH_NEW);
+  assert.equal(callsTo(C.claude.tokenUrl).length, 1);
+});
+
+test('#154 a folder file that cannot be checked (EACCES, not ENOENT) counts as a folder: the account is not refreshed', { skip: process.getuid?.() === 0 }, async () => {
+  const a = await claudeAccount({ expiresAt: iso(NOW - 1000) });
+  const dir = join(HOMES, a.id);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  chmodSync(dir, 0o000);
+  try {
+    const row = (await report()).find((x) => x.id === a.id)!;
+    assert.equal(row.status, 'unreadable');
+    assert.equal(calls.length, 0, 'no refresh request, no usage request');
+    const rec = (await stored()).accounts[0];
+    assert.deepEqual([rec.tokens.refresh, rec.home], [CLAUDE_REFRESH, undefined]);
+  } finally {
+    chmodSync(dir, 0o700);
+  }
+});
+
+/** A use that reads the clock once after it waited for running refreshes; a refresh that sees an expired token starts then */
+const useWithLateRefresh = (id: string) => {
+  let refreshing: Promise<unknown> | null = null;
+  const o = {
+    ...options(),
+    now: () => {
+      if (!refreshing) refreshing = refreshAccount(id, { ...options(), now: () => NOW + 2 * 3600_000 });
+      return NOW;
+    },
+  };
+  return { using: useAccount(id, o), refreshing: () => refreshing! };
+};
+const waitFor = async (what: string, ok: () => boolean | Promise<boolean>) => {
+  for (let i = 0; i < 500 && !(await ok()); i++) await new Promise((r) => setTimeout(r, 5));
+  assert.ok(await ok(), what);
+};
+
+test('#154 a late refresh that the vendor refuses: the use answers sign-in-again, takes the mark back, saves needsReauth and writes no folder file', async () => {
+  const a = await claudeAccount({ expiresAt: iso(NOW + 3600_000) });
+  let release: (r: Response) => void = () => {};
+  answers = { [C.claude.tokenUrl]: () => new Promise<Response>((res) => { release = res; }) };
+  const run = useWithLateRefresh(a.id);
+  const outcome = run.using.then(() => null, (e: unknown) => e as { text?: string; status?: number });
+  await waitFor('the use marked the account while the refresh waits', async () => callsTo(C.claude.tokenUrl).length === 1 && (await stored()).accounts[0].home === true);
+  release(json({ error: 'invalid_grant' }, 401));
+  const err = await outcome;
+  assert.deepEqual([err?.text, err?.status], ['account needs sign-in again', 409]);
+  const rec = (await stored()).accounts[0];
+  assert.deepEqual([rec.home, rec.needsReauth], [undefined, true]);
+  assert.equal(existsSync(join(HOMES, a.id, '.credentials.json')), false);
+  assert.equal(rec.tokens.refresh, CLAUDE_REFRESH);
+});
+
+test('#154 a use whose record was removed behind its back after it wrote the folder deletes that folder', async () => {
+  const a = await claudeAccount({ expiresAt: iso(NOW + 3600_000) });
+  let release: (r: Response) => void = () => {};
+  answers = { [C.claude.tokenUrl]: () => new Promise<Response>((res) => { release = res; }) };
+  const run = useWithLateRefresh(a.id);
+  const outcome = run.using.then(() => null, (e: unknown) => e as { text?: string });
+  await waitFor('the use marked the account while the refresh waits', async () => callsTo(C.claude.tokenUrl).length === 1 && (await stored()).accounts[0].home === true);
+  // a removal outside the use's turn, queued right behind the refresh's save; its first read is held until the use has written the folder
+  let open: () => void = () => {};
+  const gate = new Promise<void>((r) => { open = r; });
+  release(json({ access_token: CLAUDE_ACCESS_NEW, refresh_token: CLAUDE_REFRESH_NEW, expires_in: 28800 }));
+  await run.refreshing();
+  const removal = updateAccount(a.id, () => null, { path: FILE, stat: async (p) => (await gate, statSync(p)) });
+  await waitFor('the use wrote the folder file', () => existsSync(join(HOMES, a.id, '.credentials.json')));
+  open();
+  await removal;
+  assert.equal((await outcome)?.text, 'account not found');
+  assert.equal(existsSync(join(HOMES, a.id)), false, 'the folder of a record that is gone is deleted');
+});
+
+test('#154 a plain file where the folder belongs (ENOTDIR) is not a folder account: it is refreshed like one without a folder', async () => {
+  const a = await claudeAccount({ expiresAt: iso(NOW - 1000) });
+  mkdirSync(HOMES, { recursive: true, mode: 0o700 });
+  writeFileSync(join(HOMES, a.id), 'A FILE');
+  answers = { ...claudeRefreshOk(), [QUOTA_REQUESTS.claude.url]: () => json(CLAUDE_USAGE) };
+  const row = (await report()).find((x) => x.id === a.id)!;
+  assert.equal(callsTo(C.claude.tokenUrl).length, 1);
+  assert.equal(row.status, 'ok');
+  assert.equal(row.command, null);
+});
+
+test('#154 remove: a link inside the folder is deleted as a link and the file outside stays', async () => {
+  const a = await claudeAccount();
+  await use(a.id);
+  const outside = mkdtempSync(join(FAKE_HOME, 'outside-'));
+  writeFileSync(join(outside, 'keep.txt'), 'KEEP');
+  symlinkSync(join(outside, 'keep.txt'), join(HOMES, a.id, 'link-to-file'));
+  symlinkSync(outside, join(HOMES, a.id, 'link-to-folder'));
+  assert.equal((await remove(a.id)).status, 200);
+  assert.equal(existsSync(join(HOMES, a.id)), false);
+  assert.equal(readFileSync(join(outside, 'keep.txt'), 'utf8'), 'KEEP');
+});
+
+test('#155 an added Claude account whose plan is the tier text (as the sign-in stores it) shows no tier', async () => {
+  const a = await claudeAccount({}, { plan: 'default_claude_max_5x' });
+  answers = { [QUOTA_REQUESTS.claude.url]: () => json(CLAUDE_USAGE) };
+  const row = (await report()).find((x) => x.id === a.id)!;
+  assert.deepEqual([row.plan, row.tier], ['default_claude_max_5x', null]);
+  assert.equal((await stored()).accounts[0].tier, 'default_claude_max_5x', 'the stored value stays');
+});
+
+test('#155 an added Claude account shows its stored tier; with a folder it shows the rateLimitTier of the folder file', async () => {
+  const a = await claudeAccount();
+  const old = await claudeAccount({}, { tier: null, subscriptionType: null });
+  answers = { [QUOTA_REQUESTS.claude.url]: () => json(CLAUDE_USAGE) };
+  let rows = await report();
+  assert.equal(rows.find((x) => x.id === a.id)!.tier, 'default_claude_max_5x');
+  assert.equal(rows.find((x) => x.id === old.id)!.tier, null);
+  await use(a.id);
+  const dir = join(HOMES, a.id);
+  const folderFile = (extra: Record<string, unknown>) =>
+    writeFileSync(join(dir, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: CLAUDE_ACCESS_FOLDER, refreshToken: 'sk-ant-ort01-TESTREFRESHFOLDER01', expiresAt: NOW + 3600_000, ...extra } }));
+  folderFile({ rateLimitTier: 'folder_tier' });
+  clearQuotaCache();
+  rows = await report();
+  assert.equal(rows.find((x) => x.id === a.id)!.tier, 'folder_tier');
+  folderFile({});
+  clearQuotaCache();
+  rows = await report();
+  assert.equal(rows.find((x) => x.id === a.id)!.tier, null, 'the folder file is the original: no tier there is no tier');
 });
