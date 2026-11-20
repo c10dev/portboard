@@ -2,7 +2,7 @@
 // is assigned one by one from an allowlist: no spread, no copy of the record.
 
 import { detectLogins, type DetectOptions, type LocalLogin } from './detect.ts';
-import { homeCommand, readHomeLogin } from './homes.ts';
+import { hasHome, homeCommand, readHomeLogin } from './homes.ts';
 import { fetchQuota, type QuotaResult, type QuotaWindow } from './quota.ts';
 import { refreshAccount } from './refresh.ts';
 import { loadAccounts, type StoredAccount } from './store.ts';
@@ -112,6 +112,17 @@ function loginOf(a: StoredAccount): LocalLogin | null {
 }
 
 /**
+ * An added account that has a folder, as the list shows it: the login file in the folder is the original, so its expiry
+ * (and the refresh expiry the CLI keeps) count. A file that is missing or cannot be read is `unreadable`.
+ */
+export function homeView(a: StoredAccount, l: LocalLogin | null, q: QuotaResult | null, now: number, extra: { active?: boolean; command?: string | null }): AccountView {
+  if (!l || l.status !== 'ok') return { ...addedView(a, null, now, extra), status: 'unreadable', error: 'credentials file unreadable' };
+  const v = addedView({ ...a, tokens: { ...a.tokens, expiresAt: l.expiresAt } }, q, now, extra);
+  if (l.refreshExpiresAt !== null && Date.parse(l.refreshExpiresAt) < now) v.needsReauth = true;
+  return v;
+}
+
+/**
  * One added account. With a folder, the file in it is the original of the tokens (the CLI refreshes it): it is read like a
  * CLI login and never refreshed here. Without one, an expired access token is refreshed first when there is a refresh token
  * (never ahead of time, and a failed try rests for a while). Only when `o.refresh` is set: the dashboard asks for it, the read-only MCP tool does not.
@@ -122,16 +133,12 @@ async function addedReport(
   o: DetectOptions & { fetch?: typeof fetch; now?: () => number; accountsPath?: string; accountHomes?: string; refresh?: boolean },
 ): Promise<AccountView> {
   const now = (o.now ?? Date.now)();
-  const command = a.home ? homeCommand(a, { accountHomes: o.accountHomes }) : null;
+  const homed = await hasHome(a, o);
+  const command = homed ? homeCommand(a, { accountHomes: o.accountHomes }) : null;
   const extra = { active, command };
-  if (a.home && a.provider !== 'copilot') {
+  if (homed) {
     const l = await readHomeLogin(a, o);
-    if (!l || l.status !== 'ok') {
-      return { ...addedView(a, null, now, extra), status: 'unreadable', error: 'credentials file unreadable' };
-    }
-    const v = addedView({ ...a, tokens: { ...a.tokens, expiresAt: l.expiresAt } }, await fetchQuota(l, { fetch: o.fetch, now: o.now }), now, extra);
-    if (l.refreshExpiresAt !== null && Date.parse(l.refreshExpiresAt) < now) v.needsReauth = true;
-    return v;
+    return homeView(a, l, l && l.status === 'ok' ? await fetchQuota(l, { fetch: o.fetch, now: o.now }) : null, now, extra);
   }
   let rec = a;
   const expired = a.tokens.expiresAt !== null && Date.parse(a.tokens.expiresAt) < now;

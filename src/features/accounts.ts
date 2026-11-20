@@ -20,7 +20,7 @@
 import { classify } from '../core/access.ts';
 import { cancelLogin, finishLogin, LoginError, pollLogin, startLogin, type Provider } from '../core/accounts/flows.ts';
 import { AccountError, removeAccountById, useAccount } from '../core/accounts/homes.ts';
-import { accountsReport, addedView } from '../core/accounts/view.ts';
+import { accountsReport, addedView, homeView } from '../core/accounts/view.ts';
 import { SITE } from '../core/site.ts';
 import { text } from '../mcp/kit.ts';
 import { ok, reply } from './router.ts';
@@ -143,7 +143,8 @@ export const accountsFeature: FeatureModule = {
         try {
           const o = homesOptions();
           const r = await useAccount((body as { id?: unknown } | null)?.id, o);
-          return ok({ account: addedView(r.account, null, (o.now ?? Date.now)(), { active: true, command: r.command }), command: r.command });
+          // the same rules as the list: read back from the folder file
+          return ok({ account: homeView(r.account, r.login, null, (o.now ?? Date.now)(), { active: true, command: r.command }), command: r.command });
         } catch (err) {
           return failed(err);
         }

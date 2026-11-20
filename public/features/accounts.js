@@ -57,6 +57,8 @@ const ERRORS = [
   [/^account cannot be used by the CLI$/, () => t('accounts.error.noCli')],
   [/^account needs sign-in again$/, () => t('accounts.error.needsSignIn')],
   [/^account home not written$/, () => t('accounts.error.home')],
+  [/^account home not removed$/, () => t('accounts.error.homeNotRemoved')],
+  [/^local login cannot be used here$/, () => t('accounts.error.localUse')],
 ];
 
 function errorText(s) {
@@ -117,14 +119,21 @@ function actions(a, say) {
     say('');
     if (!(await confirmRemove(t('accounts.remove.confirm', { name })))) return;
     remove.disabled = true;
+    let failure = '';
     try {
       await postOrThrow('api/accounts/remove', { id: a.id });
     } catch (err) {
       remove.disabled = false;
-      say(errorText(reason(err)));
+      failure = errorText(reason(err));
+      say(failure);
     }
-    // the record may be gone even when the folder could not be deleted: the list shows what is there now
-    refresh();
+    // the list is drawn again: on a failure the account is still listed (nothing is removed), and the message shows on its new row
+    await refresh();
+    if (failure) {
+      const li = [...document.querySelectorAll('#accountsList li')].find((x) => x.dataset.account === a.id);
+      const note = li?.querySelector('[role="alert"]');
+      if (note) note.textContent = failure;
+    }
   }, { write: true, danger: true });
   return h('div', { class: 'set-row acc-line' }, use, remove);
 }
@@ -148,8 +157,9 @@ function row(a) {
   const exp = when(a.expiresAt);
   const q = a.quota;
   const added = a.source === 'added';
-  // an added account is not refreshed yet: the CLI hint would send the owner to the wrong place
-  const err = added && a.error === 'access token expired' ? t('accounts.error.expiredAdded') : a.error ? errorText(a.error) : null;
+  // an added account with a folder (a.command) is refreshed by the CLI: running it once clears the expiry, like a CLI login.
+  // One without a folder is refreshed by Portboard when it can; this text is for when it could not.
+  const err = added && a.error === 'access token expired' && !a.command ? t('accounts.error.expiredAdded') : a.error ? errorText(a.error) : null;
   const note = h('span', { class: 'set-state warn acc-line', role: 'alert' });
   const say = (text) => { note.textContent = text; };
   return h(

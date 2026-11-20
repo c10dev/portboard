@@ -211,7 +211,7 @@ test('Claude: the PKCE start, a pasted code#state, the exchange, the profile; on
     const recs = await stored();
     assert.equal(recs.length, 1);
     assert.deepEqual(recs[0], {
-      id: a.id, provider: 'claude', alias: 'work', identity: 'uuid-claude-1', email: 'new@example.com', plan: 'default_claude_max_5x', addedAt: new Date(NOW).toISOString(),
+      id: a.id, provider: 'claude', alias: 'work', identity: 'uuid-claude-1', email: 'new@example.com', plan: 'default_claude_max_5x', tier: 'default_claude_max_5x', subscriptionType: 'max', addedAt: new Date(NOW).toISOString(),
       tokens: { access: CLAUDE_ACCESS, refresh: CLAUDE_REFRESH, idToken: null, expiresAt: new Date(NOW + 28800_000).toISOString() },
     });
     assert.equal(mode(), 0o600);

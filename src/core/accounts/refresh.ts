@@ -3,7 +3,8 @@
 // over, so two refreshers would cut one of them off. The request URLs, client ids and headers are LOGIN_REQUESTS
 // (flows.ts); the request goes through the same `vendor()` helper (timeout, body limit, closed errors).
 
-import { expiresIn, LOGIN_REQUESTS, LoginError, TOKEN_TIMEOUT_MS, vendor, type LoginOptions } from './flows.ts';
+import { expiresIn, LOGIN_REQUESTS, LoginError, TOKEN_TIMEOUT_MS, vendor } from './flows.ts';
+import { hasHome, type HomesOptions } from './homes.ts';
 import { loadAccounts, updateAccount, type StoredAccount } from './store.ts';
 
 export type RefreshOutcome =
@@ -28,6 +29,11 @@ export function resetRefreshForTest(): void {
   restUntil.clear();
 }
 
+/** The refresh of this account that is running now, if any: a use waits for it before it reads the record */
+export function pendingRefresh(id: string): Promise<RefreshOutcome> | undefined {
+  return inflight.get(id);
+}
+
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v: unknown): string | null => (typeof v === 'string' && v ? v : null);
 
@@ -40,7 +46,7 @@ export function refreshResting(id: string, now: number): boolean {
  * Refresh one account. Calls for the same account at once share one request. `rest`: honour the wait after a
  * transient failure (the quota path); a use of the account passes false.
  */
-export function refreshAccount(id: string, o: LoginOptions & { rest?: boolean } = {}): Promise<RefreshOutcome> {
+export function refreshAccount(id: string, o: HomesOptions & { rest?: boolean; forUse?: boolean } = {}): Promise<RefreshOutcome> {
   const now = (o.now ?? Date.now)();
   if (o.rest && refreshResting(id, now)) return Promise.resolve({ state: 'transient' });
   const running = inflight.get(id);
@@ -56,11 +62,20 @@ export function refreshAccount(id: string, o: LoginOptions & { rest?: boolean } 
   return job;
 }
 
-async function run(id: string, o: LoginOptions): Promise<RefreshOutcome> {
+/**
+ * `forUse`: a use of the account asks. A folder login file that is there then does not stop the refresh (the use is about to
+ * replace it); only the `home` mark does.
+ */
+async function run(id: string, o: HomesOptions & { forUse?: boolean }): Promise<RefreshOutcome> {
   const loaded = await loadAccounts({ path: o.accountsPath });
   if ('error' in loaded) return { state: 'transient' };
   const a = loaded.accounts.find((x) => x.id === id);
-  if (!a || a.provider === 'copilot' || a.home || !a.tokens.refresh) return { state: 'unusable' };
+  if (!a || a.provider === 'copilot' || !a.tokens.refresh) return { state: 'unusable' };
+  // an account with a folder is the CLI's to refresh
+  if (a.home || (!o.forUse && (await hasHome(a, o)))) return { state: 'unusable' };
+  // the record was read again: a refresh that finished meanwhile left a token that has not expired
+  const at0 = (o.now ?? Date.now)();
+  if (a.tokens.expiresAt === null || Date.parse(a.tokens.expiresAt) >= at0) return { state: 'done', account: a };
   const refresh = a.tokens.refresh;
   const spec = a.provider === 'claude' ? LOGIN_REQUESTS.claude : LOGIN_REQUESTS.codex;
   const request =
@@ -83,7 +98,9 @@ async function run(id: string, o: LoginOptions): Promise<RefreshOutcome> {
   if (!answer.ok) {
     if (answer.status !== 400 && answer.status !== 401) return { state: 'transient' };
     try {
-      await updateAccount(id, (x) => ({ ...x, needsReauth: true }), { path: o.accountsPath });
+      let skipped = false;
+      await updateAccount(id, (x) => (x.home ? ((skipped = true), x) : { ...x, needsReauth: true }), { path: o.accountsPath });
+      if (skipped) return { state: 'unusable' };
     } catch {
       return { state: 'transient' };
     }
@@ -93,10 +110,17 @@ async function run(id: string, o: LoginOptions): Promise<RefreshOutcome> {
   const access = body ? str(body.access_token) : null;
   if (!body || !access) return { state: 'transient' };
   const at = (o.now ?? Date.now)();
+  // a use made the folder while the vendor answered: the file in it is the original now, and this answer is not written
+  if (!o.forUse && (await hasHome(a, o))) return { state: 'unusable' };
   try {
+    let skipped = false;
     const saved = await updateAccount(
       id,
       (x) => {
+        if (x.home) {
+          skipped = true;
+          return x;
+        }
         const { needsReauth: _gone, ...rest } = x;
         return {
           ...rest,
@@ -111,7 +135,7 @@ async function run(id: string, o: LoginOptions): Promise<RefreshOutcome> {
       },
       { path: o.accountsPath },
     );
-    return saved ? { state: 'done', account: saved } : { state: 'unusable' };
+    return saved && !skipped ? { state: 'done', account: saved } : { state: 'unusable' };
   } catch {
     return { state: 'transient' };
   }

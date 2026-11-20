@@ -420,7 +420,8 @@ export function expiresIn(now: number, v: unknown): string {
 }
 
 /** The plan and the account uuid from the profile answer; any failure is nulls (the account is added without a plan) */
-async function claudeProfile(token: string, o: LoginOptions): Promise<{ plan: string | null; uuid: string | null }> {
+async function claudeProfile(token: string, o: LoginOptions): Promise<{ plan: string | null; uuid: string | null; tier: string | null; subscriptionType: string | null }> {
+  const none = { plan: null, uuid: null, tier: null, subscriptionType: null };
   try {
     const a = await vendor(o, LOGIN_REQUESTS.claude.profileUrl, {
       method: 'GET',
@@ -429,14 +430,17 @@ async function claudeProfile(token: string, o: LoginOptions): Promise<{ plan: st
       timeoutMs: PROFILE_TIMEOUT_MS,
       max: PROFILE_MAX_BODY,
     });
-    if (!a.ok || !isObj(a.body)) return { plan: null, uuid: null };
+    if (!a.ok || !isObj(a.body)) return none;
     const org = isObj(a.body.organization) ? a.body.organization : {};
     return {
       plan: clipOrNull(str(org.rate_limit_tier) ?? str(org.organization_type), PLAN_MAX),
+      tier: clipOrNull(str(org.rate_limit_tier), PLAN_MAX),
+      // `claude_max` is `max`, `claude_pro` is `pro`; any other value is none
+      subscriptionType: clipOrNull(/^claude_([a-z0-9_]+)$/.exec(str(org.organization_type) ?? '')?.[1] ?? null, PLAN_MAX),
       uuid: isObj(a.body.account) ? str(a.body.account.uuid) : null,
     };
   } catch {
-    return { plan: null, uuid: null };
+    return none;
   }
 }
 
@@ -486,7 +490,7 @@ async function finishFlow(f: Flow, pasted: unknown, now: number, o: LoginOptions
   if (!identity) throw new LoginError('login response unusable');
   return save(
     f,
-    { provider: 'claude', alias: f.alias, identity, email: clipOrNull(str(account.email_address), EMAIL_MAX), plan: profile.plan, tokens: { access, refresh: str(body.refresh_token), idToken: null, expiresAt: expiresIn(nowOf(o), body.expires_in) } },
+    { provider: 'claude', alias: f.alias, identity, email: clipOrNull(str(account.email_address), EMAIL_MAX), plan: profile.plan, tier: profile.tier, subscriptionType: profile.subscriptionType, tokens: { access, refresh: str(body.refresh_token), idToken: null, expiresAt: expiresIn(nowOf(o), body.expires_in) } },
     o,
   );
 }

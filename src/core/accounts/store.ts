@@ -24,6 +24,10 @@ export interface StoredAccount {
   /** ISO */
   addedAt: string;
   tokens: { access: string; refresh: string | null; idToken: string | null; expiresAt: string | null };
+  /** claude: the profile's `organization.rate_limit_tier`, written to the CLI file as `rateLimitTier` (absent in an older file) */
+  tier?: string | null;
+  /** claude: the profile's `organization.organization_type` without `claude_` (`max`, `pro`), written to the CLI file as `subscriptionType` (absent in an older file) */
+  subscriptionType?: string | null;
   /** the vendor refused the refresh token (400 or 401): the owner adds the account again */
   needsReauth?: boolean;
   /** "use this account" made the account's folder (src/core/accounts/homes.ts): the file in it is the original of the tokens */
@@ -60,6 +64,9 @@ function parseAccount(v: unknown): StoredAccount | null {
   const idToken = strOrNull(v.tokens.idToken);
   const expiresAt = strOrNull(v.tokens.expiresAt);
   const { needsReauth, home } = v;
+  const tier = strOrNull(v.tier);
+  const subscriptionType = strOrNull(v.subscriptionType);
+  if (tier === undefined || subscriptionType === undefined) return null;
   if ((needsReauth !== undefined && typeof needsReauth !== 'boolean') || (home !== undefined && typeof home !== 'boolean')) return null;
   if (alias === undefined || email === undefined || plan === undefined || refresh === undefined || idToken === undefined || expiresAt === undefined) return null;
   return {
@@ -71,6 +78,8 @@ function parseAccount(v: unknown): StoredAccount | null {
     plan: clipOrNull(plan, PLAN_MAX),
     addedAt,
     tokens: { access: v.tokens.access, refresh, idToken, expiresAt },
+    ...(tier ? { tier: clipOrNull(tier, PLAN_MAX) } : {}),
+    ...(subscriptionType ? { subscriptionType: clipOrNull(subscriptionType, PLAN_MAX) } : {}),
     ...(needsReauth === true ? { needsReauth: true } : {}),
     ...(home === true ? { home: true } : {}),
   };

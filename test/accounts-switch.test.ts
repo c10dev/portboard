@@ -23,9 +23,9 @@ const HOMES = join(FAKE_HOME, 'account-homes');
 process.env.PORTBOARD_ACCOUNTS = FILE;
 process.env.PORTBOARD_ACCOUNT_HOMES = HOMES;
 
-const { LOGIN_REQUESTS, pollLogin, resetFlowsForTest, startLogin } = await import('../src/core/accounts/flows.ts');
+const { finishLogin, LOGIN_REQUESTS, pollLogin, resetFlowsForTest, startLogin } = await import('../src/core/accounts/flows.ts');
 const { resetRefreshForTest } = await import('../src/core/accounts/refresh.ts');
-const { loadAccounts, upsertAccount } = await import('../src/core/accounts/store.ts');
+const { loadAccounts, updateAccount, upsertAccount } = await import('../src/core/accounts/store.ts');
 const { clearQuotaCache, fetchQuota, quotaCacheSize, QUOTA_REQUESTS } = await import('../src/core/accounts/quota.ts');
 const { accountsReport } = await import('../src/core/accounts/view.ts');
 const { PATHS } = await import('../src/core/paths.ts');
@@ -172,7 +172,7 @@ let seq = 0;
 type Tokens = { access: string; refresh: string | null; idToken: string | null; expiresAt: string | null };
 const claudeAccount = (tokens: Partial<Tokens> = {}, extra: Record<string, unknown> = {}) =>
   upsertAccount(
-    { provider: 'claude', alias: 'work', identity: `uuid-sw-${seq++}`, email: 'a@example.com', plan: 'max', tokens: { access: CLAUDE_ACCESS, refresh: CLAUDE_REFRESH, idToken: null, expiresAt: iso(NOW + 3600_000), ...tokens }, ...extra },
+    { provider: 'claude', alias: 'work', identity: `uuid-sw-${seq++}`, email: 'a@example.com', plan: 'max', tier: 'default_claude_max_5x', subscriptionType: 'max', tokens: { access: CLAUDE_ACCESS, refresh: CLAUDE_REFRESH, idToken: null, expiresAt: iso(NOW + 3600_000), ...tokens }, ...extra },
     { path: FILE, now },
   );
 const codexAccount = (tokens: Partial<Tokens> = {}) =>
@@ -204,7 +204,7 @@ test('use a Claude account: .credentials.json in its own 0700 folder, the comman
   assert.equal(body(r).account.active, true);
   assert.equal(body(r).account.id, a.id);
   assert.deepEqual(readJson(homeFile(a.id, '.credentials.json')), {
-    claudeAiOauth: { accessToken: CLAUDE_ACCESS, refreshToken: CLAUDE_REFRESH, expiresAt: NOW + 3600_000, scopes: ['user:inference', 'user:profile'], subscriptionType: 'max' },
+    claudeAiOauth: { accessToken: CLAUDE_ACCESS, refreshToken: CLAUDE_REFRESH, expiresAt: NOW + 3600_000, scopes: ['user:inference', 'user:profile'], subscriptionType: 'max', rateLimitTier: 'default_claude_max_5x' },
   });
   assert.equal(perm(homeFile(a.id, '.credentials.json')), 0o600);
   assert.equal(perm(dir), 0o700);
@@ -295,11 +295,6 @@ test('use keeps a file that is there as one <name>.bak (0600); a folder Portboar
   assert.equal(again.status, 200);
   assert.deepEqual(readJson(join(dir, '.credentials.json')), cli, 'not overwritten');
   assert.equal(readFileSync(join(dir, '.credentials.json.bak'), 'utf8'), 'OLD-CONTENT-ONE');
-  // a file that cannot be read is written again from the stored tokens, and kept as .bak
-  writeFileSync(join(dir, '.credentials.json'), '{broken');
-  await use(a.id);
-  assert.equal(readFileSync(join(dir, '.credentials.json.bak'), 'utf8'), '{broken');
-  assert.equal(readJson(join(dir, '.credentials.json')).claudeAiOauth.accessToken, CLAUDE_ACCESS);
   defaultsIntact();
 });
 
@@ -511,6 +506,9 @@ test('remove: a CLI login cannot be removed, and a bad id is 400', async () => {
   for (const id of ['claude-local', 'codex-local', 'codex-0123456789ab']) {
     const r = await remove(id);
     assert.deepEqual([r.status, body(r)], [400, { error: 'local login cannot be removed' }], id);
+    // use says its own closed text for the same ids
+    const u = await use(id);
+    assert.deepEqual([u.status, body(u)], [400, { error: 'local login cannot be used here' }], id);
   }
   for (const id of ['../x', '../../etc', 'acc-../x', '', 'added-unreadable', 7, { $: 1 }, null]) {
     const r = await remove(id);
@@ -526,16 +524,23 @@ test('remove: a folder that is a link to somewhere else is not followed or delet
   mkdirSync(HOMES, { recursive: true, mode: 0o700 });
   symlinkSync(outside, join(HOMES, a.id));
   const r = await remove(a.id);
-  assert.deepEqual([r.status, body(r)], [500, { error: 'account home not written' }]);
+  assert.deepEqual([r.status, body(r)], [500, { error: 'account home not removed' }]);
   assert.deepEqual(readdirSync(outside), ['keep.txt']);
   assert.equal(readFileSync(join(outside, 'keep.txt'), 'utf8'), 'KEEP');
   assert.ok(lstatSync(join(HOMES, a.id)).isSymbolicLink(), 'the link itself is left');
-  assert.deepEqual((await stored()).accounts, [], 'the record is gone');
+  assert.deepEqual((await stored()).accounts.map((x) => x.id), [a.id], 'the record stays: the owner can try again');
   // a file where the folder belongs
   const b = await claudeAccount();
   writeFileSync(join(HOMES, b.id), 'FILE');
-  assert.equal((await remove(b.id)).status, 500);
+  assert.equal(body(await remove(b.id)).error, 'account home not removed');
   assert.equal(readFileSync(join(HOMES, b.id), 'utf8'), 'FILE');
+  // the owner fixes the folder; the second try deletes it and then the record
+  rmSync(join(HOMES, a.id));
+  mkdirSync(join(HOMES, a.id));
+  writeFileSync(join(HOMES, a.id, 'x'), 'x');
+  assert.deepEqual([(await remove(a.id)).status, existsSync(join(HOMES, a.id))], [200, false]);
+  assert.deepEqual((await stored()).accounts.map((x) => x.id), [b.id]);
+  assert.deepEqual(readdirSync(outside), ['keep.txt']);
 });
 
 test('remove: an unreadable accounts.json is left as it was and no folder is touched', async () => {
@@ -699,4 +704,185 @@ test('#141.6 the non-owner test sends a Codex start, so a request that got throu
   const block = src.slice(at, src.indexOf('accounts.enabled off', at));
   assert.match(block, /provider: 'codex'/);
   assert.doesNotMatch(block, /provider: 'claude'/);
+});
+
+// ---- 8. fix round (coord #151): the file shape, the races, a folder that is gone, the delete order ----
+
+const profile = (org: Record<string, unknown>) => ({
+  [C.claude.tokenUrl]: () => json({ access_token: CLAUDE_ACCESS, refresh_token: CLAUDE_REFRESH, expires_in: 28800, account: { uuid: `uuid-fix-${seq++}`, email_address: 'p@example.com' } }),
+  [C.claude.profileUrl]: () => json({ organization: org }),
+});
+async function signIn(org: Record<string, unknown>) {
+  answers = profile(org);
+  const st = await startLogin('claude', 'p', { fetch: fake, now, accountsPath: FILE });
+  const state = new URL(st.authorizeUrl!).searchParams.get('state');
+  return finishLogin(st.flowId, `PASTEDCODE#${state}`, { fetch: fake, now, accountsPath: FILE });
+}
+
+test("the Claude file holds the profile's own values: rateLimitTier and subscriptionType (max, not the plan text); a key with no value is left out", async () => {
+  const a = await signIn({ rate_limit_tier: 'default_claude_max_5x', organization_type: 'claude_max' });
+  assert.deepEqual([a.plan, a.tier, a.subscriptionType], ['default_claude_max_5x', 'default_claude_max_5x', 'max']);
+  assert.equal((await use(a.id)).status, 200);
+  assert.deepEqual(readJson(homeFile(a.id, '.credentials.json')).claudeAiOauth, {
+    accessToken: CLAUDE_ACCESS, refreshToken: CLAUDE_REFRESH, expiresAt: NOW + 28800_000, scopes: ['user:inference', 'user:profile'],
+    subscriptionType: 'max', rateLimitTier: 'default_claude_max_5x',
+  });
+  // claude_pro is pro; a value without the claude_ prefix is none; no tier is none
+  const pro = await signIn({ organization_type: 'claude_pro' });
+  assert.deepEqual([pro.tier ?? null, pro.subscriptionType], [null, 'pro']);
+  const team = await signIn({ rate_limit_tier: 'team_tier', organization_type: 'team' });
+  await use(pro.id);
+  await use(team.id);
+  const keys = (id: string) => Object.keys(readJson(homeFile(id, '.credentials.json')).claudeAiOauth).sort();
+  assert.deepEqual(keys(pro.id), ['accessToken', 'expiresAt', 'refreshToken', 'scopes', 'subscriptionType']);
+  assert.deepEqual(keys(team.id), ['accessToken', 'expiresAt', 'rateLimitTier', 'refreshToken', 'scopes']);
+  // an account stored before this change has neither: neither key, and the display plan is not written as subscriptionType
+  const old = await claudeAccount({}, { tier: null, subscriptionType: null });
+  await use(old.id);
+  assert.deepEqual(keys(old.id), ['accessToken', 'expiresAt', 'refreshToken', 'scopes']);
+  // a file without the new keys is read
+  const text = JSON.parse(readFileSync(FILE, 'utf8'));
+  for (const r of text.accounts) {
+    delete r.tier;
+    delete r.subscriptionType;
+  }
+  writeFileSync(FILE, JSON.stringify(text), { mode: 0o600 });
+  assert.equal((await stored()).accounts.length, 4);
+});
+
+test('the page words the expiry of an account with a folder like a CLI login (source check), and the list gives that account a command', async () => {
+  const src = readFileSync(new URL('../public/features/accounts.js', import.meta.url), 'utf8');
+  assert.match(src, /a\.error === 'access token expired' && !a\.command \? t\('accounts\.error\.expiredAdded'\)/);
+  assert.ok(!src.includes('is not refreshed yet'));
+  const a = await claudeAccount();
+  await use(a.id);
+  writeFileSync(homeFile(a.id, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: CLAUDE_ACCESS_FOLDER, refreshToken: 'r', expiresAt: NOW - 1000 } }));
+  const row = (await report()).find((x) => x.id === a.id)!;
+  assert.deepEqual([row.error, typeof row.command], ['access token expired', 'string']);
+  assert.equal(callsTo(C.claude.tokenUrl).length, 0);
+});
+
+test('a use waits for a refresh that is running and writes its (rotated) tokens; accounts.json is not refreshed again', async () => {
+  const a = await claudeAccount({ expiresAt: iso(NOW - 1000) });
+  let release: (r: Response) => void = () => {};
+  answers = {
+    [C.claude.tokenUrl]: () => new Promise<Response>((res) => { release = res; }),
+    [QUOTA_REQUESTS.claude.url]: () => json(CLAUDE_USAGE),
+  };
+  const listing = report();
+  while (callsTo(C.claude.tokenUrl).length === 0) await new Promise((r) => setImmediate(r));
+  const using = use(a.id);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(existsSync(HOMES), false, 'the use is still waiting for the refresh');
+  release(json({ access_token: CLAUDE_ACCESS_NEW, refresh_token: CLAUDE_REFRESH_NEW, expires_in: 3600 }));
+  const [, r] = await Promise.all([listing, using]);
+  assert.equal(r.status, 200);
+  assert.equal(callsTo(C.claude.tokenUrl).length, 1, 'one refresh in all');
+  assert.equal(readJson(homeFile(a.id, '.credentials.json')).claudeAiOauth.refreshToken, CLAUDE_REFRESH_NEW);
+  assert.equal(readJson(homeFile(a.id, '.credentials.json')).claudeAiOauth.accessToken, CLAUDE_ACCESS_NEW);
+  assert.equal((await stored()).accounts[0].tokens.refresh, CLAUDE_REFRESH_NEW);
+  clock += 24 * 3600_000;
+  await report();
+  assert.equal(callsTo(C.claude.tokenUrl).length, 1, 'an account with a folder is not refreshed');
+});
+
+test('a refresh whose answer comes after the account got a folder writes nothing', async () => {
+  const a = await claudeAccount({ expiresAt: iso(NOW - 1000) });
+  let release: (r: Response) => void = () => {};
+  answers = { [C.claude.tokenUrl]: () => new Promise<Response>((res) => { release = res; }), [QUOTA_REQUESTS.claude.url]: () => json(CLAUDE_USAGE) };
+  const listing = report();
+  while (callsTo(C.claude.tokenUrl).length === 0) await new Promise((r) => setImmediate(r));
+  await updateAccount(a.id, (x) => ({ ...x, home: true }), { path: FILE });
+  release(json({ access_token: CLAUDE_ACCESS_NEW, refresh_token: CLAUDE_REFRESH_NEW, expires_in: 3600 }));
+  await listing;
+  const rec = (await stored()).accounts[0];
+  assert.deepEqual([rec.tokens.access, rec.tokens.refresh, rec.home], [CLAUDE_ACCESS, CLAUDE_REFRESH, true]);
+});
+
+test('a record that was added again keeps its folder: the login file in it is still the original (no refresh, command shown); the next use replaces it and keeps a .bak', async () => {
+  const a = await claudeAccount();
+  await use(a.id);
+  const dir = join(HOMES, a.id);
+  const cliFile = JSON.stringify({ claudeAiOauth: { accessToken: CLAUDE_ACCESS_FOLDER, refreshToken: 'sk-ant-ort01-TESTREFRESHFOLDER01', expiresAt: NOW + 3600_000 } });
+  writeFileSync(join(dir, '.credentials.json'), cliFile);
+  // adding the same account again: same identity, new tokens (already expired here); `home` is cleared
+  const again = await upsertAccount(
+    { provider: 'claude', alias: null, identity: (await stored()).accounts[0].identity, email: 'a@example.com', plan: 'max', tier: 'default_claude_max_5x', subscriptionType: 'max', tokens: { access: CLAUDE_ACCESS_NEW, refresh: CLAUDE_REFRESH_NEW, idToken: null, expiresAt: iso(NOW - 1000) } },
+    { path: FILE, now },
+  );
+  assert.equal(again.id, a.id);
+  assert.equal(again.home, undefined);
+  answers = { [QUOTA_REQUESTS.claude.url]: () => json(CLAUDE_USAGE) };
+  const row = (await report()).find((x) => x.id === a.id)!;
+  assert.equal(callsTo(C.claude.tokenUrl).length, 0, 'not refreshed');
+  assert.equal(row.command, `CLAUDE_CONFIG_DIR='${dir}' claude`);
+  assert.equal(callsTo(QUOTA_REQUESTS.claude.url)[0].headers.Authorization, `Bearer ${CLAUDE_ACCESS_FOLDER}`);
+  // the next use refreshes the expired new login (no folder mark), writes it over the old file and keeps that as .bak
+  answers = claudeRefreshOk();
+  const r = await use(a.id);
+  assert.equal(r.status, 200);
+  assert.equal(readFileSync(join(dir, '.credentials.json.bak'), 'utf8'), cliFile);
+  assert.equal(readJson(join(dir, '.credentials.json')).claudeAiOauth.refreshToken, CLAUDE_REFRESH_NEW);
+  assert.equal((await stored()).accounts[0].home, true);
+});
+
+test('use answers with the account read back from the folder file (its expiry, like the list)', async () => {
+  const a = await claudeAccount();
+  const r = await use(a.id);
+  assert.equal(body(r).account.expiresAt, iso(NOW + 3600_000));
+  assert.equal(body(r).account.status, 'ok');
+  // use again after the CLI refreshed the file: the answer shows the file's expiry
+  writeFileSync(homeFile(a.id, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: CLAUDE_ACCESS_FOLDER, refreshToken: 'r', expiresAt: NOW + 20_000_000 } }));
+  const again = await use(a.id);
+  assert.equal(body(again).account.expiresAt, iso(NOW + 20_000_000));
+});
+
+test('an account with a folder whose login file is gone or unreadable is not written back from the old copy: sign in again, and the .bak stays', async () => {
+  const a = await claudeAccount();
+  await use(a.id);
+  const dir = join(HOMES, a.id);
+  writeFileSync(join(dir, '.credentials.json.bak'), 'KEEP-BAK');
+  for (const [why, act] of [
+    ['gone', () => rmSync(join(dir, '.credentials.json'))],
+    ['broken', () => writeFileSync(join(dir, '.credentials.json'), '{broken')],
+  ] as const) {
+    await updateAccount(a.id, (x) => {
+      const { needsReauth: _n, ...rest } = x;
+      return rest;
+    }, { path: FILE });
+    act();
+    const r = await use(a.id);
+    assert.deepEqual([r.status, body(r)], [409, { error: 'account needs sign-in again' }], why);
+    assert.equal((await stored()).accounts[0].needsReauth, true, why);
+    assert.equal(readFileSync(join(dir, '.credentials.json.bak'), 'utf8'), 'KEEP-BAK');
+    assert.ok(!existsSync(join(dir, '.credentials.json')) || readFileSync(join(dir, '.credentials.json'), 'utf8') === '{broken', 'the old copy was not written back');
+  }
+  assert.equal(calls.length, 0);
+});
+
+test('when the file cannot be written the `home` mark is taken back', async () => {
+  const a = await claudeAccount();
+  mkdirSync(HOMES, { recursive: true, mode: 0o700 });
+  writeFileSync(join(HOMES, a.id), 'A FILE WHERE THE FOLDER BELONGS');
+  const r = await use(a.id);
+  assert.deepEqual([r.status, body(r)], [500, { error: 'account home not written' }]);
+  assert.equal((await stored()).accounts[0].home, undefined);
+  assert.deepEqual((await stored()).active, {});
+});
+
+test('remove deletes the folder first and the record only after: a folder that cannot go leaves the record, and the next try works (the folder itself is checked with realpath)', async () => {
+  const a = await claudeAccount();
+  await use(a.id);
+  const real = mkdtempSync(join(FAKE_HOME, 'real-'));
+  writeFileSync(join(real, 'keep'), 'K');
+  // the account's folder is replaced by a link to a folder elsewhere
+  rmSync(join(HOMES, a.id), { recursive: true });
+  symlinkSync(real, join(HOMES, a.id));
+  const r = await remove(a.id);
+  assert.deepEqual([r.status, body(r)], [500, { error: 'account home not removed' }]);
+  assert.deepEqual((await stored()).accounts.map((x) => x.id), [a.id]);
+  assert.equal(readFileSync(join(real, 'keep'), 'utf8'), 'K');
+  rmSync(join(HOMES, a.id));
+  assert.equal((await remove(a.id)).status, 200, 'no folder at all is fine');
+  assert.deepEqual((await stored()).accounts, []);
 });
