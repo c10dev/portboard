@@ -7,7 +7,8 @@ import { emptyHistory, historyView, record, withHistory } from '../src/core/hist
 import { peerApiPorts } from '../src/core/tailscale.ts';
 import type { Usage } from '../src/core/usage.ts';
 import { callTool, type Core } from '../src/mcp/tools.ts';
-import { usageReport } from '../src/features/usage.ts';
+import { createServer } from 'node:http';
+import { ackViaServer, usageReport } from '../src/features/usage.ts';
 import { summarize } from '../src/mcp/views.ts';
 import { L } from './fixtures/locale.ts';
 
@@ -139,13 +140,15 @@ function fixture() {
     ],
   };
   const calls: string[] = [];
+  const acks: string[] = [];
   const core = {
     snapshot: async () => snap,
     usage: async () => usage,
     history: async () => historyView(h, NOW),
     setClientName: async (key: string, name: string | null) => calls.push(`${key}=${name}`),
+    ackKnownDevice: async (key: string) => (acks.push(key), 1),
   } as unknown as Core;
-  return { usage, snap, core, calls, h };
+  return { usage, snap, core, calls, acks, h };
 }
 
 const payload = (r: { content: { text: string }[] }) => JSON.parse(r.content[0].text);
@@ -175,9 +178,9 @@ test('who_uses / list_usage: now plus last-used history, filtered by port', asyn
 });
 
 test('name_device writes the clients store by nameKey or device id; Tailscale devices are refused', async () => {
-  const { core, calls } = fixture();
+  const { core, calls, acks } = fixture();
   assert.deepEqual(payload(await callTool('name_device', { key: 'lan:192.168.1.7', name: ' 데스크톱 ' }, core)), {
-    ok: true, key: 'mac:04:7c:16:0a:0b:03', device: 'lan:192.168.1.7', name: '데스크톱',
+    ok: true, key: 'mac:04:7c:16:0a:0b:03', device: 'lan:192.168.1.7', name: '데스크톱', acknowledged: 1,
   });
   await callTool('name_device', { key: 'ip:192.168.1.50', name: '' }, core);
   assert.deepEqual(calls, ['mac:04:7c:16:0a:0b:03=데스크톱', 'ip:192.168.1.50=null']);
@@ -188,6 +191,20 @@ test('name_device writes the clients store by nameKey or device id; Tailscale de
   assert.equal((await callTool('name_device', { key: 'lan:192.168.1.7', name: 'x'.repeat(41) }, core)).isError, true);
   assert.equal((await callTool('name_device', { key: 'nope', name: 'x' }, core)).isError, true);
   assert.equal(calls.length, 2);
+  assert.deepEqual(acks, ['mac:04:7c:16:0a:0b:03']);
+});
+
+test('name_device: a server that cannot be reached gives acknowledged null, not an error, and the name is saved', async () => {
+  const { core, calls } = fixture();
+  const none = { ...core, ackKnownDevice: undefined } as unknown as Core;
+  const down = { ...core, ackKnownDevice: async () => null } as unknown as Core;
+  const boom = { ...core, ackKnownDevice: async () => { throw new Error('refused'); } } as unknown as Core;
+  for (const c of [none, down, boom]) {
+    const r = await callTool('name_device', { key: 'mac:04:7c:16:0a:0b:03', name: 'Desk' }, c);
+    assert.notEqual(r.isError, true);
+    assert.deepEqual(payload(r), { ok: true, key: 'mac:04:7c:16:0a:0b:03', name: 'Desk', acknowledged: null });
+  }
+  assert.equal(calls.length, 3);
 });
 
 test('list_ports carries group and lastUsed', async () => {
@@ -202,4 +219,33 @@ test('list_ports carries group and lastUsed', async () => {
   // without history it still works
   assert.equal(summarize(snap, {}).ports.length, 3);
   assert.ok(h.startedAt);
+});
+
+test('ackViaServer: POSTs the key to the dashboard route; any refusal, bad body or dead server gives null', async () => {
+  let seen: { method?: string; url?: string; header?: string | string[]; body?: string } = {};
+  let reply: { status: number; body: string } = { status: 200, body: '{"ok":true,"acknowledged":2}' };
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      seen = { method: req.method, url: req.url, header: req.headers['x-portboard'], body };
+      res.writeHead(reply.status, { 'Content-Type': 'application/json' }).end(reply.body);
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const port = (server.address() as { port: number }).port;
+  try {
+    assert.equal(await ackViaServer('mac:aa:bb:cc:dd:ee:ff', port), 2);
+    assert.deepEqual(seen, { method: 'POST', url: '/api/known-devices/ack', header: '1', body: JSON.stringify({ key: 'mac:aa:bb:cc:dd:ee:ff' }) });
+    reply = { status: 403, body: '{"error":"forbidden"}' };
+    assert.equal(await ackViaServer('mac:aa:bb:cc:dd:ee:ff', port), null);
+    reply = { status: 200, body: '{"ok":true,"acknowledged":"2"}' };
+    assert.equal(await ackViaServer('mac:aa:bb:cc:dd:ee:ff', port), null);
+    reply = { status: 200, body: 'not json' };
+    assert.equal(await ackViaServer('mac:aa:bb:cc:dd:ee:ff', port), null);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+  // closed: connection refused
+  assert.equal(await ackViaServer('mac:aa:bb:cc:dd:ee:ff', port), null);
 });

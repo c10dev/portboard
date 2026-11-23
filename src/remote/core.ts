@@ -58,6 +58,7 @@ export function readOnlyCore(core: RemoteCore): Core {
     usage: notRemote,
     history: notRemote,
     setClientName: notRemote,
+    ackKnownDevice: notRemote,
     owners: notRemote,
     cleanup: notRemote,
     // Not offered here: the remote list_worktrees, list_dev_servers and memory_usage read RemoteCore directly, with

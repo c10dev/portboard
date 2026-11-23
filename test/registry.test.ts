@@ -198,7 +198,7 @@ test('each health.ts collector is declared by exactly one feature, and nothing e
 test('the stdio server gets every Core method from some feature', () => {
   const core = Object.assign({}, ...FEATURES.map((f: FeatureModule) => f.mcpCore?.() ?? {}));
   assert.deepEqual(Object.keys(core).sort(), [
-    'adoption', 'alerts', 'cleanup', 'collection', 'devServers', 'devices', 'digest', 'expose', 'freePorts', 'history', 'logs', 'machines', 'memory', 'newDevices', 'owners', 'portRules', 'releasePort', 'removeWorktrees', 'reservations', 'reservePort',
+    'ackKnownDevice', 'adoption', 'alerts', 'cleanup', 'collection', 'devServers', 'devices', 'digest', 'expose', 'freePorts', 'history', 'logs', 'machines', 'memory', 'newDevices', 'owners', 'portRules', 'releasePort', 'removeWorktrees', 'reservations', 'reservePort',
     'restart', 'serviceDetail', 'setAlert', 'setClientName', 'setDigest', 'setPortRule', 'setupStatus', 'snapshot', 'startDevServer', 'stop', 'stopDevServer', 'suggestions', 'unexpose', 'usage', 'worktrees', 'writeLaunchConfig',
   ]);
 });
