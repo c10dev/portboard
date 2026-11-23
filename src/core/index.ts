@@ -22,6 +22,7 @@ import { probe, probeKey, pruneProbes, type Probe } from './probe.ts';
 import type { BindScope } from './ss.ts';
 import { loadReservations, reservedFor, type Reservation } from './reservations.ts';
 import { isPortboardProcess } from './selfunit.ts';
+import { proxyHoldsPort } from './accounts/proxy.ts';
 import { isPortboardCheckout } from './checkout.ts';
 import {
   exposedEntry,
@@ -160,7 +161,8 @@ export async function snapshot(): Promise<Snapshot> {
       const scheme = pr?.http ? 'http' : 'tcp';
 
       let exposeBlocker: string | null = null;
-      if (!ts.available) exposeBlocker = 'tailscale not available';
+      if (proxyHoldsPort(port)) exposeBlocker = 'account proxy is loopback only';
+      else if (!ts.available) exposeBlocker = 'tailscale not available';
       else if (served) exposeBlocker = 'already served';
       else if (reachable) exposeBlocker = 'already reachable on tailnet';
       else if (scope !== 'loopback') exposeBlocker = `bound to ${addresses.join(', ')}`;

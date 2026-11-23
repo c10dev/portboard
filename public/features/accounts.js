@@ -9,6 +9,10 @@
 //
 // An added Claude or Codex account has two more buttons (POST /api/accounts/use and /remove): "use this account" makes
 // the account's own CLI folder and shows the command that starts the CLI in it (with a copy button); "remove" asks first.
+//
+// Below the list, the account pool proxy (report.proxy): its state and port, "copy command" (asks POST
+// /api/accounts/proxy/key and puts ANTHROPIC_BASE_URL=… ANTHROPIC_AUTH_TOKEN=<key> claude on the clipboard: the key is
+// never drawn on the page), "change key" (asks first), the accounts that rest, and the last switches.
 
 import { getInit, post, postOrThrow } from '../lib/api.js';
 import { modal } from '../lib/dialog.js';
@@ -59,6 +63,8 @@ const ERRORS = [
   [/^account home not written$/, () => t('accounts.error.home')],
   [/^account home not removed$/, () => t('accounts.error.homeNotRemoved')],
   [/^local login cannot be used here$/, () => t('accounts.error.localUse')],
+  [/^accounts proxy disabled$/, () => t('accounts.proxy.error.disabled')],
+  [/^proxy key unusable$/, () => t('accounts.proxy.error.key')],
 ];
 
 function errorText(s) {
@@ -88,10 +94,11 @@ const CONFIRM = `
   </div>
 </dialog>`;
 
-/** The confirm dialog: true when the owner chose "remove" */
-function confirmRemove(text) {
+/** The confirm dialog: true when the owner chose the yes button ("remove" unless `yes` says another label) */
+function confirmRemove(text, yes = t('accounts.remove')) {
   const d = modal('accountsConfirm', CONFIRM);
   $('accountsConfirmText').textContent = text;
+  $('accountsConfirmYes').textContent = yes;
   return new Promise((resolve) => {
     d.addEventListener('close', () => resolve(d.returnValue === 'yes'), { once: true });
     $('accountsConfirmYes').onclick = () => d.close('yes');
@@ -151,7 +158,8 @@ function commandRow(command) {
   return h('div', { class: 'set-row acc-line' }, h('span', null, t('accounts.command.lead')), h('code', { class: 'set-cmd' }, command), copy);
 }
 
-function row(a) {
+function row(a, proxy) {
+  const resting = proxy?.resting?.find((x) => x.id === a.id);
   const tone = a.needsReauth && a.status === 'ok' ? 'warn' : TONE[a.status] ?? 'warn';
   const who = [a.plan, a.tier, a.email].filter(Boolean).join(' · ');
   const exp = when(a.expiresAt);
@@ -174,6 +182,8 @@ function row(a) {
       { class: 'set-extra' },
       added ? h('span', { class: 'set-state' }, t('accounts.added')) : null,
       a.active ? h('span', { class: 'set-state ok' }, t('accounts.active')) : null,
+      proxy?.current?.claude === a.id ? h('span', { class: 'set-state ok' }, t('accounts.proxy.using')) : null,
+      resting ? h('span', { class: 'set-state warn' }, t('accounts.proxy.resting', { at: when(resting.until) ?? '' })) : null,
       exp ? h('span', null, t(Date.parse(a.expiresAt) < Date.now() ? 'accounts.expiredAt' : 'accounts.expires', { date: exp })) : null,
       a.needsReauth ? h('span', { class: 'set-state warn' }, t('accounts.reauth')) : null,
       added && a.provider === 'copilot' ? h('span', null, t('accounts.copilot.noLimits')) : null,
@@ -184,6 +194,114 @@ function row(a) {
     a.command ? commandRow(a.command) : null,
     added ? actions(a, say) : null,
     note,
+  );
+}
+
+const KIND = {
+  switch: t('accounts.proxy.kind.switch'),
+  rest: t('accounts.proxy.kind.rest'),
+  'token expired': t('accounts.proxy.kind.tokenExpired'),
+  'no usable account': t('accounts.proxy.kind.noAccount'),
+};
+
+/** The proxy block under the list: state, the two buttons, and the last switches. `say` shows an error next to the buttons. */
+function proxyBlock(report) {
+  const p = report.proxy;
+  if (!p) return null;
+  const title = h('strong', null, t('accounts.proxy.title'));
+  if (!p.enabled) return h('div', { class: 'acc-proxy' }, title, h('p', { class: 'set-note' }, t('accounts.proxy.off')));
+  // on in the settings, but this process never opened or closed it: no state to show, and no buttons
+  if (p.state === 'unknown') return h('div', { class: 'acc-proxy' }, title, h('p', { class: 'set-note' }, t('accounts.proxy.state.unknown')));
+  const names = new Map(report.accounts.map((a) => [a.id, a.alias || a.email || (ADDED[a.provider] ?? a.provider)]));
+  const who = (id) => (id ? (names.get(id) ?? t('accounts.proxy.unknown')) : '–');
+  const listening = p.state === 'listening';
+  const stateText = listening
+    ? t('accounts.proxy.state.listening', { port: p.port })
+    : p.state === 'port in use'
+      ? t('accounts.proxy.state.portInUse', { port: p.port })
+      : t('accounts.proxy.state.error');
+  const note = h('span', { class: 'set-state warn acc-line', role: 'alert' });
+  const say = (text) => { note.textContent = text; };
+  // when the clipboard is not usable the page draws a command that reads the key from the key file: the key itself is never drawn
+  const manual = h('div', { class: 'set-row acc-line', hidden: true });
+  const showManual = (command) => {
+    const input = h('input', { type: 'text', class: 'ctl-text', readonly: true, value: command, 'aria-label': t('accounts.proxy.copy'), spellcheck: 'false' });
+    manual.replaceChildren(h('span', { class: 'set-note' }, t('accounts.proxy.manual')), input);
+    manual.hidden = false;
+    input.focus();
+    input.select();
+  };
+  function hideManual() {
+    manual.replaceChildren();
+    manual.hidden = true;
+  }
+  /** `'…'` with every quote inside closed and reopened (as shellQuote in src/core/accounts/homes.ts) */
+  const shellQuote = (x) => `'${x.replace(/'/g, `'\\''`)}'`;
+  /** `command` (with the key) is for the clipboard; `byHand` reads the key from `keyFile` and has no key in it */
+  const commandOf = async () => {
+    const { key, keyFile } = await postOrThrow('api/accounts/proxy/key', {});
+    return {
+      command: `ANTHROPIC_BASE_URL=${p.url} ANTHROPIC_AUTH_TOKEN=${key} claude`,
+      byHand: `ANTHROPIC_BASE_URL=${p.url} ANTHROPIC_AUTH_TOKEN="$(cat ${shellQuote(keyFile)})" claude`,
+    };
+  };
+  /** The key request failed, or both clipboard ways did: say it, or show the by-hand command */
+  const fallback = async (pending) => {
+    let got;
+    try {
+      got = await pending;
+    } catch (err) {
+      return say(errorText(reason(err)));
+    }
+    try {
+      await navigator.clipboard.writeText(got.command);
+      copy.textContent = t('accounts.add.copied');
+    } catch {
+      showManual(got.byHand);
+    }
+  };
+  const copy = button(t('accounts.proxy.copy'), () => {
+    say('');
+    hideManual();
+    const pending = commandOf();
+    pending.catch(() => {});
+    // Safari and WKWebView accept a clipboard write only while the click is handled: it gets a promise of the text, not the text
+    if (window.ClipboardItem && navigator.clipboard?.write) {
+      const blob = pending.then((c) => new Blob([c.command], { type: 'text/plain' }));
+      navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]).then(
+        () => { copy.textContent = t('accounts.add.copied'); },
+        () => fallback(pending),
+      );
+      return;
+    }
+    fallback(pending);
+  }, { write: true, disabled: !listening });
+  const rotate = button(t('accounts.proxy.rotate'), async () => {
+    say('');
+    if (!(await confirmRemove(t('accounts.proxy.rotate.confirm'), t('accounts.proxy.rotate.yes')))) return;
+    try {
+      await postOrThrow('api/accounts/proxy/key', { rotate: true });
+      copy.textContent = t('accounts.proxy.copy');
+      say(t('accounts.proxy.rotated'));
+    } catch (err) {
+      say(errorText(reason(err)));
+    }
+  }, { write: true, disabled: !listening && p.state !== 'error' });
+  const lines = (p.events ?? []).map((e) => {
+    const move = e.kind === 'switch' ? `${who(e.from)} → ${who(e.to)}` : who(e.from ?? e.to);
+    return h('p', { class: 'set-note' }, [when(e.at), KIND[e.kind] ?? e.kind, move, e.status ?? null].filter((x) => x !== null).join(' · '));
+  });
+  return h(
+    'div',
+    { class: 'acc-proxy' },
+    title,
+    h('div', { class: 'set-row acc-line' }, h('span', { class: `set-state ${listening ? 'ok' : 'warn'}` }, stateText), h('span', null, t('accounts.proxy.counts', { requests: p.counts.requests, switches: p.counts.switches }))),
+    listening ? h('p', { class: 'set-note' }, t('accounts.proxy.lead')) : null,
+    h('div', { class: 'set-row acc-line' }, copy, rotate),
+    note,
+    manual,
+    h('p', { class: 'set-note' }, t('accounts.proxy.events')),
+    lines.length ? lines : h('p', { class: 'set-note' }, t('accounts.proxy.noEvents')),
   );
 }
 
@@ -209,7 +327,7 @@ async function refresh() {
   } catch {
     return body.replaceChildren(el('p', 'set-note', t('accounts.loadFailed')));
   }
-  body.replaceChildren(h('ul', { class: 'set-list' }, report.accounts.map(row)));
+  body.replaceChildren(h('ul', { class: 'set-list' }, report.accounts.map((a) => row(a, report.proxy))), proxyBlock(report));
   if (add) add.hidden = false;
 }
 

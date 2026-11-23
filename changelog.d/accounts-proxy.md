@@ -1,0 +1,5 @@
+### Added
+- Accounts: an optional loopback proxy that lets Claude Code use an added Claude account (`ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`) and sends the same request to the next account when a shared limit is rejected. It is off unless `accounts.enabled` and `accounts.proxy.enabled` are both true; it listens on `127.0.0.1` only (`accounts.proxy.port`, default 8795), needs a key (`accounts-proxy.key`, 0600), sends on only `POST /v1/messages` and `/v1/messages/count_tokens`, and never opens in a preview. Settings › Accounts › Proxy shows the state, the resting accounts and the last switches, and copies the start command. The new `POST /api/accounts/proxy/key` route (owner only) gives or changes the key, `GET /api/accounts` and `list_accounts` have `proxy`, and `expose_port` refuses the proxy port. The Anthropic side is not verified with the real service yet. See docs/accounts.md#proxy.
+
+### Security
+- Accounts proxy: new loopback listener with a proxy key, `Host` and `Origin` checks, a 32 MiB body limit and 32 connections; see docs/security.md#accounts.

@@ -2,7 +2,7 @@
 
 A view of the Claude Code and Codex logins on the machine Portboard runs on, and of the accounts you add in Portboard: plan, email (Codex), when the access token expires, and the remaining limits (the 5-hour window and the weekly window). It is off by default, it is for the owner only, and no token leaves the Portboard process.
 
-It never changes a CLI login: it does not touch `~/.claude` or `~/.codex`, never refreshes the token of a CLI login, and never signs a CLI in or out. It writes only Portboard's own `accounts.json` and the folders under `account-homes/`, and only when the owner adds, uses, removes or (for an added account without a folder) refreshes an account ([Add an account](#add-an-account), [Use an account](#use-an-account), [Remove an account](#remove-an-account), [Refresh](#refresh)).
+It never changes a CLI login: it does not touch `~/.claude` or `~/.codex`, never refreshes the token of a CLI login, and never signs a CLI in or out. It writes only Portboard's own `accounts.json`, the folders under `account-homes/` and, when the [proxy](#proxy) is on, `accounts-proxy.key`. It writes them only when the owner adds, uses, removes or (for an added account without a folder) refreshes an account, or turns the proxy on ([Add an account](#add-an-account), [Use an account](#use-an-account), [Remove an account](#remove-an-account), [Refresh](#refresh), [Proxy](#proxy)).
 
 ## Turn it on or off
 
@@ -112,6 +112,39 @@ Only an added Claude or Codex account **without a folder** is refreshed, and onl
 - Any other failure (network, timeout, 5xx, 429, an answer without a token) is a transient failure: nothing is changed, and the dashboard waits 5 minutes before it asks again. Using the account asks at once.
 - The request uses the same helper as the sign-in requests (timeout, body limit, no redirect, closed error texts). No URL, client id or header is defined for it apart from `LOGIN_REQUESTS`.
 
+## Proxy
+
+The proxy lets Claude Code use an added Claude account through Portboard, and moves to the next added account when one hits its shared limit. It is **off by default**. This is for the owner's own subscriptions on the owner's own machine.
+
+> **Read this first.** The proxy sends Claude Code's requests to Anthropic with the OAuth token of an account you added, instead of the sign-in of the CLI. Anthropic's terms and its handling of subscription tokens outside its own apps can change, and a vendor may limit or close an account for use it does not expect. It is not an official, supported way to use a subscription. Turn it on only for accounts you own, and expect it to stop working without notice. The tests use a fake upstream: nothing here proves that Anthropic accepts these requests today.
+
+Turn it on in `portboard.json` and restart Portboard ([config.md](config.md)). Both flags are needed:
+
+```json
+{ "accounts": { "enabled": true, "proxy": { "enabled": true, "port": 8795 } } }
+```
+
+`port` is a whole number from 1024 to 65535; anything else is 8795. A preview instance never opens the proxy, whatever the settings say.
+
+- **Where it listens.** `127.0.0.1` only. The address is a constant in the code: no setting or variable changes it. Portboard never publishes the port with `tailscale serve`, and `expose_port` refuses it (`account proxy is loopback only`). A preview reads its own copy of `portboard.json`, made once, so it also refuses the port in its own settings and the default 8795, whatever its flags say. It opens in the dashboard process, from the job `accounts-proxy` (every minute: open, close or reopen to match the settings); the stdio MCP server never opens it. A port that is in use leaves the state `port in use` and the next run tries again; Portboard does not stop.
+- **The key.** The first time the proxy is on, Portboard makes `accounts-proxy.key` in the config folder (`pbp-` and 32 hex digits, mode `0600`; `PORTBOARD_ACCOUNTS_PROXY_KEY` moves it). A key file that other users can read, or that is not a key, is not read and the state is `error`. The job reads the file again every minute with the same rules: a file that has become loose or odd closes the listener (`error`), and an edited key applies within one run. **Change key** also works in the `error` state: it writes a new key and reopens the proxy at once. Settings › Accounts › Proxy has **Copy command** and **Change key**. The key is in no answer except `POST /api/accounts/proxy/key`. **Copy command** asks for the key inside the click and gives the clipboard a promise of the text (`ClipboardItem`), which Safari and WKWebView need; it falls back to `writeText`. When the clipboard cannot be used, the page draws a command that reads the key from the key file (`ANTHROPIC_AUTH_TOKEN="$(cat '<key file>')"`) in a read-only field, so you can copy it by hand. The key itself is never drawn.
+- **Start Claude Code through it.** **Copy command** puts this on the clipboard (with your key and your port):
+
+  ```sh
+  ANTHROPIC_BASE_URL=http://127.0.0.1:8795 ANTHROPIC_AUTH_TOKEN=<key> claude
+  ```
+
+  A request carries the key as `Authorization: Bearer <key>` or `x-api-key: <key>`. A missing or wrong key is `401`. A request whose `Host` is not `127.0.0.1:<port>` or `localhost:<port>`, or that has an `Origin` header (a web page), is `403`. The key and the caller's cookies, `origin` and `referer` never go upstream.
+- **What it sends on.** `POST /v1/messages` and `POST /v1/messages/count_tokens` to `https://api.anthropic.com` with the same path and query. Everything else is `404 not proxied`, and the paths (no query, 80 characters, at most 20) are counted in `proxy.unproxied`, so you can see whether Claude Code calls anything else. The body goes on as the bytes it came in (at most 32 MiB, else `413`), and the answer streams back, SSE included. The headers are the client's, except: `authorization` is the account's token, `accept-encoding` is `identity`, `anthropic-beta` gets `oauth-2025-04-20` once, and `anthropic-version` is `2023-06-01` when the client sent none. `expect` is not sent. The request goes out through a small adapter over `node:https`, not `fetch`, which would add `accept`, `accept-language` and `sec-fetch-mode`: it sends exactly these headers, does not follow redirects, and ends when the client leaves. Portboard invents no other header. A client that disconnects ends the upstream request. The wait for upstream headers is 60 seconds; there is no limit on the stream. A network failure or that timeout is `502` and no other account is tried.
+- **Which account.** Only added Claude accounts (not a CLI login, Codex or Copilot). Order: the account that last answered well (`current`, memory only), then the account chosen with **Use this account**, then the order in `accounts.json`. Left out: an account that needs to sign in again, one that is resting, and one with no usable token. An account with a folder is read from the login file in its folder and must have a token that lasts more than 60 seconds; it is never refreshed here (the CLI refreshes it, [Refresh](#refresh)). An account without a folder that expires within 60 seconds is refreshed first (once); if that fails it is left out for this request. The proxy never changes which account is `active`.
+- **When it switches.** Only on `429` with one of `anthropic-ratelimit-unified-status`, `anthropic-ratelimit-unified-5h-status` or `anthropic-ratelimit-unified-7d-status` equal to `rejected`: the shared limit is used up. A `429` with only `retry-after` is a short rate limit, and the account stays. `401` rests the account too. Every other answer (a `429` that does not switch, `403`, `5xx`, `529`) goes to the client as it is. A request uses at most four accounts (three switches). The same request body goes to the next account, and only before the first byte of an answer reaches the client. When no account is left, the last answer goes to the client as it is; when none could be asked, it is `503 no usable account`.
+- **How long an account rests.** For a rejected limit: `retry-after` (seconds), else the later of the `anthropic-ratelimit-unified-5h-reset` and `-7d-reset` of the windows that are `rejected` (epoch seconds) minus now, else 60 seconds. Zero or less is 60 seconds; more than 6 hours is 6 hours. A `401` rests the account for 10 minutes and does not set `needsReauth` (only the refresh path does). Resting marks and `current` are in memory: a restart clears them.
+- **What it records.** The last 100 events in memory: `switch`, `rest`, `token expired` and `no usable account`, each with the time, the account ids, the status and the end of a rest. Settings › Accounts › Proxy shows the last 20 and which account rests or is in use. No token, key, header value, body or query string is in an event, a count, the console or an answer.
+
+The URL, the beta flag and the version header are in one block, `PROXY_REQUESTS`, in `src/core/accounts/proxy.ts`. Their shape follows [opencodex](https://github.com/lidge-jun/opencodex) commit 9e0e298e (MIT); no code is copied.
+
+Not checked with the real services: that Claude Code works with only these two paths, that Anthropic accepts a subscription token with `oauth-2025-04-20` for these requests, that a rejected limit sends the headers above, and what Claude Code does when `ANTHROPIC_AUTH_TOKEN` and a `~/.claude` login are both present.
+
 ## Errors
 
 An error is one of these fixed sentences. None holds a response body, a header, a token or the text you pasted.
@@ -136,13 +169,15 @@ An error is one of these fixed sentences. None holds a response body, a header, 
 | `account home not written` | the account's folder or login file could not be written (HTTP 500) |
 | `account home not removed` | the account's folder could not be deleted safely; the account stays listed (HTTP 500) |
 | `local login cannot be used here` | `use` was called with the id of a CLI login (HTTP 400) |
+| `accounts proxy disabled` | the proxy key route was called while the proxy is off (HTTP 404) |
+| `proxy key unusable` | the key route could not read or write the key file, for example a file that other users can read (HTTP 500) |
 
 ## Who can see it, and what leaves the process
 
-- **Owner only.** `GET /api/accounts` uses the same owner check as the audit log: anyone else gets `403 {error: "owner only", reason}` before any file is read. The six write routes (the four sign-in routes, `use` and `remove`) are `write: true`: the router refuses a caller who is not the owner, and a request without `X-Portboard: 1`, before the route's code runs.
+- **Owner only.** `GET /api/accounts` uses the same owner check as the audit log: anyone else gets `403 {error: "owner only", reason}` before any file is read. The seven write routes (the four sign-in routes, `use`, `remove` and the proxy key route) are `write: true`: the router refuses a caller who is not the owner, and a request without `X-Portboard: 1`, before the route's code runs.
 - **No remote MCP.** `list_accounts` is a local stdio tool. It is not in the remote server's tool list or in `RemoteCore`. No MCP tool adds, uses or removes an account.
 - **Allowlisted answer.** The answer holds `id`, `provider`, `source`, `alias`, `email`, `plan`, `tier`, `status`, `expiresAt`, `needsReauth`, `active`, `command`, `quota` and `error`, each copied by name. It has no token, no account id and no id token. The sign-in routes answer with the same view, never with the stored record.
-- **No logs.** Tokens are not written to a log, the audit log or an error text. An error is one short fixed sentence (for example `quota request failed (HTTP 500)`). The audit line of a sign-in, use or remove request holds the names of the body keys (`flowId`, `code`, `provider`, `alias`, `id`) and none of their values, so a pasted code and an account id are never recorded.
+- **No logs.** Tokens are not written to a log, the audit log or an error text. An error is one short fixed sentence (for example `quota request failed (HTTP 500)`). The audit line of a sign-in, use or remove request holds the names of the body keys (`flowId`, `code`, `provider`, `alias`, `id`, `rotate`) and none of their values, so a pasted code and an account id are never recorded.
 
 See [security.md](security.md#accounts).
 
@@ -165,11 +200,23 @@ See [security.md](security.md#accounts).
       },
       "error": null
     }
-  ]
+  ],
+  "proxy": {
+    "enabled": true, "state": "listening", "port": 8795, "url": "http://127.0.0.1:8795",
+    "current": { "claude": "acc-0123456789ab" },
+    "resting": [{ "id": "acc-ba9876543210", "until": "2026-11-20T12:00:00.000Z" }],
+    "events": [
+      { "at": "2026-11-20T09:00:00.000Z", "provider": "claude", "kind": "switch", "from": "acc-ba9876543210", "to": "acc-0123456789ab", "status": 429, "restUntil": null }
+    ],
+    "counts": { "requests": 12, "switches": 1 },
+    "unproxied": [{ "path": "/v1/models", "count": 2 }]
+  }
 }
 ```
 
 `source` is `local-cli` (a CLI login) or `added` (added in Portboard; `id` is `acc-` and 12 hex digits, `alias` is its name). `provider` is `claude`, `codex` or `copilot`. `status` is `ok`, `expired` (the token is past its expiry, or the vendor answered 401 or 403), `none` or `unreadable`. `needsReauth` is true when the refresh token has expired too, or the vendor refused it. `active` is true for the added account chosen with "use this account" for its provider (always false for a CLI login). `command` is the shell command that starts the CLI as an added account that has a folder, else `null`. `usedPct` is 0 to 100; the remaining share is 100 minus it. `usedPct` or `resetsAt` is `null` for a window when the vendor sends no usable value.
+
+`proxy` is the [proxy](#proxy): `enabled` (both settings on, and not a preview), `state` (`off`, `listening`, `port in use`, `error`, or `unknown`), `port`, `url` (while listening), `current.claude` (an account id), `resting` (account ids and the end of the rest), `events` (newest first, at most 20) and `counts`. It holds no key and no token. The MCP tool `list_accounts` returns the same `proxy`; in the stdio MCP process, which never opens the proxy, `enabled` follows the settings and `state` is `unknown` while they are on (the dashboard's proxy may be listening; the counts and events in that answer are that process's own). Only requests that pass the `Host`, `Origin` and key checks raise `counts.requests`.
 
 ### Sign-in routes
 
@@ -190,3 +237,7 @@ Both are `POST`, owner only, need `X-Portboard: 1`, and answer `404 {error: "acc
 |---|---|---|
 | `/api/accounts/use` | `{id}` | `{account, command}`: the account as in the list (`active: true`, `command`) and the command |
 | `/api/accounts/remove` | `{id}` | `{ok: true}` |
+
+### Proxy key route
+
+`POST /api/accounts/proxy/key`: `write: true` (owner only, needs `X-Portboard: 1`), body JSON of at most 4 KiB, `{rotate?: boolean}`. It answers `{key, keyFile}` (the proxy key, made on first use, and the absolute path of the key file), and with `rotate: true` it first writes a new key, so the old one is `401` from then on. It answers `404 {error: "accounts proxy disabled"}` while the proxy is off, and `500 {error: "proxy key unusable"}` when the key file cannot be used. The audit line holds the key name `rotate` and no key.
