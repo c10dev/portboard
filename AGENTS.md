@@ -19,8 +19,10 @@ Read [docs/security.md](docs/security.md) before you change a write path.
 
 - Always allowed: edit files in the checkout, `npm ci`, `npm test`, `npm run test:en`, `npm run typecheck`,
   `npm run typecheck:public`, `npm run demo`, `node bin/portboard install-service --dry-run`, `node bin/portboard uninstall-service --dry-run`,
-  `npm run build:shim` and `cd shim && go test ./...` (the plugin's Go binary, `shim/`; its tests start only fake dashboards on temporary ports
-  and the checkout's own `src/mcp.ts`). Go may not be on PATH: on the production server it is in `~/.local/go/bin`.
+  `cd shim && go vet ./... && go test ./...` (the plugin's Go binary, `shim/`; its tests start fake dashboards and the real `src/server.ts`
+  on temporary ports with a temp HOME and stub commands, and run the checkout's own `src/mcp.ts`), and `npm run build:shim` in a worktree only.
+  Never run `npm run build:shim` in the main checkout: it replaces the binary that live sessions run. Building there is the operator's step.
+  Go may not be on PATH: on the production server it is in `~/.local/go/bin`.
 - Only after the maintainer approves in this session: a preview, `PORTBOARD_PORT=<free port> npm start`
   ([docs/setup.md#preview-instances](docs/setup.md#preview-instances)). It needs Linux.
   Do not use 8790 (production) or 8797 (the host agent's default, `src/core/site.ts`).

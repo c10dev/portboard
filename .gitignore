@@ -17,3 +17,4 @@ mac-app/build.env
 /demo.staging/
 # npm run build:shim: the plugin's Go binary (shim/). Built per machine, never committed or packed.
 /claude-plugin/bin/portboard-shim
+/claude-plugin/bin/.portboard-shim.tmp

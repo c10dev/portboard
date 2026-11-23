@@ -77,7 +77,7 @@ func advice(input []byte) string {
 	if s, ok := in.SessionID.(string); ok && adviceSession.MatchString(s) {
 		q.Set("session", s)
 	}
-	res := do("GET", base+"/api/claude/port-advice?"+q.Encode(), nil, nil, reqOpts{follow: true, total: hookTimeout(), readLimit: maxAdviceBody})
+	res := do("GET", base+"/api/claude/port-advice?"+q.Encode(), nil, nil, reqOpts{total: hookTimeout(), readLimit: maxAdviceBody})
 	if res.kind != "reply" || res.status < 200 || res.status > 299 {
 		return ""
 	}

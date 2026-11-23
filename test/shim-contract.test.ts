@@ -6,9 +6,9 @@
 //
 // Fake dashboards are plain http servers on temporary ports. The child processes get a clean environment and a temp
 // HOME, never the real one. What this proves: wiring and bytes against a fake, not a live dashboard.
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { copyFileSync, readFileSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -43,6 +43,7 @@ interface McpExpect {
   bodies?: string[];
   session?: string | null;
   pid?: string | null;
+  versionLine?: boolean;
 }
 type Command = string | { prefix: string; padTo: number; pad: string };
 interface NudgeCase {
@@ -211,6 +212,7 @@ for (const c of mcpCases) {
       assert.notEqual(code, 'hung', `the process did not exit; stderr: ${err}`);
       assert.deepEqual(lines().sort(), [...want.stdout].sort(), `stdout (stderr: ${err})`);
       assert.equal(code, want.exit, 'exit code');
+      if (want.versionLine !== undefined) assert.equal(/the dashboard runs version/.test(err), want.versionLine, 'the version-mismatch line on stderr');
       assert.equal(fake.pings, want.pings, 'pings the dashboard got');
       assert.equal(fake.posts.length, want.posts, 'POSTs the dashboard got');
       if (want.bodies) assert.deepEqual(fake.posts.map((p) => p.body).sort(), [...want.bodies].sort(), 'POST bodies');
@@ -287,8 +289,37 @@ for (const c of nudgeCases) {
 
 // ---- bin/run.sh: which program a plugin command starts ----
 
-/** A plugin folder copy with a fake node (and, as asked, a fake binary) that only log what they were called with. */
-async function runShFixture(shim: 'good' | 'none' | 'empty' | 'text-true' | 'random' | 'wrong-prefix' | 'exit-1') {
+/** The real binary, built once into a temp dir (never into the checkout). path is null, with the reason, when go is not on PATH. */
+let built: Promise<{ path: string | null; why: string }> | null = null;
+const buildDirs: string[] = [];
+after(() => Promise.all(buildDirs.map((d) => rm(d, { recursive: true, force: true }))));
+function realShim() {
+  built ??= (async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pb-shim-build-'));
+    buildDirs.push(dir);
+    const path = join(dir, 'portboard-shim');
+    const r = spawnSync('go', ['build', '-o', path, '.'], { cwd: join(ROOT, 'shim'), env: { ...process.env, CGO_ENABLED: '0' }, encoding: 'utf8' });
+    if (r.error || r.status !== 0) return { path: null, why: `go is not available to build shim/ (${r.error?.message ?? r.stderr.slice(0, 200)})` };
+    return { path, why: '' };
+  })();
+  return built;
+}
+
+/** The start of a 64-bit ELF file that no kernel runs (an unknown machine type, no program headers). */
+const FOREIGN_ELF = Buffer.concat([Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1, 0]), Buffer.alloc(8), Buffer.from([2, 0, 0xb7, 0, 1, 0, 0, 0]), Buffer.alloc(40)]);
+
+type ShimKind = 'none' | 'real' | 'truncated' | 'empty' | 'text-true' | 'foreign-elf';
+
+interface RunSh {
+  dir: string;
+  bin: string;
+  run(args: string[], env?: Record<string, string>, opts?: { script?: string; cwd?: string }): Promise<{ code: number | null; stdout: string; stderr: string }>;
+  calls(): Promise<string[]>;
+  done(): Promise<void>;
+}
+
+/** A plugin folder copy with a fake node that only logs what it was called with, and the binary of the given kind. null: skipped (reason in `why`). */
+async function runShFixture(kind: ShimKind): Promise<{ f: RunSh | null; why: string }> {
   const dir = await mkdtemp(join(tmpdir(), 'pb-run-sh-'));
   const bin = join(dir, 'plugin', 'bin');
   const nodeDir = join(dir, 'nodebin');
@@ -296,38 +327,54 @@ async function runShFixture(shim: 'good' | 'none' | 'empty' | 'text-true' | 'ran
   await mkdir(bin, { recursive: true });
   await mkdir(nodeDir, { recursive: true });
   copyFileSync(join(ROOT, 'claude-plugin', 'bin', 'run.sh'), join(bin, 'run.sh'));
-  const script = (name: string, body: string, mode = 0o755) => writeFile(name, body).then(() => chmod(name, mode));
-  await script(join(nodeDir, 'node'), `#!/bin/sh\necho "NODE $*" >> "${log}"\n`);
-  const fakeShim = (version: string) => `#!/bin/sh\nif [ "$1" = version ]; then ${version}; fi\necho "SHIM $*" >> "${log}"\n`;
+  const file = (name: string, body: string | Buffer) => writeFile(name, body).then(() => chmod(name, 0o755));
+  await file(join(nodeDir, 'node'), `#!/bin/sh\necho "NODE $*" >> "${log}"\n`);
   const path = join(bin, 'portboard-shim');
-  if (shim === 'good') await script(path, fakeShim('echo "portboard-shim 9.9.9"; exit 0'));
-  if (shim === 'empty') await script(path, '');
-  if (shim === 'text-true') await script(path, 'true\n');
-  if (shim === 'random') await script(path, randomBytes(300));
-  if (shim === 'wrong-prefix') await script(path, fakeShim('echo "something else"; exit 0'));
-  if (shim === 'exit-1') await script(path, fakeShim('echo "portboard-shim 9.9.9"; exit 1'));
-  const run = (args: string[], env: Record<string, string> = {}) =>
-    new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
-      const child = spawn('sh', [join(bin, 'run.sh'), ...args], { env: { HOME: dir, PATH: `${nodeDir}:/usr/bin:/bin`, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
-      let stdout = '';
-      let stderr = '';
-      child.stdout.on('data', (c) => (stdout += c));
-      child.stderr.on('data', (c) => (stderr += c));
-      child.on('close', (code) => resolve({ code, stdout, stderr }));
-    });
-  const calls = async () => (await readFile(log, 'utf8').catch(() => '')).split('\n').filter(Boolean).filter((l) => !l.startsWith('SHIM version'));
-  return { dir, bin, run, calls, done: () => rm(dir, { recursive: true, force: true }) };
+  if (kind === 'real' || kind === 'truncated') {
+    const b = await realShim();
+    if (b.path === null) {
+      await rm(dir, { recursive: true, force: true });
+      return { f: null, why: b.why };
+    }
+    const bytes = readFileSync(b.path);
+    await file(path, kind === 'real' ? bytes : bytes.subarray(0, 1000));
+  }
+  if (kind === 'empty') await file(path, '');
+  if (kind === 'text-true') await file(path, 'true\n');
+  if (kind === 'foreign-elf') await file(path, FOREIGN_ELF);
+  const f: RunSh = {
+    dir,
+    bin,
+    run: (args, env = {}, opts = {}) =>
+      new Promise((resolve) => {
+        // cwd is the temp dir: a probe that wrote a file or read the cwd would show there, not in the checkout
+        const child = spawn('sh', [opts.script ?? join(bin, 'run.sh'), ...args], { cwd: opts.cwd ?? dir, env: { HOME: dir, PATH: `${nodeDir}:/usr/bin:/bin`, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (c) => (stdout += c));
+        child.stderr.on('data', (c) => (stderr += c));
+        child.on('close', (code) => resolve({ code, stdout, stderr }));
+      }),
+    calls: async () => (await readFile(log, 'utf8').catch(() => '')).split('\n').filter(Boolean),
+    done: () => rm(dir, { recursive: true, force: true }),
+  };
+  return { f, why: '' };
 }
 
-test('run.sh with a working binary: mcp.mjs and port-nudge.ts go to it, every other file to node', async () => {
-  const f = await runShFixture('good');
+test('run.sh with the real binary: mcp.mjs and port-nudge.ts go to it, every other file to node', async (t) => {
+  const { f, why } = await runShFixture('real');
+  if (!f) return t.skip(why);
   try {
-    assert.equal((await f.run([join(f.bin, 'mcp.mjs')])).code, 0);
-    assert.equal((await f.run(['--hook', join(f.dir, 'plugin', 'hooks', 'port-nudge.ts')])).code, 0);
+    const hookFile = join(f.dir, 'plugin', 'hooks', 'port-nudge.ts');
+    // `nudge` with no input prints nothing and never starts node; node here would log a call
+    const nudge = await f.run(['--hook', hookFile]);
+    assert.deepEqual([nudge.code, nudge.stdout, nudge.stderr], [0, '', '']);
+    // `mcp` in local mode runs `node <checkout>/src/mcp.ts`: the fake node logs that path, not bin/mcp.mjs
+    const mcp = await f.run([join(f.bin, 'mcp.mjs')], { PORTBOARD_MCP_MODE: 'local', PORTBOARD_HOME: ROOT });
+    assert.deepEqual([mcp.code, mcp.stderr], [0, '']);
     for (const hook of ['session-start', 'session-end', 'session-port']) assert.equal((await f.run(['--hook', join(f.dir, 'plugin', 'hooks', `${hook}.ts`)])).code, 0);
     assert.deepEqual(await f.calls(), [
-      'SHIM mcp',
-      'SHIM nudge',
+      `NODE ${join(ROOT, 'src', 'mcp.ts')}`,
       `NODE ${join(f.dir, 'plugin', 'hooks', 'session-start.ts')}`,
       `NODE ${join(f.dir, 'plugin', 'hooks', 'session-end.ts')}`,
       `NODE ${join(f.dir, 'plugin', 'hooks', 'session-port.ts')}`,
@@ -337,23 +384,28 @@ test('run.sh with a working binary: mcp.mjs and port-nudge.ts go to it, every ot
   }
 });
 
-test('run.sh: no binary, PORTBOARD_SHIM=0, or a binary whose version check fails: node, as before, and a hook stays silent with exit 0', async () => {
-  const variants: [string, 'none' | 'good' | 'empty' | 'text-true' | 'random' | 'wrong-prefix' | 'exit-1', Record<string, string>][] = [
-    ['no binary', 'none', {}],
-    ['PORTBOARD_SHIM=0', 'good', { PORTBOARD_SHIM: '0' }],
-    ['an empty file with the exec bit', 'empty', {}],
-    ['a text file that holds "true"', 'text-true', {}],
-    ['random bytes', 'random', {}],
-    ['a binary that prints another first word', 'wrong-prefix', {}],
-    ['a binary whose version exits 1', 'exit-1', {}],
+test('run.sh: no binary, PORTBOARD_SHIM=0, a start without a slash, or a binary that is not a working program: node, as before; a hook stays silent with exit 0', async (t) => {
+  const variants: [string, ShimKind, Record<string, string>, boolean][] = [
+    ['no binary', 'none', {}, false],
+    ['PORTBOARD_SHIM=0', 'real', { PORTBOARD_SHIM: '0' }, false],
+    ['an empty file with the exec bit', 'empty', {}, false],
+    ['a text file that holds "true"', 'text-true', {}, false],
+    ['a foreign ELF header', 'foreign-elf', {}, false],
+    ['a real binary cut to 1000 bytes', 'truncated', {}, false],
+    ['run.sh started as "sh run.sh" (no slash in $0)', 'real', {}, true],
   ];
-  for (const [what, shim, env] of variants) {
-    const f = await runShFixture(shim);
+  for (const [what, kind, env, noSlash] of variants) {
+    const { f, why } = await runShFixture(kind);
+    if (!f) {
+      t.diagnostic(`skipped "${what}": ${why}`);
+      continue;
+    }
     try {
       const hookFile = join(f.dir, 'plugin', 'hooks', 'port-nudge.ts');
-      const hook = await f.run(['--hook', hookFile], env);
+      const opts = noSlash ? { script: 'run.sh', cwd: f.bin } : {};
+      const hook = await f.run(['--hook', hookFile], env, opts);
       assert.deepEqual([hook.code, hook.stdout, hook.stderr], [0, '', ''], `${what}: hook`);
-      const mcp = await f.run([join(f.bin, 'mcp.mjs')], env);
+      const mcp = await f.run([join(f.bin, 'mcp.mjs')], env, opts);
       assert.deepEqual([mcp.code, mcp.stderr], [0, ''], `${what}: mcp`);
       assert.deepEqual(await f.calls(), [`NODE ${hookFile}`, `NODE ${join(f.bin, 'mcp.mjs')}`], what);
     } finally {
@@ -363,7 +415,8 @@ test('run.sh: no binary, PORTBOARD_SHIM=0, or a binary whose version check fails
 });
 
 test('run.sh: a bad binary and no node at all: a hook passes silently, the MCP command says node was not found', async () => {
-  const f = await runShFixture('random');
+  const { f } = await runShFixture('foreign-elf');
+  assert.ok(f);
   try {
     const env = { PATH: '/usr/bin:/bin' };
     const hook = await f.run(['--hook', join(f.dir, 'plugin', 'hooks', 'port-nudge.ts')], env);
@@ -374,4 +427,10 @@ test('run.sh: a bad binary and no node at all: a hook passes silently, the MCP c
   } finally {
     await f.done();
   }
+});
+
+test("the binary's version is the plugin's version", () => {
+  const main = readFileSync(join(ROOT, 'shim', 'main.go'), 'utf8');
+  const v = /^const version = "([^"]+)"$/m.exec(main)?.[1];
+  assert.equal(v, JSON.parse(readFileSync(join(ROOT, 'claude-plugin', '.claude-plugin', 'plugin.json'), 'utf8')).version);
 });

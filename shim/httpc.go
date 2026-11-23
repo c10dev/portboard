@@ -47,7 +47,6 @@ type outcome struct {
 }
 
 type reqOpts struct {
-	follow         bool          // follow redirects (Node fetch does, node:http does not)
 	connectTimeout time.Duration // 0: none
 	total          time.Duration // 0: none; covers connect, headers and body
 	reply          time.Duration // 0: none; starts when the connection is made
@@ -91,9 +90,8 @@ func do(method, rawURL string, headers map[string]string, body []byte, o reqOpts
 	}
 	defer tr.CloseIdleConnections()
 	client := &http.Client{Transport: tr}
-	if !o.follow {
-		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	}
+	// Redirects are never followed: a 3xx is the answer. The request goes only to the address that was configured.
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	var rd io.Reader
 	if body != nil {
 		rd = bytes.NewReader(body)

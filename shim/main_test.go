@@ -507,6 +507,9 @@ func TestMCPContract(t *testing.T) {
 			if code != num(want["exit"]) {
 				t.Errorf("exit code %d, want %v", code, want["exit"])
 			}
+			if w, ok := want["versionLine"].(bool); ok && strings.Contains(s.errText(), "the dashboard runs version") != w {
+				t.Errorf("version-mismatch line on stderr = %v, want %v (stderr %q)", !w, w, s.errText())
+			}
 			pings, posts, _ := f.counts()
 			if pings != num(want["pings"]) {
 				t.Errorf("pings %d, want %v", pings, want["pings"])
@@ -639,8 +642,17 @@ func TestNudgeContract(t *testing.T) {
 						t.Errorf("query %s = %v, want %v", key, got, w)
 					}
 				}
-				if w, ok := want["command"]; ok && first(last["command"]) != w.(string) {
-					t.Errorf("query command %q, want %q", first(last["command"]), w)
+				// every request: the command is the one on stdin, and nothing else is in the query
+				ti, _ := c.Input["tool_input"].(map[string]any)
+				for _, q := range f.advice {
+					if got, w := first(q.query["command"]), commandOf(ti["command"]); got != w {
+						t.Errorf("query command %q, want %q", got, w)
+					}
+					for key := range q.query {
+						if key != "command" && key != "cwd" && key != "session" {
+							t.Errorf("unexpected query key %q", key)
+						}
+					}
 				}
 			}
 		})
@@ -882,22 +894,35 @@ func TestMCPDoesNotFollowRedirects(t *testing.T) {
 	}
 }
 
-// The nudge follows redirects, as Node's fetch does.
-func TestNudgeFollowsRedirects(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/claude/port-advice" {
-			http.Redirect(w, r, "/moved", http.StatusFound)
-			return
-		}
+// The nudge does not follow a redirect: a 3xx is silence, and the target gets no request.
+func TestNudgeDoesNotFollowRedirects(t *testing.T) {
+	var mu sync.Mutex
+	var targetHits []string
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		targetHits = append(targetHits, r.URL.String()+" referer="+r.Header.Get("Referer"))
+		mu.Unlock()
 		writeStatus(w, 200, `{"text":"[portboard] moved"}`)
 	}))
-	defer srv.Close()
-	cmd := exec.Command(shimBin, "nudge")
-	cmd.Env = cleanEnv(t, map[string]string{"PORTBOARD_URL": srv.URL, "PORTBOARD_HOOK_TIMEOUT_MS": "10000"})
-	cmd.Stdin = strings.NewReader(`{"tool_name":"Bash","tool_input":{"command":"ls"}}`)
-	out, err := cmd.Output()
-	if err != nil || !strings.Contains(string(out), `"additionalContext":"[portboard] moved"`) {
-		t.Errorf("stdout %q, %v", out, err)
+	defer target.Close()
+	for _, code := range []int{301, 302, 303, 307, 308} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, target.URL+"/elsewhere", code)
+		}))
+		cmd := exec.Command(shimBin, "nudge")
+		cmd.Env = cleanEnv(t, map[string]string{"PORTBOARD_URL": srv.URL, "PORTBOARD_HOOK_TIMEOUT_MS": "10000"})
+		cmd.Stdin = strings.NewReader(`{"tool_name":"Bash","tool_input":{"command":"vite --port 5173"}}`)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		if err := cmd.Run(); err != nil || stdout.Len() != 0 || stderr.Len() != 0 {
+			t.Errorf("%d: exit %v, stdout %q, stderr %q", code, err, stdout.String(), stderr.String())
+		}
+		srv.Close()
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(targetHits) != 0 {
+		t.Errorf("the redirect target got requests: %q", targetHits)
 	}
 }
 
@@ -1076,6 +1101,8 @@ func TestRealDashboardAnswersLikeLocal(t *testing.T) {
 	for k, v := range env {
 		daemon.Env = append(daemon.Env, k+"="+v)
 	}
+	// Like test/mcp-local.test.ts: the dashboard has a session of its own, which a relayed request must not take over.
+	daemon.Env = append(daemon.Env, "CLAUDE_CODE_SESSION_ID=daemon-session-must-not-leak", "CLAUDE_PID=1")
 	var dout bytes.Buffer
 	var dmu sync.Mutex
 	pipe, _ := daemon.StdoutPipe()

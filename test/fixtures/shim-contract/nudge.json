@@ -1,5 +1,5 @@
 {
- "about": "Contract cases for the PreToolUse nudge: claude-plugin/hooks/port-nudge.ts (Node, run as a CLI) and shim/ (Go, `nudge`) must both give each expected result. Read by test/shim-contract.test.ts and shim/main_test.go. 'input' is the hook JSON (a command may be {prefix, padTo, pad}: the prefix padded to padTo bytes); 'stdin' is the raw text instead ({repeat, times} for a long one). 'daemon' is the fake dashboard (the same body for every request; delayMs, refuse). 'expect.context' is the additionalContext printed (null: nothing on stdout); stdout, when printed, is the hookSpecificOutput JSON and a newline, byte for byte. Exit code 0 and an empty stderr are checked in every case. cwd and session are the query values the daemon got (checked when the key is present). 'go' inside 'expect' overrides a value for the Go side; a case with 'split' is one of the three accepted differences (spec: Node and Go may differ only there). The Go side also checks that the query's 'command' equals the command when 'go.command' is given. A case sets PORTBOARD_HOOK_TIMEOUT_MS through 'env'; the default here is 10000.",
+ "about": "Contract cases for the PreToolUse nudge: claude-plugin/hooks/port-nudge.ts (Node, run as a CLI) and shim/ (Go, `nudge`) must both give each expected result. Read by test/shim-contract.test.ts and shim/main_test.go. 'input' is the hook JSON (a command may be {prefix, padTo, pad}: the prefix padded to padTo bytes); 'stdin' is the raw text instead ({repeat, times} for a long one). 'daemon' is the fake dashboard (the same body for every request; delayMs, refuse). 'expect.context' is the additionalContext printed (null: nothing on stdout); stdout, when printed, is the hookSpecificOutput JSON and a newline, byte for byte. Exit code 0 and an empty stderr are checked in every case. cwd and session are the query values the daemon got (checked when the key is present). 'go' inside 'expect' overrides a value for the Go side; a case with 'split' is one of the three accepted differences (spec: Node and Go may differ only there). The Go side checks, for every case that asks the dashboard, that the query's 'command' equals the command on stdin and that the query has no key but command, cwd and session. A case sets PORTBOARD_HOOK_TIMEOUT_MS through 'env'; the default here is 10000.",
  "cases": [
   {
    "name": "a command that kills by port: the context is printed as one hook line",
@@ -555,6 +555,25 @@
       "padTo": 4096,
       "pad": "a"
      }
+    }
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": "[portboard] port 3000 is held by pid 1 (fixture text)",
+    "requests": 1
+   }
+  },
+  {
+   "name": "a command with shell and URL special characters, a newline, a tab and Korean text reaches the query unchanged",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "vite --port 5173 # & = + # % \" ' $ ( ) \\\n\t한글 텍스트"
     }
    },
    "daemon": {

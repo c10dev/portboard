@@ -596,6 +596,71 @@
     "session": null,
     "pid": null
    }
+  },
+  {
+   "name": "accepted difference: a dashboard whose version differs from the checkout's: the Node client writes one stderr line, the Go binary none",
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "posts": [
+     {
+      "status": 200,
+      "reply": "echo"
+     }
+    ]
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"echo\":\"ping\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 1,
+    "versionLine": false,
+    "node": {
+     "versionLine": true
+    }
+   }
+  },
+  {
+   "name": "accepted difference: no checkout: the Go binary relays (it needs the checkout only to fall back), the Node client exits 1 at the start",
+   "env": {
+    "PORTBOARD_HOME": "/nonexistent/checkout"
+   },
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "posts": [
+     {
+      "status": 200,
+      "reply": "echo"
+     }
+    ]
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"echo\":\"ping\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 1,
+    "node": {
+     "stdout": [],
+     "exit": 1,
+     "pings": 0,
+     "posts": 0
+    }
+   }
   }
  ]
 }
