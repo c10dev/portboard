@@ -8,6 +8,8 @@
 // Standalone on purpose (no imports from Portboard's src/): the plugin is installed without the rest of the repo.
 // PORTBOARD_URL overrides the address (a preview on another port, tests); the default is production on loopback.
 
+import { hookTimeoutMs } from './timeout.ts';
+
 export const DEFAULT_URL = 'http://127.0.0.1:8790';
 export const TIMEOUT_MS = 500;
 
@@ -27,7 +29,7 @@ export async function onSessionEnd(input: SessionEndInput, opts: { url?: string;
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-portboard': '1' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(opts.timeoutMs ?? TIMEOUT_MS),
+      signal: AbortSignal.timeout(opts.timeoutMs ?? hookTimeoutMs(TIMEOUT_MS)),
     });
     await res.body?.cancel().catch(() => {});
   } catch {

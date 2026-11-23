@@ -13,6 +13,7 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { portboardHome } from './home.ts';
+import { hookTimeoutMs } from './timeout.ts';
 
 export const DEFAULT_URL = 'http://127.0.0.1:8790';
 export const TIMEOUT_MS = 300;
@@ -52,7 +53,7 @@ export async function nudge(input: PreToolUseInput, opts: { env?: Env; home?: st
     const q = new URLSearchParams({ port: String(hit.port), cmd: hit.kind, tool: hit.tool });
     if (typeof input.cwd === 'string' && input.cwd.startsWith('/')) q.set('cwd', input.cwd);
     if (typeof input.session_id === 'string' && /^[0-9a-zA-Z-]{1,64}$/.test(input.session_id)) q.set('session', input.session_id);
-    const res = await fetch(`${base}/api/claude/port-advice?${q}`, { signal: AbortSignal.timeout(opts.timeoutMs ?? TIMEOUT_MS) });
+    const res = await fetch(`${base}/api/claude/port-advice?${q}`, { signal: AbortSignal.timeout(opts.timeoutMs ?? hookTimeoutMs(TIMEOUT_MS, env)) });
     if (!res.ok) {
       await res.body?.cancel().catch(() => {});
       return null;

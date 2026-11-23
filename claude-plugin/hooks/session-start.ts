@@ -7,6 +7,8 @@
 // Never delays a session: one POST with a 500 ms timeout, every error swallowed, no output, exit code always 0.
 // Standalone (no imports from Portboard's src/), like session-end.ts. PORTBOARD_URL overrides the address.
 
+import { hookTimeoutMs } from './timeout.ts';
+
 export const DEFAULT_URL = 'http://127.0.0.1:8790';
 export const TIMEOUT_MS = 500;
 
@@ -26,7 +28,7 @@ export async function onSessionStart(input: SessionStartInput, opts: { url?: str
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-portboard': '1' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(opts.timeoutMs ?? TIMEOUT_MS),
+      signal: AbortSignal.timeout(opts.timeoutMs ?? hookTimeoutMs(TIMEOUT_MS)),
     });
     await res.body?.cancel().catch(() => {});
   } catch {

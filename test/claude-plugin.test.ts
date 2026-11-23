@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { disabled, hookOutput, nudge, TIMEOUT_MS } from '../claude-plugin/hooks/port-nudge.ts';
 import { portboardHome } from '../claude-plugin/hooks/home.ts';
+import { hookTimeoutMs } from '../claude-plugin/hooks/timeout.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '');
 const PLUGIN = join(ROOT, 'claude-plugin');
@@ -170,7 +171,7 @@ test('nudge: silent when Portboard is down, errors, answers without the marker, 
 
 function runHook(input: string, env: Record<string, string>): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn('sh', [join(PLUGIN, 'bin/run.sh'), '--hook', join(PLUGIN, 'hooks/port-nudge.ts')], { env: { ...process.env, ...env } });
+    const child = spawn('sh', [join(PLUGIN, 'bin/run.sh'), '--hook', join(PLUGIN, 'hooks/port-nudge.ts')], { env: { ...process.env, PORTBOARD_HOOK_TIMEOUT_MS: '10000', ...env } });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (c) => (stdout += c));
@@ -282,4 +283,23 @@ test('session-port: machines=1 only with the multi_machine_hint option (or PORTB
   } finally {
     fake.server.close();
   }
+});
+
+test('nudge: PORTBOARD_HOOK_TIMEOUT_MS in opts.env lets a 400 ms answer through; without it the 300 ms default gives up', async () => {
+  const fake = await fakePortboard(() => ({ body: { text: '[portboard] slow but fine' }, delayMs: 400 }));
+  try {
+    const env = { PORTBOARD_URL: fake.url };
+    assert.equal(await nudge(bash('vite --port 5173'), { env: { ...env, PORTBOARD_HOOK_TIMEOUT_MS: '10000' }, home: ROOT }), '[portboard] slow but fine');
+    assert.equal(await nudge(bash('vite --port 5173'), { env, home: ROOT }), null);
+  } finally {
+    fake.server.closeAllConnections();
+    fake.server.close();
+  }
+});
+
+test('hookTimeoutMs: PORTBOARD_HOOK_TIMEOUT_MS from 1 to 10000 replaces the default, anything else keeps it', () => {
+  assert.equal(hookTimeoutMs(300, { PORTBOARD_HOOK_TIMEOUT_MS: '10000' }), 10000);
+  assert.equal(hookTimeoutMs(300, { PORTBOARD_HOOK_TIMEOUT_MS: '1' }), 1);
+  for (const bad of ['0', 'abc', '10001', '', '1.5', '-5', ' 7', '1e3']) assert.equal(hookTimeoutMs(300, { PORTBOARD_HOOK_TIMEOUT_MS: bad }), 300, bad);
+  assert.equal(hookTimeoutMs(300, {}), 300);
 });

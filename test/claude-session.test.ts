@@ -461,7 +461,7 @@ test('session-end.ts as a CLI: reads the SessionEnd JSON from stdin, exits 0 wit
   const { server, url } = await listen((_q, b) => got.push(JSON.parse(b)));
   const cli = (input: string, env: Record<string, string>) =>
     new Promise<number | null>((resolve) => {
-      const c = spawn(process.execPath, [join(ROOT, 'claude-plugin/hooks/session-end.ts')], { env: { PATH: process.env.PATH ?? '', ...env }, stdio: ['pipe', 'ignore', 'ignore'] });
+      const c = spawn(process.execPath, [join(ROOT, 'claude-plugin/hooks/session-end.ts')], { env: { PATH: process.env.PATH ?? '', PORTBOARD_HOOK_TIMEOUT_MS: '10000', ...env }, stdio: ['pipe', 'ignore', 'ignore'] });
       c.on('exit', resolve);
       c.stdin.end(input);
     });
