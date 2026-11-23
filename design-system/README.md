@@ -49,6 +49,8 @@ fonts and hairline borders. Build new screens from the tokens and components bel
 - The command palette has one box line and one text line: the search box and the selected row start 6px inside the palette, and every text (search, results, group labels, footer) starts 17px inside. When the actions list shows its back button, the search box follows that button.
 - A fold over a dot list draws its marker (the 5 × 8px triangle of the other fold arrows) in the 8px dot column, so its label starts under the titles of the list (Settings › Getting started).
 - In a worktree list the machine chips share one slot width, the widest chip of that list, so the branch names start on one line (Dev tab).
+- A bare icon button (no fill, border or shadow, such as the × of a panel or dialog head) ends its ink, not its box, on the body's text line.
+- The definition lists of one inspector share the label column of their widest label, so all their values start on one line.
 - Spacing is literal in the CSS; there are no spacing tokens. Keep the rhythm the CSS uses: buttons 6px 11px, list rows 6px 12px (10px 12px on a phone), gaps of 4 to 8px between controls.
 - Shadows are rare and mark layers that float. The command palette and the keyboard shortcuts dialog use the `shadow-dialog` token, toasts the `shadow-toast` token, the sidebar drawer the `shadow-drawer` token and the inspector sheet the `shadow-sheet` token. Other shadows (the settings modal, menus, the device detail panel, the current tab and segment) are literal (see Not synced).
 

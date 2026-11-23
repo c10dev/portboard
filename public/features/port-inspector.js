@@ -117,6 +117,37 @@ function emptyNote(text) {
   return p;
 }
 
+/** All definition lists of one inspector share the label column of its widest label, so their values start on one
+ *  line. The width depends on the labels only, not on the panel width, so it is measured after a render and again when
+ *  the body's content changes (features/owners.js fills and refills the owner list later). */
+function alignFacts(body) {
+  const st = body.style;
+  // no layout engine (test/fixtures/fake-dom.ts): nothing to measure
+  if (typeof st?.getPropertyValue !== 'function' || typeof st.removeProperty !== 'function' || typeof body.getBoundingClientRect !== 'function') return;
+  // dt in a dl right inside a section, not the 한눈에 overview (one simple selector: test/fixtures/fake-dom.ts)
+  const dts = [...body.querySelectorAll('dt')].filter((d) => {
+    const sec = d.parentElement?.parentElement;
+    return d.parentElement?.tagName === 'DL' && sec?.classList.contains('insp-sec') && !sec.classList.contains('insp-overview');
+  });
+  st.removeProperty('--insp-dt-w');
+  const w = Math.ceil(Math.max(0, ...dts.map((d) => d.getBoundingClientRect().width)));
+  if (w) st.setProperty('--insp-dt-w', `${w}px`);
+}
+
+// Content changes only (children and text): alignFacts writes the style attribute, which this does not watch. The
+// log tail's updates leave the lists alone, so they measure nothing.
+const factsObserver = typeof MutationObserver === 'function'
+  ? new MutationObserver((records) => {
+    const bodies = new Set();
+    for (const r of records) {
+      const at = r.target.nodeType === 1 ? r.target : r.target.parentElement;
+      if (at?.closest('.insp-logs')) continue;
+      bodies.add(at?.closest('.insp-body') ?? r.target);
+    }
+    for (const body of bodies) alignFacts(body);
+  })
+  : null;
+
 /** Fill the inspector: the selected port p (null: nothing selected / it went away) */
 export function renderInspector(insp, p, ctx) {
   if (!insp) return;
@@ -177,6 +208,8 @@ export function renderInspector(insp, p, ctx) {
     stopTail();
   }
   body.replaceChildren(...parts);
+  alignFacts(body);
+  factsObserver?.observe(body, { childList: true, subtree: true, characterData: true });
   if (same) body.scrollTop = scroll;
   else body.scrollTop = 0;
 }
