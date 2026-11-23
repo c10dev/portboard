@@ -347,6 +347,7 @@ test('list_accounts is not on the remote server', () => {
   // one read, the four login writes, the two writes of an added account and the proxy key (each `write: true`, so the router checks the owner and the header first)
   assert.deepEqual((accountsFeature.routes ?? []).map((r) => `${r.method} ${r.path}`), [
     'GET /api/accounts',
+    'GET /api/accounts/usage',
     'POST /api/accounts/login/start',
     'POST /api/accounts/login/finish',
     'POST /api/accounts/login/poll',

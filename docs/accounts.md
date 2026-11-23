@@ -157,6 +157,25 @@ Not checked with the real services: that Claude Code works with only these two p
 
 Not checked for Codex (the tests use a fake upstream and a fake client; the real `codex` was not run): that `codex exec` works through the command above; that chatgpt.com accepts the request of a user provider (it has the `version` header from the command, and no `OpenAI-Beta`) and the body; whether Codex calls another path (for example `/codex/memories/trace_summarize`; any such call is counted in `proxy.unproxied`); and that a real limit answers `429` with `x-codex-*-used-percent: 100`.
 
+### Usage log
+
+For each request the proxy sends on, it appends one line to `accounts-usage.jsonl` in the config folder (mode `0600`, written through `appendPrivate`; `PORTBOARD_ACCOUNTS_USAGE` moves it). A line has these keys and no others:
+
+- `at` (ISO time the request started), `provider` (`claude` or `codex`), `account` (the account id, never an email), `model`, `status`, `input`, `output`, `cacheRead`, `cacheWrite`, `ms`.
+- `model` is the `model` string of the request body, cut to 128 characters, else `null`.
+- `status` is the upstream status. It is `0` when no answer reached the caller: the upstream failed before its headers (the caller got `502`), the wait for the headers ran out, or the caller left before an answer began.
+- The four counts come from the answer while it streams back: a JSON answer's `usage` (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`), or an SSE answer's `message_start` `message.usage` and the last `message_delta` `usage.output_tokens`. A count that the answer did not carry, or that is not a number, is `null`. `count_tokens` records `input_tokens` as `input` and `null` for the rest. A JSON answer larger than 1 MiB is logged without counts.
+- **Codex lines have no token counts yet.** A request on the Codex lane gets a line with `provider: "codex"`, the account that answered, the `model` of the body, the status and `ms`; `input`, `output`, `cacheRead` and `cacheWrite` are `null` (counting Codex tokens is a later step). The Codex answer is passed on unread. The Claude rules above and below hold for both lanes.
+- A request that ended early (the caller left, or the upstream broke off after its headers) still gets its line, with the counts seen so far and the upstream status.
+- A request that moved to another account (a rejected limit) gets one line, for the account that answered last. When no account is left, the last answer goes to the caller and the line is for the account that gave it.
+
+It never records a request or answer body, a token, the proxy key, a header value or an email. The counts are read from a copy of the stream; the bytes the caller gets do not change.
+
+- **503 `no usable account` is not logged:** there is no account to name.
+- **Best effort.** A failed write is dropped without a message and never changes an answer. A log file that group or others can read or write, or that is not a regular file, is neither read nor written.
+- **30 days.** A line older than 30 days is not counted by the summary. Once a day (the first write of each UTC day after a start) the file is rewritten through `writePrivate` with only the lines of the last 30 days; a line that is not valid is dropped then.
+- **`GET /api/accounts/usage?days=N`** gives `{days, totals, rows}` for the last `N` days (a whole number from 1 to 30, default 7; else `400 invalid days`). The checks are those of `GET /api/accounts`: `404 accounts disabled`, then `403 owner only`. `rows` group the lines by UTC `day`, `provider`, `account` and `model`, with `requests` and the sums of the four counts (a request without a count adds nothing to that sum; `null` when no request had it). `totals` has `{requests, recorded}` for `claude` and `codex`: `recorded` counts the requests with both `input` and `output`.
+
 ## Errors
 
 An error is one of these fixed sentences. None holds a response body, a header, a token or the text you pasted.
@@ -181,6 +200,7 @@ An error is one of these fixed sentences. None holds a response body, a header, 
 | `account home not written` | the account's folder or login file could not be written (HTTP 500) |
 | `account home not removed` | the account's folder could not be deleted safely; the account stays listed (HTTP 500) |
 | `local login cannot be used here` | `use` was called with the id of a CLI login (HTTP 400) |
+| `invalid days` | `GET /api/accounts/usage` got a `days` that is not a whole number from 1 to 30 (HTTP 400) |
 | `accounts proxy disabled` | the proxy key route was called while the proxy is off (HTTP 404) |
 | `proxy key unusable` | the key route could not read or write the key file, for example a file that other users can read (HTTP 500) |
 

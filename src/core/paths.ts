@@ -47,6 +47,8 @@ export interface Paths {
   accountHomes: string;
   /** accounts-proxy.key: the key a client sends to the accounts proxy (0600; src/core/accounts/proxy.ts, docs/accounts.md#proxy) */
   accountsProxyKey: string;
+  /** accounts-usage.jsonl: one line per request the accounts proxy sent on, 30 days (0600; src/core/accounts/usage.ts, docs/accounts.md#usage-log) */
+  accountsUsage: string;
 
   // read only (the owner edits it)
   /** portboard.json: host, tailnet, checkout, repos root and other site values (site.ts, docs/config.md) */
@@ -115,6 +117,7 @@ export function resolvePaths(env: Env = process.env, home = homedir()): Paths {
     accounts: env.PORTBOARD_ACCOUNTS ?? join(configDir, 'accounts.json'),
     accountHomes: env.PORTBOARD_ACCOUNT_HOMES ?? join(configDir, 'account-homes'),
     accountsProxyKey: env.PORTBOARD_ACCOUNTS_PROXY_KEY ?? join(configDir, 'accounts-proxy.key'),
+    accountsUsage: env.PORTBOARD_ACCOUNTS_USAGE ?? join(configDir, 'accounts-usage.jsonl'),
     site: env.PORTBOARD_SITE ?? join(configDir, 'portboard.json'),
     // A preview's own (it starts without one: no allowlist), never production's.
     access: env.PORTBOARD_ACCESS ?? join(configDir, 'access.json'),
