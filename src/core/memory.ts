@@ -13,7 +13,7 @@
 //               little above what `free` calls used).
 //             - sessions: each CLI's whole tree (its MCP servers and the servers it started included), with a
 //               breakdown. A session's MB therefore also appears under groups.mcp / services.
-//   MCP       a server is recognised by command (rea, @playwright/mcp, Portboard's mcp.ts, other *mcp* packages). Each
+//   MCP       a server is recognised by command (rea, @playwright/mcp, Portboard's mcp.ts or the plugin's mcp.mjs, other *mcp* packages). Each
 //             direct child subtree of a CLI that holds one is one instance, wrappers included (npm exec → sh → node).
 //   idle      a session is idle when its transcript (~/.claude/projects/*/<id>.jsonl) hasn't been written for
 //             `idleMin` and its tree used under IDLE_CPU_PCT of a core since the previous sample; null on the first sample.

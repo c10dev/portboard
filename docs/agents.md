@@ -112,8 +112,9 @@ The plugin brings the MCP server, the skill, the nudge and the SessionEnd hook. 
 /plugin install portboard@portboard
 ```
 
-It runs the MCP server from your checkout (`~/projects/portboard`, or `PORTBOARD_HOME`); the hooks need the dashboard
-running on `127.0.0.1:8790` (`PORTBOARD_URL` points them elsewhere). If you had added the server with `claude mcp add`,
+The MCP server is answered by the running dashboard (`127.0.0.1:8790`; `PORTBOARD_URL` points the hooks and the MCP
+server, write tools included, at another Portboard). When no dashboard answers, it runs the server from your checkout
+(`~/projects/portboard`, or `PORTBOARD_HOME`) instead ([mcp.md](mcp.md#the-plugins-two-modes)). The hooks need the dashboard. If you had added the server with `claude mcp add`,
 remove that entry first, or you get two servers. Tool names under the plugin are
 `mcp__plugin_portboard_portboard__<tool>`. Details, and how to turn off only the nudge:
 [claude-plugin/README.md](claude-plugin/README.md).

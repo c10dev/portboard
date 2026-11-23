@@ -1,5 +1,5 @@
 #!/bin/sh
-# Run one of the plugin's .ts files with Node. Finds node like bin/portboard-mcp does: Claude Code may be started
+# Run one of the plugin's .ts or .mjs files with Node. Finds node like bin/portboard-mcp does: Claude Code may be started
 # without nvm on PATH. With --hook, a missing node is a silent pass (exit 0): a hook must never print an error on
 # every Bash call.
 HOOK=0

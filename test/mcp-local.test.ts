@@ -215,19 +215,24 @@ interface Fake {
   posts: Msg[];
   close(): Promise<void>;
 }
+const fakes: { close(): Promise<void> }[] = [];
+// Whatever a failed assertion leaves open: no listener may keep the file from exiting.
+after(() => Promise.all(fakes.map((f) => f.close())));
 async function fake(handler: (req: IncomingMessage, res: ServerResponse, body: string, f: Fake) => void, port?: number): Promise<Fake> {
   const sockets = new Set<import('node:net').Socket>();
   const server: Server = createHttp((req, res) => {
     let body = '';
     req.on('data', (c) => (body += c));
     req.on('end', () => {
-      if (req.method === 'POST') {
+      // Count only what the plugin sends. A Portboard on the host probes every new loopback listener with GET /.
+      const path = (req.url ?? '').split('?')[0];
+      if (req.method === 'POST' && path === '/api/mcp') {
         try {
           f.posts.push(JSON.parse(body));
         } catch {
           f.posts.push({ unparsed: body });
         }
-      } else f.pings++;
+      } else if (req.method === 'GET' && path === '/api/mcp/ping') f.pings++;
       handler(req, res, body, f);
     });
   });
@@ -245,9 +250,11 @@ async function fake(handler: (req: IncomingMessage, res: ServerResponse, body: s
     close: () =>
       new Promise<void>((r) => {
         sockets.forEach((s) => s.destroy());
+        if (!server.listening) return r();
         server.close(() => r());
       }),
   };
+  fakes.push(f);
   return f;
 }
 const json = (res: ServerResponse, status: number, body: unknown) => {

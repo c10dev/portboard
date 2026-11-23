@@ -155,6 +155,10 @@ Thin mode, during a session:
 
 The thin client sends `CLAUDE_CODE_SESSION_ID` and `CLAUDE_PID` from its own environment as the headers `X-Portboard-Session` and `X-Portboard-Claude-Pid`, so `start_dev_server` tags the unit with the calling session. Without them (Claude Desktop) the unit has no session, as for the stdio server.
 
+### In thin mode
+
+The tools run inside the dashboard process, not in the session's. So the dev server's `PATH` comes from the dashboard's Node, `list_suggestions` treats the dashboard's own unit as its own, and the stop tools refuse the dashboard's own pid. These are the answers the dashboard's REST routes give for the same actions.
+
 ### `POST /api/mcp` and `GET /api/mcp/ping`
 
 `POST /api/mcp` takes one JSON-RPC message (not a batch, 1 MB at most) and answers `200` with the JSON-RPC reply, or `204` for a notification. The dashboard builds the stdio server's `Core` once, on first use, and calls the same `handleMessage` as `src/mcp.ts`. Its caches are separate from the dashboard's own. The route has the checks of every write route: `X-Portboard: 1`, a read-only install, and the machine owner (`403`). Its handler also requires a local process (`403 {error: "loopback only"}`), also when the owner check passed. The security notes are in [security.md](security.md#mcp-through-the-dashboard).
