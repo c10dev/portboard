@@ -278,13 +278,21 @@ function render() {
   }
 }
 
-/** Give each list's chip slots the width of its widest chip. Measured once the lists are in the document. */
+/** Give each list's chip slots the width of its widest chip. Measured once the lists are in the document, and again
+ *  when the window resizes: a chip that wrapped on a narrow window is wider on a wide one. */
 function alignChips(box) {
   for (const ul of box.querySelectorAll('.wt-list')) {
+    ul.style.removeProperty('--wt-slot-w');
     const widths = [...ul.querySelectorAll('.wt-slot')].map((s) => s.getBoundingClientRect().width);
     if (widths.length) ul.style.setProperty('--wt-slot-w', `${Math.ceil(Math.max(...widths))}px`);
   }
 }
+
+let chipFrame = 0;
+addEventListener('resize', () => {
+  cancelAnimationFrame(chipFrame);
+  chipFrame = requestAnimationFrame(() => { const box = $('repos'); if (box) alignChips(box); });
+});
 
 /** Nothing listed: no repos under the root, or the filter hides them all */
 function noRepos() {
