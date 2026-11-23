@@ -139,13 +139,15 @@ function fixture() {
     ],
   };
   const calls: string[] = [];
+  const acks: string[] = [];
   const core = {
     snapshot: async () => snap,
     usage: async () => usage,
     history: async () => historyView(h, NOW),
     setClientName: async (key: string, name: string | null) => calls.push(`${key}=${name}`),
+    ackKnownDevice: async (key: string) => (acks.push(key), 1),
   } as unknown as Core;
-  return { usage, snap, core, calls, h };
+  return { usage, snap, core, calls, acks, h };
 }
 
 const payload = (r: { content: { text: string }[] }) => JSON.parse(r.content[0].text);
@@ -175,9 +177,9 @@ test('who_uses / list_usage: now plus last-used history, filtered by port', asyn
 });
 
 test('name_device writes the clients store by nameKey or device id; Tailscale devices are refused', async () => {
-  const { core, calls } = fixture();
+  const { core, calls, acks } = fixture();
   assert.deepEqual(payload(await callTool('name_device', { key: 'lan:192.168.1.7', name: ' 데스크톱 ' }, core)), {
-    ok: true, key: 'mac:04:7c:16:0a:0b:03', device: 'lan:192.168.1.7', name: '데스크톱',
+    ok: true, key: 'mac:04:7c:16:0a:0b:03', device: 'lan:192.168.1.7', name: '데스크톱', acknowledged: 1,
   });
   await callTool('name_device', { key: 'ip:192.168.1.50', name: '' }, core);
   assert.deepEqual(calls, ['mac:04:7c:16:0a:0b:03=데스크톱', 'ip:192.168.1.50=null']);
@@ -188,6 +190,20 @@ test('name_device writes the clients store by nameKey or device id; Tailscale de
   assert.equal((await callTool('name_device', { key: 'lan:192.168.1.7', name: 'x'.repeat(41) }, core)).isError, true);
   assert.equal((await callTool('name_device', { key: 'nope', name: 'x' }, core)).isError, true);
   assert.equal(calls.length, 2);
+  assert.deepEqual(acks, ['mac:04:7c:16:0a:0b:03']);
+});
+
+test('name_device: a server that cannot be reached gives acknowledged null, not an error, and the name is saved', async () => {
+  const { core, calls } = fixture();
+  const none = { ...core, ackKnownDevice: undefined } as unknown as Core;
+  const down = { ...core, ackKnownDevice: async () => null } as unknown as Core;
+  const boom = { ...core, ackKnownDevice: async () => { throw new Error('refused'); } } as unknown as Core;
+  for (const c of [none, down, boom]) {
+    const r = await callTool('name_device', { key: 'mac:04:7c:16:0a:0b:03', name: 'Desk' }, c);
+    assert.notEqual(r.isError, true);
+    assert.deepEqual(payload(r), { ok: true, key: 'mac:04:7c:16:0a:0b:03', name: 'Desk', acknowledged: null });
+  }
+  assert.equal(calls.length, 3);
 });
 
 test('list_ports carries group and lastUsed', async () => {

@@ -7,11 +7,12 @@ import { parseNeigh } from '../src/core/clients.ts';
 import type { Channel, Message } from '../src/core/alerts.ts';
 import {
   acknowledge, cardKey, createTracker, dueAlert, emptyKnown, newDeviceText, observationOf, observe, parseKnown, settle,
-  withNewDevices, summary, type KnownStore, type Observation,
+  withNewDevices, summary, loadKnown, type KnownStore, type Observation,
 } from '../src/core/known.ts';
 import { loadPrefs, newDeviceSettings, setNewDevicePrefs, setPortPrefs } from '../src/core/prefs.ts';
 import type { DeviceCard, UseRow } from '../src/core/usage.ts';
 import { L } from './fixtures/locale.ts';
+import { callTool, type Core } from '../src/mcp/tools.ts';
 
 const MIN = 60_000;
 const T0 = Date.UTC(2026, 9, 17, 12);
@@ -326,4 +327,48 @@ test('prefs: newDevices defaults (connections on, neighbours off), survives othe
   assert.deepEqual(JSON.parse(await readFile(path, 'utf8')).newDevices, { neighbors: true });
   assert.deepEqual(await setNewDevicePrefs({ neighbors: false }, path), { connections: true, neighbors: false });
   assert.equal(JSON.parse(await readFile(path, 'utf8')).newDevices, undefined);
+});
+
+test('name_device (stdio) clears the 새 기기 mark through the server tracker; clearing a name leaves it pending', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'portboard-known-'));
+  const path = join(dir, 'known-devices.json');
+  let t = T0;
+  const tracker = createTracker({ path, logPath: join(dir, 'alerts.jsonl'), alertsOn: false, now: () => t, dashboard: null });
+  await tracker.observe(day1(), ON);
+  const A = 'mac:50:81:40:aa:bb:cc';
+  const B = 'mac:50:81:40:aa:bb:dd';
+  const devices = () => [lan('192.168.1.50', '50:81:40:aa:bb:cc', [use(22)]), lan('192.168.1.51', '50:81:40:aa:bb:dd', [use(22)])];
+  t += MIN;
+  await tracker.observe(obsOf(devices()), ON);
+  await tracker.idle();
+  const keys = async () => (await tracker.summary(ON)).pending.map((p) => p.nameKey).sort();
+  assert.deepEqual(await keys(), [A, B]);
+
+  const named: string[] = [];
+  const core = {
+    usage: async () => ({ cards: [], history: { byDevice: {} } }),
+    setClientName: async (key: string, name: string | null) => void named.push(`${key}=${name}`),
+    ackKnownDevice: (k: string) => tracker.acknowledge(k),
+    // the same file read the stdio list_new_devices does
+    newDevices: async () => summary(await loadKnown(path), ON, false),
+  } as unknown as Core;
+  const pending = async () => JSON.parse((await callTool('list_new_devices', {}, core)).content[0].text).pending.map((p: any) => p.nameKey);
+  assert.deepEqual((await pending()).sort(), [A, B]);
+
+  const r = await callTool('name_device', { key: A, name: 'Desk' }, core);
+  assert.deepEqual(JSON.parse(r.content[0].text), { ok: true, key: A, name: 'Desk', acknowledged: 1 });
+  assert.deepEqual(await pending(), [B]);
+  assert.deepEqual(await keys(), [B]);
+
+  // the same device seen again is not new again
+  t += MIN;
+  await tracker.observe(obsOf(devices()), ON);
+  await tracker.idle();
+  assert.deepEqual(await pending(), [B]);
+
+  // clearing a name does not acknowledge
+  const c = await callTool('name_device', { key: B, name: '' }, core);
+  assert.deepEqual(JSON.parse(c.content[0].text), { ok: true, key: B, name: null });
+  assert.deepEqual(await pending(), [B]);
+  assert.deepEqual(named, [`${A}=Desk`, `${B}=null`]);
 });

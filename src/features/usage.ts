@@ -11,6 +11,7 @@ import { checkName, setName } from '../core/clients.ts';
 import { historyView, loadHistory, withHistory, type HistoryView, type UsageWithHistory } from '../core/history.ts';
 import { usage } from '../core/usage.ts';
 import { reportHealth } from '../core/health.ts';
+import { PRODUCTION_PORT } from '../core/paths.ts';
 import { parsePort, READ_ONLY_ANNOTATIONS, text } from '../mcp/kit.ts';
 import { redactUsage } from '../remote/redact.ts';
 import { ok, reply } from './router.ts';
@@ -24,6 +25,8 @@ declare module '../mcp/kit.ts' {
     history(): Promise<HistoryView>;
     /** Same store as POST /api/clients/name: ~/.config/portboard/clients.json */
     setClientName(key: string, name: string | null): Promise<unknown>;
+    /** Asks the running dashboard to clear the 새 기기 mark of a device; the number cleared, or null when it can't be reached */
+    ackKnownDevice?(key: string): Promise<number | null>;
   }
 }
 
@@ -114,6 +117,27 @@ export function usageReport(u: UsageWithHistory, port?: number): UsageReport {
   };
 }
 
+/**
+ * The stdio process must not write known-devices.json: the server keeps that file in memory and rewrites it whole.
+ * So it asks the running server on loopback (POST /api/known-devices/ack). Never throws; null = not reached.
+ */
+async function ackViaServer(key: string): Promise<number | null> {
+  try {
+    const port = process.env.PORTBOARD_PORT || PRODUCTION_PORT;
+    const res = await fetch(`http://127.0.0.1:${port}/api/known-devices/ack`, {
+      method: 'POST',
+      headers: { 'X-Portboard': '1', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key }),
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { acknowledged?: unknown };
+    return typeof body?.acknowledged === 'number' ? body.acknowledged : null;
+  } catch {
+    return null;
+  }
+}
+
 /** name_device: a nameKey as is, or a device id resolved to its nameKey through the live cards or the history. */
 export function resolveNameKey(key: string, u: UsageWithHistory): { ok: true; key: string; device: string | null } | { ok: false; error: string } {
   if (/^(mac|ip):/.test(key)) return { ok: true, key, device: null };
@@ -165,7 +189,10 @@ const tools: Tool[] = [
       description:
         'Give a device a name of your own, shown in the dashboard and in who_uses instead of the MAC-vendor guess or ' +
         'IP. key is a device key from who_uses: its nameKey (mac:aa:bb:cc:dd:ee:ff or ip:192.168.1.7) or its id ' +
-        '(lan:192.168.1.7). An empty name clears it. Tailscale devices keep their Tailscale name and cannot be named here.',
+        '(lan:192.168.1.7). An empty name clears it. Tailscale devices keep their Tailscale name and cannot be named here. ' +
+        'A non-empty name also clears the device\'s new-device mark (list_new_devices) through the running Portboard server, ' +
+        'like the dashboard; acknowledged is how many marks were cleared, or null when the server could not be reached ' +
+        '(the name is still saved).',
       inputSchema: {
         type: 'object',
         properties: {
@@ -187,7 +214,9 @@ const tools: Tool[] = [
       const problem = checkName({ key: r.key, name });
       if (problem) return text(problem, true);
       await core.setClientName(r.key, name);
-      return text({ ok: true, key: r.key, ...(r.device ? { device: r.device } : {}), name });
+      let acknowledged: number | null = null;
+      if (name && core.ackKnownDevice) acknowledged = await core.ackKnownDevice(r.key).catch(() => null);
+      return text({ ok: true, key: r.key, ...(r.device ? { device: r.device } : {}), name, ...(name ? { acknowledged } : {}) });
     },
   },
 ];
@@ -254,6 +283,7 @@ export const usageFeature: FeatureModule = {
   ],
   // Reads the history the server records; the stdio process doesn't sample on its own.
   mcpCore: () => ({
+    ackKnownDevice: (key) => ackViaServer(key),
     usage: async () => {
       const [u, h] = await Promise.all([usage(), loadHistory()]);
       return withHistory(u, h);
