@@ -36,10 +36,15 @@ const lc = (s) => String(s ?? '').toLowerCase();
 const multi = () => machines.some((m) => m.reach === 'agent');
 const selfName = () => machines.find((m) => m.reach === 'local')?.name ?? '';
 
-/** The branch line, with the machine it is on when there are several */
+/** The branch line, with the machine it is on when there are several. The chip sits in a slot that render() widens
+ *  to the list's widest chip, so the branch names of one list start on one line. */
 function branchLine(machine, text) {
   const br = el('div', 'br');
-  if (multi()) br.append(el('span', 'wt-mach', machine), ' ');
+  if (multi()) {
+    const slot = el('span', 'wt-slot');
+    slot.append(el('span', 'wt-mach', machine));
+    br.append(slot, ' ');
+  }
   br.append(text);
   return br;
 }
@@ -265,11 +270,38 @@ function render() {
     box.append(sec);
   }
   if (!box.children.length && doc.at) box.append(noRepos());
+  alignChips(box);
   // #settings/… is the 설정 modal over this page (features/settings-modal.js), not a worktree
   if (!hashUsed && location.hash.length > 1 && !isSettingsHash(location.hash) && box.children.length) {
     hashUsed = true;
     showWorktree(decodeURIComponent(location.hash.slice(1)));
   }
+}
+
+/** Give each list's chip slots the width of its widest chip. Measured once the lists are in the document, and again
+ *  when the lists change width (window, sidebar, list width): a chip that wrapped on a narrow column is wider on a wide
+ *  one. Clear, read, then write, so the page lays out once. */
+function alignChips(box) {
+  const lists = [...box.querySelectorAll('.wt-list')];
+  for (const ul of lists) ul.style.removeProperty('--wt-slot-w');
+  const widths = lists.map((ul) => Math.max(0, ...[...ul.querySelectorAll('.wt-slot')].map((s) => s.getBoundingClientRect().width)));
+  lists.forEach((ul, i) => { if (widths[i]) ul.style.setProperty('--wt-slot-w', `${Math.ceil(widths[i])}px`); });
+}
+
+let chipWidth = -1;
+let chipFrame = 0;
+const chipObserver = typeof ResizeObserver === 'function'
+  ? new ResizeObserver(([entry]) => {
+    const w = Math.round(entry.contentRect.width);
+    if (w === chipWidth) return; // a height change (rows added) needs no new measure
+    chipWidth = w;
+    cancelAnimationFrame(chipFrame);
+    chipFrame = requestAnimationFrame(() => alignChips(entry.target));
+  })
+  : null;
+{
+  const box = $('repos');
+  if (box && chipObserver) chipObserver.observe(box);
 }
 
 /** Nothing listed: no repos under the root, or the filter hides them all */
