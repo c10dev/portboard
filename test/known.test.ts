@@ -329,7 +329,7 @@ test('prefs: newDevices defaults (connections on, neighbours off), survives othe
   assert.equal(JSON.parse(await readFile(path, 'utf8')).newDevices, undefined);
 });
 
-test('name_device (stdio) clears the 새 기기 mark through the server tracker; clearing a name leaves it pending', async () => {
+test("name_device clears the 새 기기 mark through the tracker's acknowledge; clearing a name leaves it pending", async () => {
   const dir = await mkdtemp(join(tmpdir(), 'portboard-known-'));
   const path = join(dir, 'known-devices.json');
   let t = T0;
