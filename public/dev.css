@@ -6,11 +6,12 @@
 .wt-repo > header h3 { margin: 0; font-size: 15px; }
 .wt-repo > header .meta { color: var(--muted); font-size: 12px; }
 .wt-repo > header .spacer { flex: 1; }
-.wt-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 32px max-content minmax(0, 1fr) auto; }
+/* subgrid rows: the row's 14px side padding sits inside the edge tracks, so the first track is 14 + 32 (checkbox and gap) */
+.wt-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 46px max-content minmax(0, 1fr) auto; }
 .wt-row { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; column-gap: 0; row-gap: 0; align-items: start; padding: 8px 14px; border-top: 1px solid var(--line); font-size: 13px; }
 .wt-row:first-child { border-top: 0; }
 .wt-row .br { grid-column: 3; grid-row: 1; align-self: baseline; font-weight: 600; overflow-wrap: anywhere; }
-.wt-row > input { grid-column: 1; grid-row: 1; }
+.wt-row > input { grid-column: 1; grid-row: 1; justify-self: start; }
 .wt-row .wt-body { grid-column: 2 / 4; grid-row: 2; }
 .wt-row .path { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .wt-row .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
@@ -26,7 +27,7 @@
 .wt-more { padding: 6px 14px 10px; }
 .wt-more summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 @media (max-width: 640px) {
-  .wt-list { grid-template-columns: 32px max-content minmax(0, 1fr); }
+  .wt-list { grid-template-columns: 46px max-content minmax(0, 1fr); }
   .wt-row .side { grid-column: 2 / -1; grid-row: 3; margin-top: 4px; padding-left: 0; text-align: left; }
 }
 

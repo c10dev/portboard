@@ -174,11 +174,12 @@ html[data-readonly] .ctl-toggle-input[data-write] { opacity: 0; }
 .set-list details > summary { cursor: pointer; }
 .set-body > details { margin-top: 12px; }
 .set-body > details > summary { margin: 0; padding: 6px 0; cursor: pointer; }
-/* a fold over a dot list: the label starts in the title column, the marker sits in the dot column */
+/* a fold over a dot list: the label starts in the title column, the marker sits in the dot column.
+   The second content declaration keeps the marker out of the accessible name; older engines keep the first. */
 .set-body > details:has(> .set-list) > summary { display: grid; grid-template-columns: 8px minmax(0, 1fr); column-gap: 10px; align-items: baseline; list-style: none; }
 .set-body > details:has(> .set-list) > summary::-webkit-details-marker { display: none; }
-.set-body > details:has(> .set-list) > summary::before { content: '▸'; justify-self: center; font-size: 10px; color: var(--muted); }
-.set-body > details[open]:has(> .set-list) > summary::before { content: '▾'; }
+.set-body > details:has(> .set-list) > summary::before { content: '▸'; content: '▸' / ''; justify-self: center; font-size: 10px; color: var(--muted); }
+.set-body > details[open]:has(> .set-list) > summary::before { content: '▾'; content: '▾' / ''; }
 .set-state { font-size: 12.5px; white-space: nowrap; }
 .set-state.ok { color: var(--ok); }
 .set-state.warn { color: var(--warn); }
