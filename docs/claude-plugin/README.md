@@ -6,7 +6,7 @@ Claude Code plugin marketplace, and the `portboard` plugin brings Portboard into
 
 | Part | File | What it does |
 |---|---|---|
-| MCP server | [`claude-plugin/.mcp.json`](../../claude-plugin/.mcp.json) → [`bin/mcp.ts`](../../claude-plugin/bin/mcp.ts) | the local stdio server ([mcp.md](../mcp.md)), run from the checkout |
+| MCP server | [`claude-plugin/.mcp.json`](../../claude-plugin/.mcp.json) → [`bin/mcp.mjs`](../../claude-plugin/bin/mcp.mjs) | the stdio server ([mcp.md](../mcp.md#the-plugins-two-modes)): a thin client of the running dashboard, or the local server from the checkout when the dashboard is not usable |
 | Skill | [`skills/dev-servers-and-ports`](../../claude-plugin/skills/dev-servers-and-ports/SKILL.md) | when to call `list_ports`, `free_port` → `reserve_port` → `start_dev_server`, and `cleanup_servers` instead of kill (Korean and English triggers) |
 | Skill | [`skills/where-to-run`](../../claude-plugin/skills/where-to-run/SKILL.md) | when to call `where_to_run`, `find_worktree` and `machine_status` before suggesting a machine or creating a worktree ([multi-host.md](../multi-host.md#machines-machine_status-and-where_to_run)) |
 | Commands | [`commands/`](../../claude-plugin/commands/) | `/portboard:where <task>`, `/portboard:machines [name]`, `/portboard:wt <repo@branch>`: the three machine tools, answered in a few lines |
@@ -22,7 +22,7 @@ plugin source is [`claude-plugin/`](../../claude-plugin/.claude-plugin/plugin.js
 
 Portboard is registered today as a user-scope MCP server (`claude mcp add portboard … -s user`). The plugin brings its
 own copy of that server, and Claude Code only drops a plugin server that has the same command as one you already have.
-The plugin's command is `sh <plugin>/bin/run.sh <plugin>/bin/mcp.ts`, not `node …/src/mcp.ts`, so with both in place you would get two
+The plugin's command is `sh <plugin>/bin/run.sh <plugin>/bin/mcp.mjs`, not `node …/src/mcp.ts`, so with both in place you would get two
 Portboard servers. Remove the old one first:
 
 ```bash
@@ -134,7 +134,7 @@ per cwd), so a loop of requests can't make it spawn `ss` or `git` per call (L1).
 
 ## `GET /api/claude/port-advice`
 
-`?port=N&cmd=start|kill&cwd=<abs dir>[&tool=<what matched>][&session=<session id>]`, read-only, in
+`?port=N&cmd=start|kill&cwd=<abs dir>[&tool=<what matched>][&session=<session id>]`, or `?command=<bash command>&cwd=…` in place of `port`/`cmd`/`tool` (the dashboard parses the command with `parsePortCommands`; up to 4096 characters, else or with no port in it `{text: null}`; the command is never logged or kept), read-only, in
 [`src/features/claude.ts`](../../src/features/claude.ts). It answers from the 2 s snapshot cache plus one `git rev-parse`
 for `cwd` (run with `core.fsmonitor=false`), normally in 10–70 ms:
 

@@ -255,6 +255,18 @@ Off by default (`accounts.enabled` in `portboard.json`, [accounts.md](accounts.m
   `scripts/deploy.sh` does not install unit files: after this change, copy the unit to `~/.config/systemd/user/` and
   `systemctl --user daemon-reload` once. Files written before keep their old mode until their next write.
 
+## MCP through the dashboard
+
+`GET /api/mcp/ping` and `POST /api/mcp` ([mcp.md](mcp.md#the-plugins-two-modes)) let the plugin's MCP process hand its JSON-RPC to the dashboard.
+
+- **Local processes only.** Both handlers check `localOnly(req)`: a loopback socket and none of the `tailscale serve` / Funnel headers. A request through `tailscale serve` arrives from 127.0.0.1 too, so the socket address alone is not enough. For `POST` this check runs after the router's checks and after the body is read, which the router's owner check makes harmless.
+- **The router's checks apply to `POST`.** `X-Portboard: 1`, the read-only install and the machine owner (`classify`, token mode and its `requireTokenOnLoopback` included). A refusal is an audit line, `denied`, in `audit-denied.jsonl`.
+- **The ping makes the same checks itself.** A `GET` skips the router's guard and audit, so the handler repeats `localOnly`, the read-only test and `resolveCaller(...).canWrite`. The ping answers `200` only when the `POST` would be accepted. It writes no audit line: a session start calls it.
+- **Audit.** The route is declared `auditOk: false`. The router leaves out the audit line for a `2xx` answer; `400`, `403` and `5xx` still get theirs. Every MCP write tool is one line with `source: "mcp"`, written by `callTool` into the dashboard's own audit log (no second `AuditLog` on the same file). Without `auditOk: false`, each read tool call would add a line and flood the file. `buildRegistry()` throws for `auditOk` on a route without `write: true`.
+- **The session headers are not a credential.** `X-Portboard-Session` (`^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$`) and `X-Portboard-Claude-Pid` (`^\d{1,10}$`) become the `CLAUDE_CODE_SESSION_ID` and `CLAUDE_PID` of that one request's `start_dev_server`, never the dashboard's own environment. A local process can write any session id. The id is only the label on the dev server's unit; it grants nothing. A header with a wrong shape is dropped.
+- **Same rights as the stdio server.** What a tool can do through this route is what `src/mcp.ts` can do for the same user. This route adds no tool and no argument.
+- `GET /api/claude/port-advice?command=` is read-only. The value of `command` is parsed (`parsePortCommands`) and then dropped: it is not written to the log, the audit log, the event files or the answer.
+
 ## Open items
 
 - ~~**Loopback has no token**~~: opt-in since #12, token mode with `requireTokenOnLoopback`. The default is unchanged

@@ -6,6 +6,8 @@
 //       300 ms: the shared 2 s snapshot (free ports come from it too, no `ss`), reservations cached 2 s, and the cwd's
 //       repo@branch cached 10 s per cwd (docs/security-review/v1.0.md L1). Names in `text` are quoted, sanitized
 //       data (L4, src/core/portadvice.ts).
+//       `command=<bash command ≤ 4096>` in place of port/cmd/tool: the first hard-coded port in it (parsePortCommands),
+//       or { text: null } when there is none or the command is longer.
 //   GET /api/claude/session-port?cwd=<dir>[&env=1][&machines=1]
 //       the SessionStart / CwdChanged context: cwd's repo@branch, its reserved port and, with machines=1 (the plugin's
 //       multi_machine_hint), the other machines where that repo@branch has changes or an active session, from the
@@ -25,11 +27,14 @@ import { loadReservations, type Reservation } from '../core/reservations.ts';
 import { discoverRepos } from '../core/worktrees.ts';
 import type { Elsewhere } from '../core/recommend.ts';
 import { adviceText, sessionText, worktreeOfCwd, type AdviceCmd, type AdviceFacts, type Here, type Holder } from '../core/portadvice.ts';
+import { parsePortCommands } from '../core/portcmd.ts';
 import { elsewhere } from './machines.ts';
 import { eligible } from './owners.ts';
 import { ok, reply } from './router.ts';
 import type { FeatureModule } from './types.ts';
 
+/** Longest `command` the port-advice route takes (a longer one answers `{ text: null }`) */
+const COMMAND_MAX = 4096;
 const HOME = homedir();
 const expand = (p: string) => (p === '~' || p.startsWith('~/') ? HOME + p.slice(1) : p);
 
@@ -157,7 +162,23 @@ export const claudeFeature: FeatureModule = {
       method: 'GET',
       path: '/api/claude/port-advice',
       async handler({ url }, ctx) {
-        const q = parseAdviceQuery(url);
+        // `command=<bash command>`: the daemon parses it (parsePortCommands), so no hook carries a second copy of the
+        // rules. Never logged, audited or echoed. The cap keeps the query string under Node's header limit.
+        let u = url;
+        const command = url.searchParams.get('command');
+        if (command !== null) {
+          if (command.length > COMMAND_MAX) return ok({ text: null });
+          u = new URL(url);
+          u.searchParams.delete('command');
+          if (!u.searchParams.has('port')) {
+            const [hit] = parsePortCommands(command);
+            if (!hit) return ok({ text: null });
+            u.searchParams.set('port', String(hit.port));
+            u.searchParams.set('cmd', hit.kind);
+            u.searchParams.set('tool', hit.tool);
+          }
+        }
+        const q = parseAdviceQuery(u);
         if (!q.ok) return reply(400, { error: q.error });
         return ok(await portAdvice(q.value, await ctx.snapshot()));
       },

@@ -31,6 +31,7 @@ import { freePortsFeature } from './free-ports.ts';
 import { hostPortsFeature } from './host-ports.ts';
 import { knownFeature } from './known.ts';
 import { machinesFeature } from './machines.ts';
+import { mcpLocalFeature } from './mcp-local.ts';
 import { memoryFeature } from './memory.ts';
 import { newPortsFeature } from './newports.ts';
 import { onboardingFeature } from './onboarding.ts';
@@ -66,6 +67,7 @@ export const MODULES: FeatureModule[] = [
   hostPortsFeature,
   knownFeature,
   machinesFeature,
+  mcpLocalFeature,
   memoryFeature,
   newPortsFeature,
   onboardingFeature,
@@ -120,6 +122,9 @@ export function buildRegistry(features: FeatureModule[]): Registry {
   const routes = features.flatMap((f) => f.routes ?? []);
   for (const r of routes) {
     if (r.method !== 'GET' && (r as { write?: unknown }).write !== true) throw new Error(`feature registry: ${r.method} ${r.path} must be declared write: true`);
+  }
+  for (const r of routes) {
+    if ((r as { auditOk?: unknown }).auditOk !== undefined && (r as { write?: unknown }).write !== true) throw new Error(`feature registry: ${r.method} ${r.path} sets auditOk without write: true`);
   }
   unique('route', routes.map((r) => `${r.method} ${r.path}`));
 

@@ -39,7 +39,7 @@ test('marketplace → plugin → hooks, MCP server and skill all resolve inside 
   const mcp = json('claude-plugin/.mcp.json').mcpServers;
   assert.deepEqual(Object.keys(mcp), ['portboard']);
   assert.equal(mcp.portboard.command, 'sh');
-  assert.deepEqual(mcp.portboard.args.flatMap(files), ['bin/run.sh', 'bin/mcp.ts']);
+  assert.deepEqual(mcp.portboard.args.flatMap(files), ['bin/run.sh', 'bin/mcp.mjs']);
   for (const f of mcp.portboard.args.flatMap(files)) assert.ok(existsSync(join(PLUGIN, f)), f);
   const skill = readFileSync(join(PLUGIN, 'skills/dev-servers-and-ports/SKILL.md'), 'utf8');
   assert.match(skill, /^---\nname: dev-servers-and-ports\ndescription: .+\n---\n/);
@@ -210,7 +210,7 @@ test('run.sh --hook passes silently when no node can be found; without --hook it
       child.stdin.end('{}');
     });
   assert.deepEqual(await run(['--hook', join(PLUGIN, 'hooks/port-nudge.ts')]), { code: 0, out: '' });
-  const mcp = await run([join(PLUGIN, 'bin/mcp.ts')]);
+  const mcp = await run([join(PLUGIN, 'bin/mcp.mjs')]);
   assert.equal(mcp.code, 1);
   assert.match(mcp.out, /node not found/);
 });
