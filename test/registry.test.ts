@@ -150,6 +150,7 @@ test('local tools/list order (FEATURES order) is the order clients have always s
     'who_uses', 'list_usage', 'name_device', 'free_port', 'set_alert', 'list_new_devices', 'service_detail',
     'list_cleanup_candidates', 'cleanup_servers', 'list_worktrees', 'remove_worktrees',
     'list_reservations', 'reserve_port', 'release_port', 'list_dev_servers', 'start_dev_server', 'stop_dev_server', 'write_launch_config',
+    'start_coding_agent', 'list_coding_agents', 'coding_agent_output', 'stop_coding_agent',
     'setup_status',
     'digest_preview', 'set_digest',
     'list_suggestions',
@@ -162,7 +163,7 @@ test('local tools/list order (FEATURES order) is the order clients have always s
 
 test('every destructive local tool tells the model to ask the user first (the server does not enforce it)', () => {
   const destructive = TOOLS.filter((t) => t.annotations.destructiveHint);
-  assert.deepEqual(destructive.map((t) => t.name), ['unexpose_port', 'restart_service', 'stop_service', 'cleanup_servers', 'remove_worktrees', 'stop_dev_server']);
+  assert.deepEqual(destructive.map((t) => t.name), ['unexpose_port', 'restart_service', 'stop_service', 'cleanup_servers', 'remove_worktrees', 'stop_dev_server', 'stop_coding_agent']);
   for (const t of destructive) assert.match(t.description, /\b(ask|confirm with) the user\b/i, t.name);
 });
 
@@ -198,8 +199,8 @@ test('each health.ts collector is declared by exactly one feature, and nothing e
 test('the stdio server gets every Core method from some feature', () => {
   const core = Object.assign({}, ...FEATURES.map((f: FeatureModule) => f.mcpCore?.() ?? {}));
   assert.deepEqual(Object.keys(core).sort(), [
-    'ackKnownDevice', 'adoption', 'alerts', 'cleanup', 'collection', 'devServers', 'devices', 'digest', 'expose', 'freePorts', 'history', 'logs', 'machines', 'memory', 'newDevices', 'owners', 'portRules', 'releasePort', 'removeWorktrees', 'reservations', 'reservePort',
-    'restart', 'serviceDetail', 'setAlert', 'setClientName', 'setDigest', 'setPortRule', 'setupStatus', 'snapshot', 'startDevServer', 'stop', 'stopDevServer', 'suggestions', 'unexpose', 'usage', 'worktrees', 'writeLaunchConfig',
+    'ackKnownDevice', 'adoption', 'alerts', 'cleanup', 'codingAgentOutput', 'collection', 'devServers', 'devices', 'digest', 'expose', 'freePorts', 'history', 'listCodingAgents', 'logs', 'machines', 'memory', 'newDevices', 'owners', 'portRules', 'releasePort', 'removeWorktrees', 'reservations', 'reservePort',
+    'restart', 'serviceDetail', 'setAlert', 'setClientName', 'setDigest', 'setPortRule', 'setupStatus', 'snapshot', 'startCodingAgent', 'startDevServer', 'stop', 'stopCodingAgent', 'stopDevServer', 'suggestions', 'unexpose', 'usage', 'worktrees', 'writeLaunchConfig',
   ]);
 });
 
