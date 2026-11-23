@@ -6,12 +6,11 @@
 //
 // Fake dashboards are plain http servers on temporary ports. The child processes get a clean environment and a temp
 // HOME, never the real one. What this proves: wiring and bytes against a fake, not a live dashboard.
-import { test, after } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
-import { copyFileSync, readFileSync } from 'node:fs';
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { copyFileSync, existsSync, readFileSync } from 'node:fs';
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createNet, type Socket } from 'node:net';
@@ -289,31 +288,27 @@ for (const c of nudgeCases) {
 
 // ---- bin/run.sh: which program a plugin command starts ----
 
-/** The real binary, built once into a temp dir (never into the checkout). path is null, with the reason, when go is not on PATH. */
-let built: Promise<{ path: string | null; why: string }> | null = null;
-const buildDirs: string[] = [];
-after(() => Promise.all(buildDirs.map((d) => rm(d, { recursive: true, force: true }))));
-function realShim() {
-  built ??= (async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'pb-shim-build-'));
-    buildDirs.push(dir);
-    const path = join(dir, 'portboard-shim');
-    const r = spawnSync('go', ['build', '-o', path, '.'], { cwd: join(ROOT, 'shim'), env: { ...process.env, CGO_ENABLED: '0' }, encoding: 'utf8' });
-    if (r.error || r.status !== 0) return { path: null, why: `go is not available to build shim/ (${r.error?.message ?? r.stderr.slice(0, 200)})` };
-    return { path, why: '' };
-  })();
-  return built;
+/**
+ * A prebuilt binary, never built here: `npm test` does not call Go. PORTBOARD_SHIM_TEST_BIN, else
+ * claude-plugin/bin/portboard-shim when `npm run build:shim` made it. The cases with a cut or real binary are in shim/main_test.go.
+ */
+function prebuilt(): { path: string | null; why: string } {
+  const path = process.env.PORTBOARD_SHIM_TEST_BIN || join(ROOT, 'claude-plugin', 'bin', 'portboard-shim');
+  return existsSync(path) ? { path, why: '' } : { path: null, why: 'no prebuilt binary (npm run build:shim, or PORTBOARD_SHIM_TEST_BIN); the Go tests cover the real binary' };
 }
 
 /** The start of a 64-bit ELF file that no kernel runs (an unknown machine type, no program headers). */
+/** An x86-64 ELF header cut to 64 bytes: no program headers, so the kernel refuses to run it. */
+const X86_ELF_HEADER = Buffer.concat([Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1, 0]), Buffer.alloc(8), Buffer.from([2, 0, 0x3e, 0, 1, 0, 0, 0]), Buffer.alloc(40)]);
+
 const FOREIGN_ELF = Buffer.concat([Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1, 0]), Buffer.alloc(8), Buffer.from([2, 0, 0xb7, 0, 1, 0, 0, 0]), Buffer.alloc(40)]);
 
-type ShimKind = 'none' | 'real' | 'truncated' | 'empty' | 'text-true' | 'foreign-elf';
+type ShimKind = 'none' | 'real' | 'empty' | 'text-true' | 'foreign-elf' | 'x86-header';
 
 interface RunSh {
   dir: string;
   bin: string;
-  run(args: string[], env?: Record<string, string>, opts?: { script?: string; cwd?: string }): Promise<{ code: number | null; stdout: string; stderr: string }>;
+  run(args: string[], env?: Record<string, string>, opts?: { script?: string; cwd?: string; shell?: string[] }): Promise<{ code: number | null; stdout: string; stderr: string }>;
   calls(): Promise<string[]>;
   done(): Promise<void>;
 }
@@ -330,15 +325,15 @@ async function runShFixture(kind: ShimKind): Promise<{ f: RunSh | null; why: str
   const file = (name: string, body: string | Buffer) => writeFile(name, body).then(() => chmod(name, 0o755));
   await file(join(nodeDir, 'node'), `#!/bin/sh\necho "NODE $*" >> "${log}"\n`);
   const path = join(bin, 'portboard-shim');
-  if (kind === 'real' || kind === 'truncated') {
-    const b = await realShim();
+  if (kind === 'real') {
+    const b = prebuilt();
     if (b.path === null) {
       await rm(dir, { recursive: true, force: true });
       return { f: null, why: b.why };
     }
-    const bytes = readFileSync(b.path);
-    await file(path, kind === 'real' ? bytes : bytes.subarray(0, 1000));
+    await file(path, readFileSync(b.path));
   }
+  if (kind === 'x86-header') await file(path, X86_ELF_HEADER);
   if (kind === 'empty') await file(path, '');
   if (kind === 'text-true') await file(path, 'true\n');
   if (kind === 'foreign-elf') await file(path, FOREIGN_ELF);
@@ -348,7 +343,8 @@ async function runShFixture(kind: ShimKind): Promise<{ f: RunSh | null; why: str
     run: (args, env = {}, opts = {}) =>
       new Promise((resolve) => {
         // cwd is the temp dir: a probe that wrote a file or read the cwd would show there, not in the checkout
-        const child = spawn('sh', [opts.script ?? join(bin, 'run.sh'), ...args], { cwd: opts.cwd ?? dir, env: { HOME: dir, PATH: `${nodeDir}:/usr/bin:/bin`, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+        const [cmd, ...pre] = opts.shell ?? ['sh'];
+        const child = spawn(cmd, [...pre, opts.script ?? join(bin, 'run.sh'), ...args], { cwd: opts.cwd ?? dir, env: { HOME: dir, PATH: `${nodeDir}:/usr/bin:/bin`, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
         let stdout = '';
         let stderr = '';
         child.stdout.on('data', (c) => (stdout += c));
@@ -391,7 +387,7 @@ test('run.sh: no binary, PORTBOARD_SHIM=0, a start without a slash, or a binary 
     ['an empty file with the exec bit', 'empty', {}, false],
     ['a text file that holds "true"', 'text-true', {}, false],
     ['a foreign ELF header', 'foreign-elf', {}, false],
-    ['a real binary cut to 1000 bytes', 'truncated', {}, false],
+    ['an x86-64 ELF header cut to 64 bytes', 'x86-header', {}, false],
     ['run.sh started as "sh run.sh" (no slash in $0)', 'real', {}, true],
   ];
   for (const [what, kind, env, noSlash] of variants) {
@@ -408,6 +404,36 @@ test('run.sh: no binary, PORTBOARD_SHIM=0, a start without a slash, or a binary 
       const mcp = await f.run([join(f.bin, 'mcp.mjs')], env, opts);
       assert.deepEqual([mcp.code, mcp.stderr], [0, ''], `${what}: mcp`);
       assert.deepEqual(await f.calls(), [`NODE ${hookFile}`, `NODE ${join(f.bin, 'mcp.mjs')}`], what);
+    } finally {
+      await f.done();
+    }
+  }
+});
+
+/** The path of busybox on PATH, or null. */
+function busybox(): string | null {
+  for (const d of (process.env.PATH ?? '').split(':')) if (d && existsSync(join(d, 'busybox'))) return join(d, 'busybox');
+  return null;
+}
+
+test('run.sh: a file the kernel refuses writes nothing into the hook\'s cwd, and the hook stays silent (sh, and busybox sh when there is one)', async (t) => {
+  const shells: [string, string[]][] = [['sh', ['sh']]];
+  const bb = busybox();
+  if (bb) shells.push(['busybox sh', [bb, 'sh']]);
+  else t.diagnostic('skipped "busybox sh": no busybox on PATH');
+  for (const [name, shell] of shells) {
+    const { f } = await runShFixture('x86-header');
+    assert.ok(f);
+    try {
+      const work = join(f.dir, 'work');
+      await mkdir(work);
+      const hookFile = join(f.dir, 'plugin', 'hooks', 'port-nudge.ts');
+      const hook = await f.run(['--hook', hookFile], {}, { cwd: work, shell });
+      assert.deepEqual([hook.code, hook.stdout, hook.stderr], [0, '', ''], `${name}: hook`);
+      const mcp = await f.run([join(f.bin, 'mcp.mjs')], {}, { cwd: work, shell });
+      assert.deepEqual([mcp.code, mcp.stderr], [0, ''], `${name}: mcp`);
+      assert.deepEqual(await readdir(work), [], `${name}: nothing was written into the cwd`);
+      assert.deepEqual(await f.calls(), [`NODE ${hookFile}`, `NODE ${join(f.bin, 'mcp.mjs')}`], name);
     } finally {
       await f.done();
     }

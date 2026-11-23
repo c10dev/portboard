@@ -1203,3 +1203,157 @@ func TestRealDashboardAnswersLikeLocal(t *testing.T) {
 		t.Error("the fixture port 4173 is not in the answer")
 	}
 }
+
+// ---- bin/run.sh with the real binary ----
+
+type pluginLayout struct {
+	dir, bin, nodeDir, log string
+}
+
+// newPlugin copies the real run.sh next to a copy of the binary (cut to `keep` bytes unless keep is 0), with a fake
+// node that only logs what it was called with.
+func newPlugin(t *testing.T, keep int) pluginLayout {
+	t.Helper()
+	// A plain folder name: t.TempDir() carries the test name, whose characters the fake node's shell would read.
+	dir, err := os.MkdirTemp("", "pb-runsh-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	p := pluginLayout{dir: dir, bin: filepath.Join(dir, "plugin", "bin"), nodeDir: filepath.Join(dir, "nodebin"), log: filepath.Join(dir, "calls.log")}
+	for _, d := range []string{p.bin, p.nodeDir, filepath.Join(dir, "work")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	script, err := os.ReadFile(filepath.Join(repoRoot, "claude-plugin", "bin", "run.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin, err := os.ReadFile(shimBin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if keep > 0 {
+		bin = bin[:keep]
+	}
+	for name, body := range map[string][]byte{
+		filepath.Join(p.bin, "run.sh"):         script,
+		filepath.Join(p.bin, "portboard-shim"): bin,
+		filepath.Join(p.nodeDir, "node"):       []byte(fmt.Sprintf("#!/bin/sh\necho \"NODE $*\" >> %q\n", p.log)),
+	} {
+		if err := os.WriteFile(name, body, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return p
+}
+
+// run starts run.sh under the given shell with a clean environment, in the work folder.
+func (p pluginLayout) run(t *testing.T, shell []string, script string, cwd string, env map[string]string, args ...string) (code int, stdout, stderr string) {
+	t.Helper()
+	e := map[string]string{"HOME": p.dir, "PATH": p.nodeDir + ":/usr/bin:/bin"}
+	for k, v := range env {
+		e[k] = v
+	}
+	cmd := exec.Command(shell[0], append(append(append([]string{}, shell[1:]...), script), args...)...)
+	cmd.Dir = cwd
+	for k, v := range e {
+		cmd.Env = append(cmd.Env, k+"="+v)
+	}
+	var out, errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	err := cmd.Run()
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	return code, out.String(), errb.String()
+}
+
+func (p pluginLayout) calls() []string {
+	raw, _ := os.ReadFile(p.log)
+	var out []string
+	for _, l := range strings.Split(string(raw), "\n") {
+		if l != "" {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+func shellsToTry(t *testing.T) [][]string {
+	shells := [][]string{{"sh"}}
+	if bb, err := exec.LookPath("busybox"); err == nil {
+		shells = append(shells, []string{bb, "sh"})
+	} else {
+		t.Log("busybox sh not tried: no busybox on PATH")
+	}
+	return shells
+}
+
+// A real binary that is cut, or that run.sh must not use, ends in Node: the hook exits 0 with an empty stderr and writes
+// nothing into its cwd.
+func TestRunShFallsBackToNode(t *testing.T) {
+	cases := []struct {
+		name    string
+		keep    int
+		env     map[string]string
+		noSlash bool
+	}{
+		{"a real binary cut to 1000 bytes", 1000, nil, false},
+		{"PORTBOARD_SHIM=0", 0, map[string]string{"PORTBOARD_SHIM": "0"}, false},
+		{"started as sh run.sh (no slash in $0)", 0, nil, true},
+	}
+	for _, c := range cases {
+		for _, shell := range shellsToTry(t) {
+			t.Run(c.name+" under "+strings.Join(shell, " "), func(t *testing.T) {
+				p := newPlugin(t, c.keep)
+				work := filepath.Join(p.dir, "work")
+				script, cwd := filepath.Join(p.bin, "run.sh"), work
+				if c.noSlash {
+					script, cwd = "run.sh", p.bin
+				}
+				hookFile := filepath.Join(p.dir, "plugin", "hooks", "port-nudge.ts")
+				code, out, errText := p.run(t, shell, script, cwd, c.env, "--hook", hookFile)
+				if code != 0 || out != "" || errText != "" {
+					t.Errorf("hook: exit %d, stdout %q, stderr %q", code, out, errText)
+				}
+				mcp := filepath.Join(p.bin, "mcp.mjs")
+				if code, _, errText := p.run(t, shell, script, cwd, c.env, mcp); code != 0 || errText != "" {
+					t.Errorf("mcp: exit %d, stderr %q", code, errText)
+				}
+				if got := strings.Join(p.calls(), "|"); got != "NODE "+hookFile+"|NODE "+mcp {
+					t.Errorf("calls %q: node was not what ran", got)
+				}
+				if entries, _ := os.ReadDir(work); len(entries) != 0 {
+					t.Errorf("files appeared in the cwd: %v", entries)
+				}
+			})
+		}
+	}
+}
+
+// The whole binary through run.sh: mcp.mjs and port-nudge.ts go to it, the other hooks to node.
+func TestRunShUsesRealBinary(t *testing.T) {
+	for _, shell := range shellsToTry(t) {
+		t.Run(strings.Join(shell, " "), func(t *testing.T) {
+			p := newPlugin(t, 0)
+			hookFile := filepath.Join(p.dir, "plugin", "hooks", "port-nudge.ts")
+			script, work := filepath.Join(p.bin, "run.sh"), filepath.Join(p.dir, "work")
+			if code, out, errText := p.run(t, shell, script, work, nil, "--hook", hookFile); code != 0 || out != "" || errText != "" {
+				t.Errorf("nudge: exit %d, stdout %q, stderr %q", code, out, errText)
+			}
+			if code, _, errText := p.run(t, shell, script, work, map[string]string{"PORTBOARD_MCP_MODE": "local", "PORTBOARD_HOME": repoRoot}, filepath.Join(p.bin, "mcp.mjs")); code != 0 || errText != "" {
+				t.Errorf("mcp: exit %d, stderr %q", code, errText)
+			}
+			other := filepath.Join(p.dir, "plugin", "hooks", "session-start.ts")
+			p.run(t, shell, script, work, nil, "--hook", other)
+			want := "NODE " + filepath.Join(repoRoot, "src", "mcp.ts") + "|NODE " + other
+			if got := strings.Join(p.calls(), "|"); got != want {
+				t.Errorf("calls %q, want %q", got, want)
+			}
+		})
+	}
+}
