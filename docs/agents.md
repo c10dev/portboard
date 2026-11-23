@@ -144,6 +144,26 @@ short command prefixes only, never what a transcript said. The same numbers are 
 (1–7 days, from a daily cached scan; `refresh` rescans). The direction you want: `mcp` and `foll` up, `insp`, `kill` and
 `fixed` down.
 
+## Hand a task to another coding agent
+
+A Claude Code session can start the Codex CLI (or the Gemini CLI) in a worktree on the same machine, follow it, and
+read its answer. The four tools of the local stdio MCP server ([mcp.md](mcp.md)):
+
+1. `start_coding_agent {kind, path, prompt, sandbox?, model?, timeout_minutes?}` starts one run in an existing worktree
+   (`list_worktrees` or `find_worktree` gives the path) and returns an `id`. The sandbox is `read-only` unless you ask
+   for `workspace-write`, which works only for `codex` and only in a linked worktree, not in a main checkout. Gemini
+   runs read-only only, and that relies on the CLI's approval mode (`--approval-mode default`), not an OS sandbox.
+   One run per worktree.
+2. `coding_agent_output {id, after?, limit?}` returns the state, a summary, new progress lines and the final answer.
+   Call it until `state` is not `running`, passing the last `next` as `after`.
+3. `list_coding_agents {id?}` lists the runs on this host.
+4. `stop_coding_agent {id}` stops a run. Ask the user first unless they asked for it.
+
+The run is local: it uses the CLI's own login on the machine where this Portboard runs, and the tools do not run
+anything elsewhere. When you are not sure which machine should do the work, call `where_to_run` first, then start the
+session on that machine and call `start_coding_agent` from there. What the tools run and what they refuse is in
+[security.md](security.md#coding-agent-runs).
+
 ## Other agent CLIs
 
 The local MCP server ([`src/mcp.ts`](../src/mcp.ts)) is a plain stdio server: newline-delimited JSON-RPC on stdin and

@@ -72,6 +72,11 @@ export function readOnlyCore(core: RemoteCore): Core {
     startDevServer: notRemote,
     stopDevServer: notRemote,
     writeLaunchConfig: notRemote,
+    // coding agent runs: the prompt and the answer are the caller's, and the CLI runs on this host: local only
+    startCodingAgent: notRemote,
+    listCodingAgents: notRemote,
+    codingAgentOutput: notRemote,
+    stopCodingAgent: notRemote,
     // local setup files and commands: nothing for the internet
     setupStatus: notRemote,
     digest: notRemote,
