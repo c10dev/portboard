@@ -312,6 +312,7 @@
   "clientsMsg.vendorDevice": "{vendor} device",
   "codingAgents.badArgs": "Invalid argument: {message}",
   "codingAgents.busy": "A run is already going in this worktree ({id})",
+  "codingAgents.identityUnknown": "Can't tell whether this run's process is still the one Portboard started, so it is not signalled",
   "codingAgents.launchFailed": "Couldn't start the coding agent: {message}",
   "codingAgents.mainCheckout": "workspace-write is only allowed in a linked worktree, not in a main checkout",
   "codingAgents.noBinary": "{kind} isn't installed on this host (not found on PATH)",

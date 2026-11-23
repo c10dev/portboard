@@ -1,7 +1,7 @@
 // The main process of a coding-agent run (start_coding_agent): `node coding-agent-runner.ts <runDir>`, started as a
 // transient systemd unit or as a detached process (coding-agents.ts). It runs the CLI once with the prompt on stdin,
-// keeps its output in the run folder, and writes exit.json when the CLI is gone. Imports only node:* and the adapters,
-// so it never loads the server.
+// keeps its output in the run folder, and writes exit.json when the CLI is gone. Imports only node:*, atomic.ts (node:*
+// only) and the adapters, so it never loads the server.
 //
 // Files (all 0600, in the 0700 run folder): events.jsonl = the CLI's stdout verbatim, stderr.log = its stderr. They are
 // opened here with mode 0o600 in append mode and handed to the child as its stdio, because appendPrivate per line is

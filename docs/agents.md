@@ -151,7 +151,9 @@ read its answer. The four tools of the local stdio MCP server ([mcp.md](mcp.md))
 
 1. `start_coding_agent {kind, path, prompt, sandbox?, model?, timeout_minutes?}` starts one run in an existing worktree
    (`list_worktrees` or `find_worktree` gives the path) and returns an `id`. The sandbox is `read-only` unless you ask
-   for `workspace-write`, which works only in a linked worktree, not in a main checkout. One run per worktree.
+   for `workspace-write`, which works only for `codex` and only in a linked worktree, not in a main checkout. Gemini
+   runs read-only only, and that relies on the CLI's approval mode (`--approval-mode default`), not an OS sandbox.
+   One run per worktree.
 2. `coding_agent_output {id, after?, limit?}` returns the state, a summary, new progress lines and the final answer.
    Call it until `state` is not `running`, passing the last `next` as `after`.
 3. `list_coding_agents {id?}` lists the runs on this host.

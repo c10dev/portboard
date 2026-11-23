@@ -267,14 +267,15 @@ MCP server (`src/features/coding-agents.ts`). They have no HTTP route and no rem
 - **The prompt** is written to `prompt.txt` (0600, in the 0700 run folder under the state dir) and given to the CLI on
   stdin. It is never in argv, the unit description or the audit line (the audit keeps the argument names, and `path`),
   and no tool returns it: the results carry its length.
-- **Sandbox.** `read-only` or `workspace-write` maps to the CLI's own sandbox (`codex -s`, `gemini --approval-mode
-  default|auto_edit`). Portboard never passes a flag that turns the sandbox or the approvals off. `workspace-write` is
-  refused in a main checkout.
+- **Sandbox.** For codex, `read-only` or `workspace-write` is its own OS sandbox (`codex -s`). Gemini has no such flag:
+  its read-only is only `--approval-mode default`, the CLI's approval mode, not an OS sandbox, and `workspace-write` is
+  refused for gemini. Portboard never passes a flag that turns the sandbox or the approvals off. `workspace-write` is
+  also refused in a main checkout.
 - **Limits.** One running run per worktree (409 otherwise), a runtime limit of 1–240 minutes (the runner stops the CLI;
   the unit has a backstop of one minute more), and a read-only or container install refuses to start or stop a run.
 - **Stop.** Only `pb-agent-<id>` units derived from a checked run id (`ca-` and 10 hex digits), and only the runner pid
   recorded in Portboard's own `meta.json`, are ever signalled, and only while that pid still has the start time recorded
-  with it (a reused pid is a `lost` run, never a target). A start takes a per-worktree lock, so two starts in one
+  with it (a reused pid is a `lost` run, never a target; when the start time can't be read the run stays `running` with `stateUnknown` and is not signalled). A start takes a per-worktree lock, so two starts in one
   worktree cannot both run.
 - **Trust.** The CLI runs as the machine user with that user's own login, so a caller that can start a run can make that
   CLI act in the worktree within its sandbox. That is the same trust as the other write tools of this server.

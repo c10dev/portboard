@@ -49,6 +49,10 @@ const linked3 = join(root, 'wt', 'shop-feat3');
 git(mainRepo, 'worktree', 'add', '-b', 'feat3', linked3);
 const linked4 = join(root, 'wt', 'shop-100%-done');
 git(mainRepo, 'worktree', 'add', '-b', 'feat4', linked4);
+const linked7 = join(root, 'wt', 'shop-feat7');
+git(mainRepo, 'worktree', 'add', '-b', 'feat7', linked7);
+const linked8 = join(root, 'wt', 'shop-feat8');
+git(mainRepo, 'worktree', 'add', '-b', 'feat8', linked8);
 const linked6 = join(root, 'wt', 'shop-feat6');
 git(mainRepo, 'worktree', 'add', '-b', 'feat6', linked6);
 const linked5 = join(root, 'wt', 'shop-feat5');
@@ -272,6 +276,7 @@ test('systemd: the transient unit args carry the unit, RuntimeMaxSec and the ses
     assert.ok(args.includes(`--unit=pb-agent-${r.id}`));
     assert.ok(args.includes('--collect'));
     assert.ok(args.includes('--property=RuntimeMaxSec=360'));
+    assert.ok(args.includes('--property=TimeoutStopSec=15'));
     assert.ok(args.includes(`--property=WorkingDirectory=${linked}`));
     assert.ok(args.includes('--setenv=CLAUDE_CODE_SESSION_ID=abcdef12-3456-7890'));
     assert.ok(args.some((a) => a.startsWith('--setenv=PATH=')));
@@ -591,14 +596,18 @@ test('stop is written only after the signal worked, and "stopped" needs the run 
   assert.equal(ca.runState(meta({ stopRequestedAt: t0 }), { code: 2, signal: null, endedAt: before }, false), 'failed', 'ended before the stop');
   assert.equal(ca.runState(meta(), { code: null, signal: 'SIGTERM', endedAt: after }, false), 'failed', 'no stop was requested');
   assert.equal(ca.runState(meta(), { code: null, signal: 'SIGTERM', endedAt: after, timedOut: true }, false), 'timed-out');
-  // a stop that fails leaves no stopRequestedAt behind
+  // a stop that fails keeps stopRequestedAt: the state then follows the runner's exit evidence
   setServiceManager({ ...noServiceManager(), name: 'systemd', unavailable: null, startTransient: async () => ({ ok: true, stdout: '', stderr: '' }), show: async () => ({ ok: true, stdout: 'ActiveState=active\n', stderr: '' }), stop: async () => ({ ok: false, stdout: '', stderr: 'denied' }) });
   try {
     const r = await ca.startCodingAgent({ kind: 'codex', path: linked6, prompt: 'x' }, {});
     assert.equal(r.ok, true, r.message);
     const stop = await ca.stopCodingAgent(r.id!);
     assert.equal(stop.status, 500);
-    assert.equal(JSON.parse(readFileSync(join(runsRoot, r.id!, 'meta.json'), 'utf8')).stopRequestedAt, null);
+    const requested = JSON.parse(readFileSync(join(runsRoot, r.id!, 'meta.json'), 'utf8')).stopRequestedAt;
+    assert.ok(requested, 'written before the stop call');
+    assert.equal((await ca.listCodingAgents({ id: r.id })).runs[0].state, 'running', 'no exit evidence yet');
+    writeFileSync(exitFile(r.id!), JSON.stringify({ code: 0, signal: null, stopped: true, endedAt: new Date(Date.now() + 1000).toISOString() }));
+    assert.equal((await ca.listCodingAgents({ id: r.id })).runs[0].state, 'stopped');
   } finally {
     setServiceManager(noServiceManager());
   }
@@ -670,6 +679,106 @@ test('stop is refused in a container, like start', async () => {
   try {
     assert.equal((await ca.stopCodingAgent('ca-0123456789')).status, 403);
     assert.equal((await ca.startCodingAgent({ kind: 'codex', path: linked, prompt: 'x' }, {})).status, 403);
+  } finally {
+    setPlatform(null);
+  }
+});
+
+// ---- second review ----
+
+test('process mode, start time unreadable for a live pid: running with stateUnknown, busy, and never signalled', async () => {
+  const bystander = spawn('sleep', ['30'], { stdio: 'ignore', env: { PATH: SYS_PATH } });
+  try {
+    await new Promise((r) => bystander.once('spawn', r));
+    const id = prepare(linked7);
+    const file = join(runsRoot, id, 'meta.json');
+    const meta = JSON.parse(readFileSync(file, 'utf8'));
+    Object.assign(meta, { pid: bystander.pid, pidStart: 'recorded', startedAt: new Date(Date.now() - 120_000).toISOString() });
+    writeFileSync(file, JSON.stringify(meta));
+    ca.setProcessStartReader(async () => null);
+    try {
+      const run = (await ca.listCodingAgents({ id })).runs[0];
+      assert.equal(run.state, 'running');
+      assert.equal(run.stateUnknown, true);
+      const busy = await ca.startCodingAgent({ kind: 'codex', path: linked7, prompt: 'x' }, {});
+      assert.equal(busy.status, 409);
+      assert.ok(busy.message.includes(id));
+      const stop = await ca.stopCodingAgent(id);
+      assert.equal(stop.status, 409);
+      assert.equal(stop.message, L('이 실행의 프로세스가 Portboard가 띄운 것인지 확인할 수 없어서 신호를 보내지 않아요', "Can't tell whether this run's process is still the one Portboard started, so it is not signalled"));
+      assert.equal(JSON.parse(readFileSync(file, 'utf8')).stopRequestedAt, null, 'nothing was requested');
+      assert.doesNotThrow(() => process.kill(bystander.pid!, 0));
+    } finally {
+      ca.setProcessStartReader(null);
+    }
+    assert.equal((await ca.listCodingAgents({ id })).runs[0].state, 'lost', 'readable again: not the recorded process');
+    // a dead pid with no readable start time is lost, not unknown
+    writeFileSync(file, JSON.stringify({ ...meta, pid: 2 ** 22 + 54321 }));
+    ca.setProcessStartReader(async () => null);
+    try {
+      assert.equal((await ca.listCodingAgents({ id })).runs[0].state, 'lost');
+    } finally {
+      ca.setProcessStartReader(null);
+    }
+  } finally {
+    bystander.kill('SIGKILL');
+  }
+});
+
+test('process mode: a start that cannot read the runner start time stops the runner and fails with a 500', async () => {
+  setMode('sleep');
+  let spawned: number | null = null;
+  ca.setProcessStartReader(async (pid) => ((spawned = pid), null));
+  try {
+    const r = await ca.startCodingAgent({ kind: 'codex', path: linked8, prompt: 'x' }, {});
+    assert.equal(r.status, 500);
+    assert.match(r.message, /start time/);
+    assert.ok(spawned && spawned > 1);
+    const end = Date.now() + 15_000;
+    const gone = () => {
+      try {
+        process.kill(spawned!, 0);
+        return false;
+      } catch {
+        return true;
+      }
+    };
+    while (!gone() && Date.now() < end) await new Promise((res) => setTimeout(res, 25));
+    assert.equal(gone(), true, 'the runner we spawned is stopped');
+    ca.setProcessStartReader(null);
+    assert.equal((await ca.listCodingAgents({ id: r.id })).runs[0].state, 'failed');
+    assert.equal((await ca.startCodingAgent({ kind: 'codex', path: linked8, prompt: 'again' }, {})).ok, true, 'a failed launch does not block the worktree');
+  } finally {
+    ca.setProcessStartReader(null);
+    setMode('ok');
+  }
+});
+
+test('an unreadable runs folder is an error, not "no runs"; a missing one is empty', async () => {
+  const file = join(root, 'not-a-folder');
+  writeFileSync(file, 'x');
+  await assert.rejects(ca.listCodingAgents({ dir: file }));
+  assert.deepEqual(await ca.listCodingAgents({ dir: join(root, 'does-not-exist') }), { runs: [] });
+  const r = await ca.startCodingAgent({ kind: 'codex', path: linked, prompt: 'x' }, {}, { dir: file });
+  assert.equal(r.status, 500);
+});
+
+test('gemini cannot get workspace-write (its read-only is the approval mode, not an OS sandbox)', async () => {
+  const r = await ca.startCodingAgent({ kind: 'gemini', path: linked, prompt: 'x', sandbox: 'workspace-write' }, {});
+  assert.equal(r.status, 400);
+  assert.match(r.message, /workspace-write is not supported for gemini yet/);
+  const tool = TOOLS.find((t) => t.name === 'start_coding_agent')!;
+  assert.match(tool.description, /approval mode/);
+});
+
+test('PORTBOARD_READ_ONLY=1 refuses a start with 403', async () => {
+  const { setPlatform, detectPlatform } = await import('../src/core/platform/index.ts');
+  setPlatform(detectPlatform({ PORTBOARD_READ_ONLY: '1' }, 'linux'));
+  try {
+    const r = await ca.startCodingAgent({ kind: 'codex', path: linked, prompt: 'x' }, {});
+    assert.equal(r.status, 403);
+    assert.match(r.message, /PORTBOARD_READ_ONLY=1/);
+    assert.equal((await ca.stopCodingAgent('ca-0123456789')).status, 403);
   } finally {
     setPlatform(null);
   }

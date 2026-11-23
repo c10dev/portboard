@@ -187,9 +187,16 @@ async function scanEvents(
   return { summary, lines, next, truncated };
 }
 
+let startReader: ((pid: number) => Promise<string | null>) | null = null;
+/** Tests only: replace what processStart reads (null: the real reader). */
+export function setProcessStartReader(fn: ((pid: number) => Promise<string | null>) | null): void {
+  startReader = fn;
+}
+
 /** The start time of a process as the OS reports it (Linux: field 22 of /proc/<pid>/stat; elsewhere ps), or null when it can't be read. */
 export async function processStart(pid: number): Promise<string | null> {
   if (!Number.isInteger(pid) || pid <= 0) return null;
+  if (startReader) return startReader(pid);
   if (process.platform === 'linux') {
     try {
       const stat = await readFile(`/proc/${pid}/stat`, 'utf8');
@@ -204,10 +211,21 @@ export async function processStart(pid: number): Promise<string | null> {
   return r.ok && r.stdout.trim() ? r.stdout.trim() : null;
 }
 
-/** Whether pid is the runner this run started: same pid and the same start time. Never true for an unreadable or different process. */
-async function runnerAlive(meta: RunMeta): Promise<boolean> {
-  if (meta.pid === null || !meta.pidStart) return false;
-  return (await processStart(meta.pid)) === meta.pidStart;
+/**
+ * Whether pid is the runner this run started: true when pid and start time match, false for a dead pid or another
+ * process, null when the start time cannot be read for a pid that is alive (a process we may not even signal is not ours:
+ * EPERM is false). Only true ever allows a signal.
+ */
+async function runnerAlive(meta: RunMeta): Promise<boolean | null> {
+  if (meta.pid === null) return false;
+  const now = await processStart(meta.pid);
+  if (now !== null) return !!meta.pidStart && now === meta.pidStart;
+  try {
+    process.kill(meta.pid, 0);
+    return null;
+  } catch {
+    return false;
+  }
 }
 
 /** Whether the run's unit is active: true/false, or null when systemctl could not say (unknown stays unknown). */
@@ -224,7 +242,7 @@ async function unitActive(unit: string): Promise<boolean | null> {
  * ended because of it (signal, a non-zero code, or the runner's own `stopped` mark); timed-out; else succeeded (code 0)
  * or failed. Without it: running while the unit is active / the runner is alive (same pid and start time), else lost
  * (the runner died without writing exit.json), except that a run under 30 s old that was not seen alive yet is still
- * starting and counts as running. `active` null (systemctl failed) keeps running: the caller marks it stateUnknown.
+ * starting and counts as running. `active` null (systemctl failed, or a live pid whose start time can't be read) keeps running: the caller marks it stateUnknown.
  */
 export function runState(meta: RunMeta, exit: RunExit | null, active: boolean | null, now: number = Date.now()): RunState {
   if (exit) {
@@ -233,7 +251,7 @@ export function runState(meta: RunMeta, exit: RunExit | null, active: boolean | 
     if (exit.timedOut) return 'timed-out';
     return exit.code === 0 ? 'succeeded' : 'failed';
   }
-  if (active === true || (active === null && meta.launcher === 'systemd')) return 'running';
+  if (active === true || active === null) return 'running';
   const starting = now - Date.parse(meta.startedAt) < START_GRACE_MS && (meta.launcher === 'systemd' || meta.pid === null);
   return starting ? 'running' : 'lost';
 }
@@ -242,14 +260,31 @@ async function stateOf(meta: RunMeta, opts?: { dir?: string }): Promise<{ state:
   const exit = await readExit(meta.id, opts);
   let active: boolean | null = false;
   if (!exit) active = meta.launcher === 'systemd' ? (meta.unit ? await unitActive(meta.unit) : false) : await runnerAlive(meta);
-  return { state: runState(meta, exit, active), exit, stateUnknown: !exit && meta.launcher === 'systemd' && active === null };
+  return { state: runState(meta, exit, active), exit, stateUnknown: !exit && active === null };
+}
+
+/** The run ids on disk. A missing runs folder is no runs; any other read error is an error. */
+async function runIds(opts?: { dir?: string }): Promise<string[]> {
+  try {
+    return (await readdir(runsDir(opts))).filter((n) => ID_RE.test(n));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
+  }
+}
+
+/** The run in progress in a worktree, if any. Reads only meta.json (and the state sources) of the runs whose cwd matches. */
+async function runningIn(path: string, opts?: { dir?: string }): Promise<RunMeta | null> {
+  const metas = await Promise.all((await runIds(opts)).map((id) => readMeta(id, opts)));
+  for (const m of metas) if (m && m.cwd === path && (await stateOf(m, opts)).state === 'running') return m;
+  return null;
 }
 
 export type ListedRun = RunMeta & Omit<RunSummary, 'finalText'> & { stateUnknown?: true };
 
 /** Runs, newest first, each with its state and summary (no prompt, no final text: those are one coding_agent_output away). */
 export async function listCodingAgents(opts?: { dir?: string; id?: string }): Promise<{ runs: ListedRun[] }> {
-  const ids = opts?.id !== undefined ? [opts.id] : (await readdir(runsDir(opts)).catch(() => [] as string[])).filter((n) => ID_RE.test(n));
+  const ids = opts?.id !== undefined ? [opts.id] : await runIds(opts);
   const runs = await Promise.all(
     ids.map(async (id) => {
       const meta = await readMeta(id, opts);
@@ -383,6 +418,8 @@ export async function startCodingAgent(req: StartRequest, env?: Record<string, s
   if (typeof r.prompt !== 'string' || !r.prompt.trim() || r.prompt.length > MAX_PROMPT) return bad(`prompt must be a text of 1 to ${MAX_PROMPT} characters`);
   const sandbox = r.sandbox ?? 'read-only';
   if (!(SANDBOXES as readonly unknown[]).includes(sandbox)) return bad(`sandbox must be ${SANDBOXES.join(' or ')}`);
+  // gemini has no OS sandbox flag: its read-only is only --approval-mode default, so it never gets write access here
+  if (kind === 'gemini' && sandbox === 'workspace-write') return bad('workspace-write is not supported for gemini yet');
   if (r.model !== undefined && (typeof r.model !== 'string' || !MODEL_RE.test(r.model))) return bad('model must be 1 to 64 letters, digits or . _ : - and start with a letter or digit');
   const timeoutMinutes = r.timeoutMinutes ?? DEFAULT_TIMEOUT_MINUTES;
   if (typeof timeoutMinutes !== 'number' || !Number.isInteger(timeoutMinutes) || timeoutMinutes < 1 || timeoutMinutes > 240) return bad('timeout_minutes must be an integer between 1 and 240');
@@ -396,17 +433,21 @@ export async function startCodingAgent(req: StartRequest, env?: Record<string, s
   const binAbs = resolveBin(adapter.bin);
   if (!binAbs) return { ok: false, status: 400, message: t('codingAgents.noBinary', { kind }) };
 
-  const release = await acquireLock(r.path, opts);
-  if (!release) {
-    const going = (await listCodingAgents(opts)).runs.find((x) => x.cwd === r.path && x.state === 'running');
-    return { ok: false, status: 409, message: t('codingAgents.busy', { id: going?.id ?? 'starting' }) };
-  }
   try {
-    const busy = (await listCodingAgents(opts)).runs.find((x) => x.cwd === r.path && x.state === 'running');
-    if (busy) return { ok: false, status: 409, message: t('codingAgents.busy', { id: busy.id }) };
-    return await launch({ kind, path: r.path, prompt: r.prompt, sandbox, model: r.model, timeoutMinutes }, dir.owner, binAbs, env, opts);
-  } finally {
-    await release();
+    const release = await acquireLock(r.path, opts);
+    if (!release) {
+      const going = await runningIn(r.path, opts);
+      return { ok: false, status: 409, message: t('codingAgents.busy', { id: going?.id ?? 'starting' }) };
+    }
+    try {
+      const busy = await runningIn(r.path, opts);
+      if (busy) return { ok: false, status: 409, message: t('codingAgents.busy', { id: busy.id }) };
+      return await launch({ kind, path: r.path, prompt: r.prompt, sandbox, model: r.model, timeoutMinutes }, dir.owner, binAbs, env, opts);
+    } finally {
+      await release();
+    }
+  } catch (err) {
+    return { ok: false, status: 500, message: t('codingAgents.launchFailed', { message: (err as Error).message.slice(0, 300) }) };
   }
 }
 
@@ -455,6 +496,8 @@ async function launch(req: Required<Pick<StartRequest, 'kind' | 'path' | 'prompt
       `--property=WorkingDirectory=${specifierSafe(req.path)}`,
       // backstop: the runner's own timer fires first
       `--property=RuntimeMaxSec=${timeoutMinutes * 60 + 60}`,
+      // a stop waits at most this long for the runner (it needs 10 s to SIGKILL the CLI), not systemd's 90 s
+      '--property=TimeoutStopSec=15',
       `--setenv=HOME=${homedir()}`,
       `--setenv=PATH=${path}`,
       ...claudeEnvArgs(env ?? {}),
@@ -480,6 +523,17 @@ async function launch(req: Required<Pick<StartRequest, 'kind' | 'path' | 'prompt
     meta.pid = child.pid ?? null;
     // the runner's identity, so a later stop never signals another process that got this pid
     meta.pidStart = meta.pid === null ? null : await processStart(meta.pid);
+    if (meta.pid === null || meta.pidStart === null) {
+      // we cannot tell this runner from another process later, so it must not run: it is our own child, stop it now
+      if (meta.pid !== null) {
+        try {
+          process.kill(meta.pid, 'SIGTERM');
+        } catch {
+          // already gone
+        }
+      }
+      return failLaunch("cannot read the runner's start time");
+    }
     await writeMeta();
   }
   return { ok: true, status: 200, id, unit: meta.unit, pid: meta.pid, host: hostname(), message: t('codingAgents.started', { kind, id }) };
@@ -495,23 +549,31 @@ export async function stopCodingAgent(id: string, opts?: { dir?: string }): Prom
   if (!meta) return { ok: false, status: 404, message: t('codingAgents.notFound') };
   if ((await stateOf(meta, opts)).state !== 'running') return { ok: false, status: 409, message: t('codingAgents.notRunning') };
 
-  // taken before the signal, written after it worked: exit.json can only be later than this
   const requestedAt = new Date().toISOString();
+  const writeRequested = async () => {
+    // written before the signal: runState needs exit.endedAt >= this plus evidence the run ended by a stop, and a failed
+    // stop keeps it (the state still follows what exit.json says)
+    meta.stopRequestedAt = requestedAt;
+    await writePrivate(join(runDirOf(id, opts), 'meta.json'), JSON.stringify(meta, null, 2) + '\n');
+  };
   if (meta.launcher === 'systemd') {
+    await writeRequested();
     // the unit is derived from the id, never taken from the file: only pb-agent-* units are ever stopped
     const r = await services().stop(unitOf(id), true);
     if (!r.ok) return { ok: false, status: 500, message: (r.stderr || r.stdout).trim().slice(0, 300) };
   } else {
-    // only the runner (it forwards the signal to the CLI's process group), and only when pid and start time still match
+    // only the runner (it forwards the signal to the CLI's process group), and only when pid and start time match
     const pid = meta.pid;
-    if (pid === null || !Number.isInteger(pid) || pid <= 1 || pid === process.pid || !(await runnerAlive(meta))) return { ok: false, status: 409, message: t('codingAgents.notRunning') };
+    if (pid === null || !Number.isInteger(pid) || pid <= 1 || pid === process.pid) return { ok: false, status: 409, message: t('codingAgents.notRunning') };
+    const alive = await runnerAlive(meta);
+    if (alive === null) return { ok: false, status: 409, message: t('codingAgents.identityUnknown') };
+    if (!alive) return { ok: false, status: 409, message: t('codingAgents.notRunning') };
+    await writeRequested();
     try {
       process.kill(pid, 'SIGTERM');
     } catch (err) {
       return { ok: false, status: 500, message: (err as Error).message.slice(0, 300) };
     }
   }
-  meta.stopRequestedAt = requestedAt;
-  await writePrivate(join(runDirOf(id, opts), 'meta.json'), JSON.stringify(meta, null, 2) + '\n');
   return { ok: true, status: 200, message: t('codingAgents.stopped', { id }) };
 }

@@ -37,8 +37,9 @@ const startTool: Tool = {
     description:
       'Run another coding agent CLI (codex or gemini) non-interactively on THIS Portboard host, in an existing worktree ' +
       '(see list_worktrees / find_worktree), with a prompt. One run per worktree. The sandbox is read-only by default; ' +
-      'workspace-write is allowed only in a linked worktree, never in a main checkout, and the tool never bypasses the ' +
-      "CLI's own sandbox or approvals. The CLI uses its own login on this host. Returns an id: follow it with " +
+      'workspace-write is allowed only for codex and only in a linked worktree, never in a main checkout, and the tool never ' +
+      "bypasses the CLI's own sandbox or approvals. Gemini runs read-only only, and its read-only is the CLI's approval mode, " +
+      'not an OS sandbox. The CLI uses its own login on this host. Returns an id: follow it with ' +
       'coding_agent_output until the state is not running. To pick a machine, call where_to_run first: this tool does ' +
       'not run anywhere else. Ask the user before using workspace-write unless they asked for edits.',
     inputSchema: {
@@ -47,7 +48,7 @@ const startTool: Tool = {
         kind: { type: 'string', enum: [...KINDS], description: 'The coding agent CLI to run' },
         path: { type: 'string', description: 'Absolute worktree path (as list_worktrees reports it)' },
         prompt: { type: 'string', description: 'The task, up to 100000 characters. It goes to the CLI on stdin and is not logged.' },
-        sandbox: { type: 'string', enum: [...SANDBOXES], description: 'Default read-only. workspace-write lets the CLI edit files in the worktree.' },
+        sandbox: { type: 'string', enum: [...SANDBOXES], description: 'Default read-only. workspace-write lets codex edit files in the worktree (refused for gemini).' },
         model: { type: 'string', description: "The CLI's own model name (letters, digits, . _ : -; starts with a letter or digit)" },
         timeout_minutes: { type: 'integer', minimum: 1, maximum: 240, description: 'Default 30. The run is stopped after this long.' },
       },

@@ -294,6 +294,7 @@
   "clientsMsg.vendorDevice": "{vendor} 기기",
   "codingAgents.badArgs": "잘못된 인자예요: {message}",
   "codingAgents.busy": "이 워크트리에서 이미 실행 중이에요 ({id})",
+  "codingAgents.identityUnknown": "이 실행의 프로세스가 Portboard가 띄운 것인지 확인할 수 없어서 신호를 보내지 않아요",
   "codingAgents.launchFailed": "코딩 에이전트를 띄우지 못했어요: {message}",
   "codingAgents.mainCheckout": "workspace-write는 메인 체크아웃이 아니라 연결된 워크트리에서만 쓸 수 있어요",
   "codingAgents.noBinary": "이 호스트에 {kind}가 없어요 (PATH에서 찾지 못했어요)",
