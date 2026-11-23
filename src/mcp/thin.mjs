@@ -41,8 +41,9 @@ const claudePid = process.env.CLAUDE_PID;
 if (sessionId && SESSION_ID.test(sessionId)) headers['X-Portboard-Session'] = sessionId;
 if (claudePid && CLAUDE_PID.test(claudePid)) headers['X-Portboard-Claude-Pid'] = claudePid;
 // Where the session finds its CLIs: start_coding_agent runs in the dashboard, whose own PATH may not have them.
-// (printable ASCII only: any other byte would make the request itself fail)
-if (process.env.PATH && process.env.PATH.length <= 4096 && /^[\x20-\x7e]+$/.test(process.env.PATH)) headers['X-Portboard-Path'] = process.env.PATH;
+// (printable ASCII only, as any other byte would make the request itself fail; at most 4096 characters and 64 entries,
+// the limits the dashboard applies)
+if (process.env.PATH && process.env.PATH.length <= 4096 && /^[\x20-\x7e]+$/.test(process.env.PATH) && process.env.PATH.split(':').length <= 64) headers['X-Portboard-Path'] = process.env.PATH;
 
 /** @param {Reply} msg */
 const send = (msg) => process.stdout.write(`${JSON.stringify(msg)}\n`);

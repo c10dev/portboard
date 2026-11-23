@@ -32,7 +32,6 @@ const OUT = join(SHIM, 'out');
 const CALLS = join(SHIM, 'calls.log');
 const REPOS = join(DIR, 'repos');
 const MAIN = join(REPOS, 'shop-web');
-after(() => rm(DIR, { recursive: true, force: true }));
 
 // ---- the shims: one script per command, logging "<cmd> <args>" and printing out/<key> ----
 
@@ -110,7 +109,6 @@ interface Daemon {
   stop(): Promise<void>;
 }
 const daemons: Daemon[] = [];
-after(() => Promise.all(daemons.map((d) => d.stop())));
 
 async function startDaemon(extra: Record<string, string> = {}): Promise<Daemon> {
   const port = await freePort();
@@ -135,6 +133,13 @@ async function startDaemon(extra: Record<string, string> = {}): Promise<Daemon> 
   };
   daemons.push(d);
   await until('the daemon to listen', () => so.includes(`listening on http://127.0.0.1:${port}`) || (child.exitCode !== null ? Promise.reject(new Error(`daemon exited: ${se}`)) : false));
+  // Warm it: the first ping of a fresh daemon can be slow (cold caller cache), and a thin-mode test must not race
+  // bin/mcp.mjs's 300 ms limit. 200 for a usable daemon, 403 for a token-mode or read-only one.
+  await until('the first ping answer', async () => {
+    const res = await fetch(`${d.url}/api/mcp/ping`).catch(() => null);
+    await res?.arrayBuffer();
+    return res && (res.status === 200 || res.status === 403);
+  });
   return d;
 }
 
@@ -202,7 +207,6 @@ const open = (opts?: ConstructorParameters<typeof Session>[0]) => {
   sessions.push(s);
   return s;
 };
-after(() => sessions.forEach((s) => s.child.kill('SIGKILL')));
 
 const INIT = { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '0' } };
 const toolText = (r: Msg) => r.result.content[0].text as string;
@@ -216,8 +220,6 @@ interface Fake {
   close(): Promise<void>;
 }
 const fakes: { close(): Promise<void> }[] = [];
-// Whatever a failed assertion leaves open: no listener may keep the file from exiting.
-after(() => Promise.all(fakes.map((f) => f.close())));
 async function fake(handler: (req: IncomingMessage, res: ServerResponse, body: string, f: Fake) => void, port?: number): Promise<Fake> {
   const sockets = new Set<import('node:net').Socket>();
   const server: Server = createHttp((req, res) => {
@@ -718,6 +720,7 @@ test('11 stdin closes: the request in flight is answered, then the exit code is 
 test('start_coding_agent in thin mode looks for the CLI on the caller\'s PATH (X-Portboard-Path), not the dashboard\'s', async () => {
   const cliDir = join(DIR, 'cli-bin'); // not on the dashboard's PATH
   await mkdir(cliDir, { recursive: true });
+  await chmod(cliDir, 0o755);
   await writeFile(join(cliDir, 'codex'), '#!/bin/sh\nexit 0\n');
   await chmod(join(cliDir, 'codex'), 0o755);
   // a dashboard whose PATH has no nvm folder (a real codex may sit next to this Node), as under systemd
@@ -739,6 +742,30 @@ test('start_coding_agent in thin mode looks for the CLI on the caller\'s PATH (X
     assert.equal(r.isError, true, bad.slice(0, 40));
   }
   const before = (await unitSessions()).length;
+  // a CLI or its folder that others can write is refused ("not installed"); nothing is started
+  const mk = async (name: string, dirMode: number, fileMode: number) => {
+    const d = join(DIR, name);
+    await mkdir(d, { recursive: true });
+    await chmod(d, dirMode); // mkdir is cut by the umask
+    await writeFile(join(d, 'codex'), '#!/bin/sh\nexit 0\n');
+    await chmod(join(d, 'codex'), fileMode);
+    return d;
+  };
+  // (group-writable cases depend on the host's groups: see the in-process test below)
+  for (const [name, dirMode, fileMode] of [['cli-open-dir', 0o777, 0o755], ['cli-other-file', 0o755, 0o757]] as const) {
+    const d = await mk(name, dirMode, fileMode);
+    const r = await run({ ...sess, 'X-Portboard-Path': d }, 4);
+    assert.equal(r.isError, true, name);
+    assert.doesNotMatch(r.content[0].text, /already going/, `${name}: refused before a run is looked for`);
+  }
+  assert.equal((await unitSessions()).length, before, 'no run was started');
+  // a link to a CLI that sits in a folder others can write is refused too
+  const linkDir = join(DIR, 'cli-link');
+  await mkdir(linkDir, { recursive: true });
+  await chmod(linkDir, 0o755);
+  await symlink(join(await mk('cli-open-target', 0o777, 0o755), 'codex'), join(linkDir, 'codex'));
+  assert.equal((await run({ ...sess, 'X-Portboard-Path': linkDir }, 4)).isError, true, 'link into a writable folder');
+  assert.equal((await unitSessions()).length, before);
   // a relative entry is skipped, an absolute one with the CLI is used
   const ok = await run({ ...sess, 'X-Portboard-Path': `relative:${cliDir}` }, 3);
   assert.ok(!ok.isError, ok.content[0].text);
@@ -760,6 +787,53 @@ test('start_coding_agent in thin mode looks for the CLI on the caller\'s PATH (X
   assert.equal(await thin.close(), 0);
 });
 
+test('trustedPath: group write is accepted only for the user\'s own private group; other write never', async () => {
+  const { groupHasNoMembers, trustedPath } = await import('../src/features/mcp-local.ts');
+  const gid = process.getgid!();
+
+  // the pure lookup, on sample /etc/group text
+  const text = 'root:x:0:\nme:x:1000:\nteam:x:1001:alice,bob\nlonely:*:1002:  \nbroken line\n:x:abc:\n';
+  assert.equal(groupHasNoMembers(text, 1000), true, 'empty member list');
+  assert.equal(groupHasNoMembers(text, 1002), true, 'blank member list');
+  assert.equal(groupHasNoMembers(text, 1001), false, 'has members');
+  assert.equal(groupHasNoMembers(text, 4242), false, 'gid not listed');
+  assert.equal(groupHasNoMembers('', 0), false);
+
+  // real folders: a 0775 folder with a 0775 codex, as an npm-global install under a user-private group
+  const make = async (name: string, dirMode: number, fileMode: number) => {
+    const d = join(DIR, name);
+    await mkdir(d, { recursive: true });
+    await chmod(d, dirMode);
+    await writeFile(join(d, 'codex'), '#!/bin/sh\nexit 0\n');
+    await chmod(join(d, 'codex'), fileMode);
+    return d;
+  };
+  const group = await make('trust-group', 0o775, 0o775);
+  assert.equal(trustedPath(group, () => false), '', 'group is not a private group: refused');
+  assert.equal(trustedPath(group, (g) => g === gid), group, 'own private group: accepted');
+  assert.equal(trustedPath(group, (g) => g !== gid), '', 'the lookup is asked about this process\'s gid');
+  // only the file, or only the folder
+  assert.equal(trustedPath(await make('trust-group-file', 0o755, 0o775), () => false), '');
+  assert.equal(trustedPath(await make('trust-group-dir', 0o775, 0o755), () => false), '');
+  assert.equal(trustedPath(await make('trust-group-file-ok', 0o755, 0o775), () => true), join(DIR, 'trust-group-file-ok'));
+  // other write is never accepted, whatever the lookup says
+  assert.equal(trustedPath(await make('trust-other-dir', 0o777, 0o755), () => true), '');
+  assert.equal(trustedPath(await make('trust-other-file', 0o755, 0o757), () => true), '');
+  // a plain 0755 folder with a 0755 codex needs no group at all
+  const plain = await make('trust-plain', 0o755, 0o755);
+  assert.equal(trustedPath(plain, () => false), plain);
+  // a link: its own mode is not looked at, the target and its folder are (npm global: bin/codex -> ../lib/.../codex.js)
+  const lib = await make('trust-lib', 0o775, 0o775);
+  const bin = join(DIR, 'trust-bin');
+  await mkdir(bin, { recursive: true });
+  await chmod(bin, 0o755);
+  await symlink(join(lib, 'codex'), join(bin, 'codex'));
+  assert.equal(trustedPath(bin, () => false), '', 'target in a group-writable folder, group not private');
+  assert.equal(trustedPath(bin, (g) => g === gid), bin, 'target and folder 0775 in the own private group');
+  // entries are filtered one by one
+  assert.equal(trustedPath(`${group}:${plain}`, () => false), plain);
+});
+
 // ============================================================ measurement: a long tool and other GETs
 
 test('measure: a long tool in the daemon does not hold up other requests', async (t) => {
@@ -776,4 +850,18 @@ test('measure: a long tool in the daemon does not hold up other requests', async
   t.diagnostic(`GET /api/mcp/ping while adoption_stats runs: ${times.join(', ')} ms`);
   console.log(`# ping latency during adoption_stats: ${times.join(', ')} ms`);
   assert.ok(Math.max(...times) < 1000, times.join(','));
+});
+
+// One cleanup, in this order, and one failure never skips the rest: processes first (they write into DIR), then the
+// listeners a failed assertion left open (they would keep the file from exiting), then the folder.
+after(async () => {
+  for (const s of sessions) {
+    try {
+      s.child.kill('SIGKILL');
+    } catch {
+      // already gone
+    }
+  }
+  await Promise.allSettled([...daemons.map((d) => d.stop()), ...fakes.map((f) => f.close())]);
+  await rm(DIR, { recursive: true, force: true, maxRetries: 3 }).catch(() => {});
 });

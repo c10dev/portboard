@@ -163,7 +163,9 @@ The thin client sends `CLAUDE_CODE_SESSION_ID` and `CLAUDE_PID` from its own env
 
 The tools run inside the dashboard process, not in the session's. So the dev server's `PATH` comes from the dashboard's Node, `list_suggestions` treats the dashboard's own unit as its own, and the stop tools refuse the dashboard's own pid. These are the answers the dashboard's REST routes give for the same actions.
 
-`start_coding_agent` must find `codex` or `gemini`, which the dashboard's service `PATH` (`/usr/local/bin:/usr/bin:/bin`) may not hold (an nvm folder, for one). The thin client therefore sends its own `PATH` in `X-Portboard-Path`, and the dashboard looks for the CLI there (absolute entries only; it is a lookup path with the trust the stdio server had). The run's session id comes from the same session headers as for `start_dev_server`.
+`start_coding_agent` must find `codex` or `gemini`, which the dashboard's service `PATH` (`/usr/local/bin:/usr/bin:/bin`) may not hold (an nvm folder, for one). The thin client therefore sends its own `PATH` in `X-Portboard-Path`, and the dashboard looks for the CLI there (absolute entries only). A CLI found that way is used only when it and its folder belong to the dashboard's user or root, are not writable by others, and are writable by group only when the group is the dashboard user's own primary group with no other members; otherwise the answer is "not installed" ([security.md](security.md#mcp-through-the-dashboard)). When the header is missing or dropped, the lookup uses the dashboard's service `PATH`. The thin client leaves the header out when its `PATH` has non-ASCII characters, is over 4096 characters, or has over 64 entries. The run's session id comes from the same session headers as for `start_dev_server`.
+
+`list_accounts` reads the dashboard's live proxy state and the dashboard's login folders (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`), the same as `GET /api/accounts`.
 
 ### `POST /api/mcp` and `GET /api/mcp/ping`
 

@@ -8,7 +8,10 @@
 // records a refusal) with `auditOk: false`: a successful call is not an audit line, because callTool already records
 // each write tool as source "mcp" in ctx.audit. Local processes only (localOnly).
 
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { localOnly, resolveCaller } from '../core/access.ts';
+import { KINDS, ADAPTERS } from '../core/coding-agent-adapters.ts';
 import { platform } from '../core/platform/index.ts';
 import { VERSION } from '../version.ts';
 import type { Request } from '../mcp/rpc.ts';
@@ -59,6 +62,71 @@ export function callerPath(v: string | string[] | undefined): string | undefined
   return entries.length > 0 && entries.length <= PATH_MAX_ENTRIES ? entries.join(':') : undefined;
 }
 
+/**
+ * Whether the group with this gid, in the text of /etc/group (`name:password:gid:member,member`), has no supplementary
+ * members. A gid that is not in the text is false.
+ */
+export function groupHasNoMembers(groupFile: string, gid: number): boolean {
+  for (const line of groupFile.split('\n')) {
+    const [, , id, members] = line.split(':');
+    if (id !== undefined && /^\d+$/.test(id) && Number(id) === gid) return (members ?? '').trim() === '';
+  }
+  return false;
+}
+
+/** The default lookup: /etc/group on this host. Unreadable is false (group write is then not accepted). */
+function ownPrivateGroup(gid: number): boolean {
+  try {
+    return groupHasNoMembers(readFileSync('/etc/group', 'utf8'), gid);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Owned by this process's user or root; never writable by others; writable by the group only when it is this
+ * process's own primary group and nobody else is a member of it.
+ */
+function onlyOwnerWrites(path: string, groupIsPrivate: (gid: number) => boolean): boolean {
+  try {
+    const st = statSync(path);
+    if (st.uid !== process.getuid?.() && st.uid !== 0) return false;
+    if (st.mode & 0o002) return false;
+    if (st.mode & 0o020) return st.gid === process.getgid?.() && groupIsPrivate(st.gid);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The entries of a PATH that came from a request header, kept only when whatever coding agent CLI they hold is
+ * trusted: the entry's folder, each CLI file found there as resolved (a link's own mode is not looked at), and the
+ * resolved file's folder pass `onlyOwnerWrites`. An entry holding no such CLI is dropped too, so the lookup can only
+ * land on a trusted file. (The stdio server's PATH, from its own process, is not filtered.)
+ * `groupIsPrivate` is injectable so tests do not depend on the host's groups.
+ */
+export function trustedPath(path: string, groupIsPrivate: (gid: number) => boolean = ownPrivateGroup): string {
+  const bins = KINDS.map((k) => ADAPTERS[k].bin);
+  return path
+    .split(':')
+    .filter((dir) => {
+      if (!onlyOwnerWrites(dir, groupIsPrivate)) return false;
+      for (const bin of bins) {
+        const file = join(dir, bin);
+        if (!existsSync(file)) continue;
+        try {
+          const real = realpathSync(file);
+          if (!onlyOwnerWrites(real, groupIsPrivate) || !onlyOwnerWrites(dirname(real), groupIsPrivate)) return false;
+        } catch {
+          return false;
+        }
+      }
+      return true;
+    })
+    .join(':');
+}
+
 export const mcpLocalFeature: FeatureModule = {
   name: 'mcp-local',
   order: 2590,
@@ -87,7 +155,8 @@ export const mcpLocalFeature: FeatureModule = {
         // This request's session, not the daemon's process.env, goes to a started dev server's unit.
         // start_dev_server reads only the session keys (its unit has its own PATH); the coding agent run also needs
         // the caller's PATH to find its CLI.
-        const agentEnv: Record<string, string> = { ...env, ...(callerPath(req.headers['x-portboard-path']) ? { PATH: callerPath(req.headers['x-portboard-path'])! } : {}) };
+        const headerPath = callerPath(req.headers['x-portboard-path']);
+        const agentEnv: Record<string, string> = { ...env, ...(headerPath !== undefined ? { PATH: trustedPath(headerPath) } : {}) };
         const perRequest: Core = {
           ...base,
           startDevServer: (path, script, port) => base.startDevServer(path, script, port, env),
