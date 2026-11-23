@@ -49,6 +49,8 @@ const STYLE = `
 .mem table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .mem th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; padding: 3px 6px; border-bottom: 1px solid var(--line); }
 .mem td { padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.mem th:first-child, .mem td:first-child { padding-left: 0; }
+.mem th:last-child, .mem td:last-child { padding-right: 0; }
 .mem td.num, .mem th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .mem td .sub { display: block; font-size: 11px; color: var(--muted); }
 .mem td .badge { margin-left: 6px; }
