@@ -118,6 +118,28 @@ function emptyNote(text) {
 }
 
 /** Fill the inspector: the selected port p (null: nothing selected / it went away) */
+/** All definition lists of one inspector share the label column of its widest label, so their values start on one
+ *  line. The owner list fills in later (features/owners.js), so a size change of the body measures again. */
+function alignFacts(body) {
+  const st = body.style;
+  // no layout engine (test/fixtures/fake-dom.ts): nothing to measure
+  if (typeof st?.getPropertyValue !== 'function' || typeof st.removeProperty !== 'function' || typeof body.getBoundingClientRect !== 'function') return false;
+  // dt in a dl right inside a section, not the 한눈에 overview (one simple selector: test/fixtures/fake-dom.ts)
+  const dts = [...body.querySelectorAll('dt')].filter((d) => {
+    const sec = d.parentElement?.parentElement;
+    return d.parentElement?.tagName === 'DL' && sec?.classList.contains('insp-sec') && !sec.classList.contains('insp-overview');
+  });
+  const prev = body.style.getPropertyValue('--insp-dt-w');
+  body.style.removeProperty('--insp-dt-w');
+  const w = Math.ceil(Math.max(0, ...dts.map((d) => d.getBoundingClientRect().width)));
+  if (w) body.style.setProperty('--insp-dt-w', `${w}px`);
+  return prev !== body.style.getPropertyValue('--insp-dt-w');
+}
+
+const factsObserver = typeof ResizeObserver === 'function'
+  ? new ResizeObserver((entries) => { for (const e of entries) alignFacts(e.target); })
+  : null;
+
 export function renderInspector(insp, p, ctx) {
   if (!insp) return;
   const body = insp.body;
@@ -177,6 +199,8 @@ export function renderInspector(insp, p, ctx) {
     stopTail();
   }
   body.replaceChildren(...parts);
+  alignFacts(body);
+  factsObserver?.observe(body);
   if (same) body.scrollTop = scroll;
   else body.scrollTop = 0;
 }
