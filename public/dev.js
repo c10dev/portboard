@@ -279,20 +279,30 @@ function render() {
 }
 
 /** Give each list's chip slots the width of its widest chip. Measured once the lists are in the document, and again
- *  when the window resizes: a chip that wrapped on a narrow window is wider on a wide one. */
+ *  when the lists change width (window, sidebar, list width): a chip that wrapped on a narrow column is wider on a wide
+ *  one. Clear, read, then write, so the page lays out once. */
 function alignChips(box) {
-  for (const ul of box.querySelectorAll('.wt-list')) {
-    ul.style.removeProperty('--wt-slot-w');
-    const widths = [...ul.querySelectorAll('.wt-slot')].map((s) => s.getBoundingClientRect().width);
-    if (widths.length) ul.style.setProperty('--wt-slot-w', `${Math.ceil(Math.max(...widths))}px`);
-  }
+  const lists = [...box.querySelectorAll('.wt-list')];
+  for (const ul of lists) ul.style.removeProperty('--wt-slot-w');
+  const widths = lists.map((ul) => Math.max(0, ...[...ul.querySelectorAll('.wt-slot')].map((s) => s.getBoundingClientRect().width)));
+  lists.forEach((ul, i) => { if (widths[i]) ul.style.setProperty('--wt-slot-w', `${Math.ceil(widths[i])}px`); });
 }
 
+let chipWidth = -1;
 let chipFrame = 0;
-addEventListener('resize', () => {
-  cancelAnimationFrame(chipFrame);
-  chipFrame = requestAnimationFrame(() => { const box = $('repos'); if (box) alignChips(box); });
-});
+const chipObserver = typeof ResizeObserver === 'function'
+  ? new ResizeObserver(([entry]) => {
+    const w = Math.round(entry.contentRect.width);
+    if (w === chipWidth) return; // a height change (rows added) needs no new measure
+    chipWidth = w;
+    cancelAnimationFrame(chipFrame);
+    chipFrame = requestAnimationFrame(() => alignChips(entry.target));
+  })
+  : null;
+{
+  const box = $('repos');
+  if (box && chipObserver) chipObserver.observe(box);
+}
 
 /** Nothing listed: no repos under the root, or the filter hides them all */
 function noRepos() {
