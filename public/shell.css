@@ -190,7 +190,7 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
 }
 .insp-head {
   position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 10px 4px 8px 14px; background: var(--surface); border-bottom: 1px solid var(--line); /* the bare × icon ends its ink on the body's 14px text line */
+  padding: 10px 5px 8px 14px; background: var(--surface); border-bottom: 1px solid var(--line); /* the bare × icon ends its ink on the body's 14px text line */
 }
 .insp-head strong { font-size: var(--fs-3); color: var(--text-2); font-weight: 600; }
 .insp-body { padding: 12px 14px 24px; font-size: var(--fs-3); }
@@ -365,7 +365,7 @@ html:has(#swChip.alarm) .side-toggle[aria-expanded="false"]::after { background:
 }
 .keys-dialog[open] { display: flex; flex-direction: column; }
 .keys-dialog::backdrop { background: rgb(0 0 0 / .35); }
-.keys-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 8px 10px 18px; border-bottom: 1px solid var(--line); /* the bare × icon ends its ink on the body's 18px text line */ }
+.keys-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 9px 10px 18px; border-bottom: 1px solid var(--line); /* the bare × icon ends its ink on the body's 18px text line */ }
 .keys-head h2 { margin: 0; font-size: var(--fs-5); }
 .keys-body { overflow: auto; padding: 6px 18px 18px; overscroll-behavior: contain; }
 .keys-sec h3 { margin: 14px 0 6px; color: var(--text-3); font-size: var(--fs-2); font-weight: 500; }
