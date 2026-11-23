@@ -9,7 +9,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, statSync, symlinkSync } from 'node:fs';
+import { chmodSync, existsSync, readdirSync, utimesSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, statSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,6 +45,14 @@ git(mainRepo, 'commit', '--allow-empty', '-m', 'init');
 git(mainRepo, 'worktree', 'add', '-b', 'feat', linked);
 const linked2 = join(root, 'wt', 'shop-feat2');
 git(mainRepo, 'worktree', 'add', '-b', 'feat2', linked2);
+const linked3 = join(root, 'wt', 'shop-feat3');
+git(mainRepo, 'worktree', 'add', '-b', 'feat3', linked3);
+const linked4 = join(root, 'wt', 'shop-100%-done');
+git(mainRepo, 'worktree', 'add', '-b', 'feat4', linked4);
+const linked6 = join(root, 'wt', 'shop-feat6');
+git(mainRepo, 'worktree', 'add', '-b', 'feat6', linked6);
+const linked5 = join(root, 'wt', 'shop-feat5');
+git(mainRepo, 'worktree', 'add', '-b', 'feat5', linked5);
 
 const RUNNER = fileURLToPath(new URL('../src/core/coding-agent-runner.ts', import.meta.url));
 const FIXTURE = readFileSync(new URL('./fixtures/codex-exec-events.jsonl', import.meta.url), 'utf8');
@@ -76,6 +84,7 @@ chmodSync(join(shimDir, 'codex'), 0o755);
 const setMode = (m: string) => writeFileSync(join(shimDir, 'mode'), m);
 
 const runsRoot = join(stateDir, 'coding-agents');
+const readdirSyncSafe = (d: string): string[] => (existsSync(d) ? readdirSync(d) : []);
 before(() => {
   process.env.PATH = `${shimDir}:${ORIG_PATH}`;
   setServiceManager(noServiceManager());
@@ -95,13 +104,20 @@ async function waitFor(path: string, ms = 15_000): Promise<void> {
   }
 }
 const exitFile = (id: string) => join(runsRoot, id, 'exit.json');
+/** Make a run look started two minutes ago (past the 30 s start grace). */
+function ageRun(id: string): void {
+  const file = join(runsRoot, id, 'meta.json');
+  const meta = JSON.parse(readFileSync(file, 'utf8'));
+  meta.startedAt = new Date(Date.now() - 120_000).toISOString();
+  writeFileSync(file, JSON.stringify(meta));
+}
 
 // ---- 1. codex argv ----
 
 test('codex args are exactly the documented argv, for both sandboxes, with and without a model; the prompt is not in argv', () => {
   const a = ca.codexAdapter;
   assert.deepEqual(a.args({ cwd: '/w/x', sandbox: 'read-only', lastMessageFile: '/r/last.md' }), ['exec', '--json', '--color', 'never', '-s', 'read-only', '-C', '/w/x', '-o', '/r/last.md', '-']);
-  assert.deepEqual(a.args({ cwd: '/w/x', sandbox: 'workspace-write', model: 'gpt-x', lastMessageFile: '/r/last.md' }), ['exec', '--json', '--color', 'never', '-s', 'workspace-write', '-C', '/w/x', '-o', '/r/last.md', '-m', 'gpt-x', '-']);
+  assert.deepEqual(a.args({ cwd: '/w/x', sandbox: 'workspace-write', model: 'gpt-x', lastMessageFile: '/r/last.md' }), ['exec', '--json', '--color', 'never', '-s', 'workspace-write', '-C', '/w/x', '-o', '/r/last.md', '--model=gpt-x', '-']);
   for (const arg of a.args({ cwd: '/w/x', sandbox: 'read-only', lastMessageFile: '/r/last.md' })) assert.doesNotMatch(arg, /bypass|yolo|approve/);
 });
 
@@ -160,7 +176,7 @@ test('codex parser caps the changed files at 50 and the error at 500 characters'
 test('gemini args (fake CLI, from its docs): approval mode follows the sandbox, prompt on stdin, no yolo', () => {
   const g = ca.geminiAdapter;
   assert.deepEqual(g.args({ cwd: '/w', sandbox: 'read-only', lastMessageFile: '/l' }), ['--output-format', 'stream-json', '--approval-mode', 'default']);
-  assert.deepEqual(g.args({ cwd: '/w', sandbox: 'workspace-write', model: 'gem-1', lastMessageFile: '/l' }), ['--output-format', 'stream-json', '--approval-mode', 'auto_edit', '-m', 'gem-1']);
+  assert.deepEqual(g.args({ cwd: '/w', sandbox: 'workspace-write', model: 'gem-1', lastMessageFile: '/l' }), ['--output-format', 'stream-json', '--approval-mode', 'auto_edit', '--model=gem-1']);
 });
 
 test('gemini parser on a synthetic stream (fake): deltas append, tool_use counts, result sets final text and usage', () => {
@@ -202,6 +218,8 @@ test('start validation: every bad argument is a 400 and nothing is written', asy
     ['oversized prompt', { ...ok, prompt: 'x'.repeat(100_001) }],
     ['bad sandbox', { ...ok, sandbox: 'danger-full-access' }],
     ['bad model', { ...ok, model: 'a b; rm' }],
+    ['model that is a flag', { ...ok, model: '--yolo' }],
+    ['model that is a short flag', { ...ok, model: '-m' }],
     ['timeout 0', { ...ok, timeoutMinutes: 0 }],
     ['timeout 241', { ...ok, timeoutMinutes: 241 }],
     ['timeout fraction', { ...ok, timeoutMinutes: 1.5 }],
@@ -282,7 +300,9 @@ test('systemd: the transient unit args carry the unit, RuntimeMaxSec and the ses
     active = false;
     assert.equal((await ca.listCodingAgents({ id: r.id })).runs[0].state, 'stopped');
     assert.equal((await ca.stopCodingAgent(r.id!)).status, 409);
-    // the other run's unit went inactive without an exit.json: the runner died
+    // the other run's unit went inactive without an exit.json: still starting for 30 s, then the runner is lost
+    assert.equal((await ca.listCodingAgents({ id: other.id })).runs[0].state, 'running', 'a young run is starting, not lost');
+    ageRun(other.id!);
     assert.equal((await ca.listCodingAgents({ id: other.id })).runs[0].state, 'lost');
     writeFileSync(exitFile(other.id!), JSON.stringify({ code: null, signal: null, endedAt: new Date().toISOString() }));
   } finally {
@@ -332,9 +352,10 @@ test('process mode: the runner runs the shim, the prompt arrives on stdin, the f
   const argv: string[] = JSON.parse(readFileSync(join(shimDir, 'argv.json'), 'utf8'));
   assert.deepEqual(argv.slice(0, 7), ['exec', '--json', '--color', 'never', '-s', 'read-only', '-C']);
   assert.equal(argv[7], linked);
-  assert.ok(argv.includes('-m') && argv.includes('m-1'));
+  assert.ok(argv.includes('--model=m-1'));
   assert.equal(argv.some((a) => a.includes('say hi')), false);
-  assert.equal(statSync(join(runsRoot, r.id!, 'events.jsonl')).mode & 0o777, 0o600);
+  assert.equal(statSync(join(runsRoot, r.id!)).mode & 0o777, 0o700);
+  for (const f of ['meta.json', 'prompt.txt', 'events.jsonl', 'stderr.log', 'exit.json', 'last.md']) assert.equal(statSync(join(runsRoot, r.id!, f)).mode & 0o777, 0o600, f);
 });
 
 test('process mode: a CLI that exits 3 is failed, with the stderr tail', async () => {
@@ -485,4 +506,171 @@ test('the four tools: schemas, annotations, argument checks, and the prompt stay
   const target = targetOf(null, { kind: 'codex', path: linked, prompt: 'SECRET-PROMPT' });
   assert.equal(JSON.stringify(target).includes('SECRET-PROMPT'), false);
   assert.deepEqual(target.fields, ['kind', 'prompt']);
+});
+
+// ---- review fixes ----
+
+test('two parallel starts in one worktree: one starts, one is busy (lock and start grace)', async () => {
+  setMode('sleep');
+  const results = await Promise.all([
+    ca.startCodingAgent({ kind: 'codex', path: linked3, prompt: 'a' }, {}),
+    ca.startCodingAgent({ kind: 'codex', path: linked3, prompt: 'b' }, {}),
+  ]);
+  assert.deepEqual(results.map((r) => r.status).sort(), [200, 409]);
+  const winner = results.find((r) => r.ok)!;
+  assert.equal((await ca.listCodingAgents()).runs.filter((x) => x.cwd === linked3).length, 1, 'only one run folder');
+  assert.equal(readdirSyncSafe(join(runsRoot, 'locks')).length, 0, 'the lock is released');
+  // a young run with no pid yet still counts as running
+  const id = prepare(linked5);
+  assert.equal((await ca.listCodingAgents({ id })).runs[0].state, 'running');
+  assert.equal((await ca.startCodingAgent({ kind: 'codex', path: linked5, prompt: 'c' }, {})).status, 409);
+  ageRun(id);
+  assert.equal((await ca.listCodingAgents({ id })).runs[0].state, 'lost');
+  await waitFor(join(runsRoot, winner.id!, 'events.jsonl')); // the CLI is up: the stop goes through the runner's handler
+  await ca.stopCodingAgent(winner.id!);
+  await waitFor(exitFile(winner.id!));
+});
+
+test('a stale lock (older than 60 s) is removed; a fresh one blocks the start', async () => {
+  const lockDir = join(runsRoot, 'locks');
+  const { createHash } = await import('node:crypto');
+  const lock = join(lockDir, `${createHash('sha256').update(linked5).digest('hex').slice(0, 16)}.lock`);
+  mkdirSync(lockDir, { recursive: true });
+  writeFileSync(lock, '');
+  setMode('ok');
+  assert.equal((await ca.startCodingAgent({ kind: 'codex', path: linked5, prompt: 'x' }, {})).status, 409, 'fresh lock');
+  const old = new Date(Date.now() - 120_000);
+  utimesSync(lock, old, old);
+  const r = await ca.startCodingAgent({ kind: 'codex', path: linked5, prompt: 'x' }, {});
+  assert.equal(r.ok, true, r.message);
+  await waitFor(exitFile(r.id!));
+});
+
+test('pid reuse: a live unrelated process under a recorded pid is lost, never stopped', async () => {
+  const bystander = spawn('sleep', ['30'], { stdio: 'ignore', env: { PATH: SYS_PATH } });
+  try {
+    await new Promise((r) => bystander.once('spawn', r));
+    const id = prepare(linked2);
+    const file = join(runsRoot, id, 'meta.json');
+    const meta = JSON.parse(readFileSync(file, 'utf8'));
+    Object.assign(meta, { pid: bystander.pid, pidStart: 'not-its-start-time', startedAt: new Date(Date.now() - 120_000).toISOString() });
+    writeFileSync(file, JSON.stringify(meta));
+    assert.equal((await ca.listCodingAgents({ id })).runs[0].state, 'lost');
+    const stop = await ca.stopCodingAgent(id);
+    assert.equal(stop.status, 409);
+    assert.equal(bystander.exitCode, null);
+    assert.doesNotThrow(() => process.kill(bystander.pid!, 0), 'the bystander is alive');
+    // the real identity matches
+    meta.pidStart = await ca.processStart(bystander.pid!);
+    assert.ok(meta.pidStart);
+    writeFileSync(file, JSON.stringify(meta));
+    assert.equal((await ca.listCodingAgents({ id })).runs[0].state, 'running');
+    writeFileSync(file, JSON.stringify({ ...meta, pidStart: null }));
+    assert.equal((await ca.listCodingAgents({ id })).runs[0].state, 'lost', 'no recorded identity: never ours');
+  } finally {
+    bystander.kill('SIGKILL');
+  }
+});
+
+test('process start time: Linux field 22 of /proc/<pid>/stat is read from the last ")"', async () => {
+  const mine = await ca.processStart(process.pid);
+  assert.match(mine ?? '', /\S/);
+  assert.equal(await ca.processStart(process.pid), mine);
+  assert.equal(await ca.processStart(0), null);
+  assert.equal(await ca.processStart(2 ** 22 + 12345), null);
+});
+
+test('stop is written only after the signal worked, and "stopped" needs the run to end because of it', async () => {
+  const meta = (extra: object = {}) => ({ id: 'ca-0123456789', kind: 'codex', cwd: '/w', owner: 'a@b', sandbox: 'read-only', model: null, promptChars: 1, startedAt: '2026-01-01T00:00:00.000Z', timeoutMinutes: 1, launcher: 'process', unit: null, pid: null, stopRequestedAt: null, session: null, ...extra }) as import('../src/core/coding-agents.ts').RunMeta;
+  const t0 = '2026-01-01T00:10:00.000Z';
+  const before = '2026-01-01T00:09:00.000Z';
+  const after = '2026-01-01T00:10:01.000Z';
+  assert.equal(ca.runState(meta({ stopRequestedAt: t0 }), { code: null, signal: 'SIGTERM', endedAt: after }, false), 'stopped');
+  assert.equal(ca.runState(meta({ stopRequestedAt: t0 }), { code: 0, signal: null, endedAt: after, stopped: true }, false), 'stopped');
+  assert.equal(ca.runState(meta({ stopRequestedAt: t0 }), { code: 0, signal: null, endedAt: after }, false), 'succeeded', 'it finished by itself');
+  assert.equal(ca.runState(meta({ stopRequestedAt: t0 }), { code: 2, signal: null, endedAt: before }, false), 'failed', 'ended before the stop');
+  assert.equal(ca.runState(meta(), { code: null, signal: 'SIGTERM', endedAt: after }, false), 'failed', 'no stop was requested');
+  assert.equal(ca.runState(meta(), { code: null, signal: 'SIGTERM', endedAt: after, timedOut: true }, false), 'timed-out');
+  // a stop that fails leaves no stopRequestedAt behind
+  setServiceManager({ ...noServiceManager(), name: 'systemd', unavailable: null, startTransient: async () => ({ ok: true, stdout: '', stderr: '' }), show: async () => ({ ok: true, stdout: 'ActiveState=active\n', stderr: '' }), stop: async () => ({ ok: false, stdout: '', stderr: 'denied' }) });
+  try {
+    const r = await ca.startCodingAgent({ kind: 'codex', path: linked6, prompt: 'x' }, {});
+    assert.equal(r.ok, true, r.message);
+    const stop = await ca.stopCodingAgent(r.id!);
+    assert.equal(stop.status, 500);
+    assert.equal(JSON.parse(readFileSync(join(runsRoot, r.id!, 'meta.json'), 'utf8')).stopRequestedAt, null);
+  } finally {
+    setServiceManager(noServiceManager());
+  }
+});
+
+test('a % in a worktree path is escaped for systemd (WorkingDirectory and description)', async () => {
+  const started: string[][] = [];
+  setServiceManager({ ...noServiceManager(), name: 'systemd', unavailable: null, startTransient: async (a) => (started.push(a), { ok: true, stdout: '', stderr: '' }), show: async () => ({ ok: true, stdout: 'ActiveState=inactive\n', stderr: '' }) });
+  try {
+    const wt = join(root, 'wt', 'shop-pct');
+    git(mainRepo, 'worktree', 'add', '-b', 'pct-100%', wt);
+    const r = await ca.startCodingAgent({ kind: 'codex', path: wt, prompt: 'x' }, {});
+    assert.equal(r.ok, true, r.message);
+    assert.ok(started[0].includes(`--property=WorkingDirectory=${wt}`), 'no % in this path');
+    assert.ok(started[0].some((a) => a.startsWith('--description=') && a.includes('pct-100%%')), 'the branch name in the description');
+    const r2 = await ca.startCodingAgent({ kind: 'codex', path: linked4, prompt: 'x' }, {});
+    assert.equal(r2.ok, true, r2.message);
+    assert.ok(started[1].includes(`--property=WorkingDirectory=${linked4.replace(/%/g, '%%')}`));
+    assert.ok(linked4.includes('%') && !started[1].includes(`--property=WorkingDirectory=${linked4}`));
+  } finally {
+    setServiceManager(noServiceManager());
+  }
+});
+
+test('output paging stays stable over many events and a file past 5 MB; the summary covers the whole file', async () => {
+  const id = prepare(linked2);
+  ageRun(id);
+  const dir = join(runsRoot, id);
+  const total = 3000;
+  const big = 'é'.repeat(1500); // 3000 bytes of message text per event line: the file passes 5 MB
+  const one = (i: number) => JSON.stringify({ type: 'item.completed', item: { id: `c${i}`, type: 'command_execution', command: `cmd ${i} ${big}`, exit_code: 0, status: 'completed' } });
+  writeFileSync(join(dir, 'events.jsonl'), Array.from({ length: total }, (_, i) => one(i)).join('\n') + '\n');
+  assert.ok(statSync(join(dir, 'events.jsonl')).size > 5 * 1024 * 1024);
+  writeFileSync(join(dir, 'exit.json'), JSON.stringify({ code: 0, signal: null, endedAt: new Date().toISOString() }));
+  let after = 0;
+  const seen: number[] = [];
+  for (let guard = 0; guard < 100; guard++) {
+    const out = await ca.codingAgentOutput(id, { after, limit: 200 });
+    assert.equal(out.summary.commands, total, 'the summary counts every event');
+    for (const l of out.lines) seen.push(l.i);
+    assert.ok(out.next >= after);
+    if (!out.truncated) {
+      assert.equal(out.next, total);
+      break;
+    }
+    after = out.next;
+  }
+  assert.deepEqual(seen, Array.from({ length: total }, (_, i) => i), 'every event once, in order, no gap');
+  assert.equal((await ca.listCodingAgents({ id })).runs[0].commands, total);
+});
+
+test('final and stderr tail are cut in bytes on a character boundary', async () => {
+  const id = prepare(linked2);
+  const dir = join(runsRoot, id);
+  writeFileSync(join(dir, 'last.md'), '한'.repeat(10_000)); // 30 000 bytes
+  writeFileSync(join(dir, 'stderr.log'), 'x' + 'é'.repeat(3000));
+  writeFileSync(join(dir, 'exit.json'), JSON.stringify({ code: 1, signal: null, endedAt: new Date().toISOString() }));
+  const out = await ca.codingAgentOutput(id);
+  assert.equal(out.finalTruncated, true);
+  assert.equal(Buffer.byteLength(out.final!), 19_998, 'whole characters only, at most 20 000 bytes');
+  assert.doesNotMatch(out.final!, /\uFFFD/);
+  assert.ok(Buffer.byteLength(out.stderrTail!) <= 2_000);
+  assert.doesNotMatch(out.stderrTail!, /\uFFFD/);
+});
+
+test('stop is refused in a container, like start', async () => {
+  const { setPlatform, detectPlatform } = await import('../src/core/platform/index.ts');
+  setPlatform(detectPlatform({ PORTBOARD_CONTAINER: '1', PORTBOARD_READ_ONLY: '0' }, 'linux'));
+  try {
+    assert.equal((await ca.stopCodingAgent('ca-0123456789')).status, 403);
+    assert.equal((await ca.startCodingAgent({ kind: 'codex', path: linked, prompt: 'x' }, {})).status, 403);
+  } finally {
+    setPlatform(null);
+  }
 });

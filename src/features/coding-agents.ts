@@ -48,7 +48,7 @@ const startTool: Tool = {
         path: { type: 'string', description: 'Absolute worktree path (as list_worktrees reports it)' },
         prompt: { type: 'string', description: 'The task, up to 100000 characters. It goes to the CLI on stdin and is not logged.' },
         sandbox: { type: 'string', enum: [...SANDBOXES], description: 'Default read-only. workspace-write lets the CLI edit files in the worktree.' },
-        model: { type: 'string', description: "The CLI's own model name (letters, digits, . _ : -)" },
+        model: { type: 'string', description: "The CLI's own model name (letters, digits, . _ : -; starts with a letter or digit)" },
         timeout_minutes: { type: 'integer', minimum: 1, maximum: 240, description: 'Default 30. The run is stopped after this long.' },
       },
       required: ['kind', 'path', 'prompt'],

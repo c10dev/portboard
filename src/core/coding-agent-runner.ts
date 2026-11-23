@@ -32,10 +32,20 @@ interface Exit {
   signal: string | null;
   endedAt: string;
   timedOut?: true;
+  /** got SIGTERM/SIGINT (a stop) and did not time out */
+  stopped?: true;
   launchFailed?: true;
 }
 
 const KILL_AFTER_MS = 10_000;
+
+// Installed before anything else: a stop that arrives while the runner is still starting is not lost, it is applied as
+// soon as the CLI exists. (A signal before this line has no handler yet and ends the process: node's own start-up.)
+let handler: (() => void) | null = null;
+let earlySignal = false;
+const forward = () => (handler ? handler() : (earlySignal = true));
+process.on('SIGTERM', forward);
+process.on('SIGINT', forward);
 
 async function main(runDir: string): Promise<void> {
   // files the CLI writes itself (codex -o last.md) follow the umask: keep them 0600 like the rest of the run folder
@@ -67,19 +77,32 @@ async function main(runDir: string): Promise<void> {
   const override = Number(process.env.PORTBOARD_CODING_AGENT_TIMEOUT_MS);
   const timeoutMs = Number.isInteger(override) && override > 0 ? override : meta.timeoutMinutes * 60_000;
 
-  const child = spawn(bin, argv, { cwd: meta.cwd, env: process.env, stdio: [stdin, out, err] });
+  // detached: the CLI leads its own process group, so a stop reaches the tools it started too
+  const child = spawn(bin, argv, { cwd: meta.cwd, env: process.env, stdio: [stdin, out, err], detached: true });
   for (const fd of [stdin, out, err]) closeSync(fd);
 
   let timedOut = false;
+  let signalled = false;
   let done = false;
   let killTimer: NodeJS.Timeout | undefined;
+  const signalGroup = (sig: NodeJS.Signals) => {
+    try {
+      if (child.pid) process.kill(-child.pid, sig);
+    } catch {
+      child.kill(sig);
+    }
+  };
   const terminate = () => {
     if (done || killTimer) return;
-    child.kill('SIGTERM');
-    killTimer = setTimeout(() => child.kill('SIGKILL'), KILL_AFTER_MS);
+    signalGroup('SIGTERM');
+    killTimer = setTimeout(() => signalGroup('SIGKILL'), KILL_AFTER_MS);
   };
-  process.on('SIGTERM', terminate);
-  process.on('SIGINT', terminate);
+  const onSignal = () => {
+    signalled = true;
+    terminate();
+  };
+  handler = onSignal;
+  if (earlySignal) onSignal();
   const timer = setTimeout(() => {
     timedOut = true;
     terminate();
@@ -100,7 +123,7 @@ async function main(runDir: string): Promise<void> {
         // no final text then
       }
     }
-    await writeExit({ ...e, ...(timedOut ? { timedOut: true as const } : {}) });
+    await writeExit({ ...e, ...(timedOut ? { timedOut: true as const } : signalled ? { stopped: true as const } : {}) });
   };
 
   await new Promise<void>((resolve) => {

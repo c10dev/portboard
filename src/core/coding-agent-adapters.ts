@@ -184,7 +184,7 @@ function codexLines(line: string): string[] {
 export const codexAdapter: Adapter = {
   kind: 'codex',
   bin: 'codex',
-  args: (o) => ['exec', '--json', '--color', 'never', '-s', o.sandbox, '-C', o.cwd, '-o', o.lastMessageFile, ...(o.model ? ['-m', o.model] : []), '-'],
+  args: (o) => ['exec', '--json', '--color', 'never', '-s', o.sandbox, '-C', o.cwd, '-o', o.lastMessageFile, ...(o.model ? [`--model=${o.model}`] : []), '-'],
   parse: codexParse,
 };
 
@@ -243,7 +243,7 @@ export const geminiAdapter: Adapter = {
   kind: 'gemini',
   bin: 'gemini',
   // no cwd flag: the process cwd is the worktree. Non-TTY stdin runs it headless.
-  args: (o) => ['--output-format', 'stream-json', '--approval-mode', o.sandbox === 'workspace-write' ? 'auto_edit' : 'default', ...(o.model ? ['-m', o.model] : [])],
+  args: (o) => ['--output-format', 'stream-json', '--approval-mode', o.sandbox === 'workspace-write' ? 'auto_edit' : 'default', ...(o.model ? [`--model=${o.model}`] : [])],
   parse: geminiParse,
 };
 

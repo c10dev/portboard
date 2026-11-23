@@ -262,7 +262,7 @@ MCP server (`src/features/coding-agents.ts`). They have no HTTP route and no rem
 
 - **What runs.** Only the fixed command of the chosen adapter (`codex exec …` or `gemini …`, `src/core/coding-agent-adapters.ts`),
   by its absolute path found on `PATH` (absolute entries only), inside a worktree Portboard already knows. The caller
-  chooses the kind, the worktree, the prompt, the sandbox mode, a model name (letters, digits and `. _ : -`) and a
+  chooses the kind, the worktree, the prompt, the sandbox mode, a model name (letters, digits and `. _ : -`, starting with a letter or digit, passed as `--model=<name>`) and a
   timeout; nothing else reaches the command line.
 - **The prompt** is written to `prompt.txt` (0600, in the 0700 run folder under the state dir) and given to the CLI on
   stdin. It is never in argv, the unit description or the audit line (the audit keeps the argument names, and `path`),
@@ -272,8 +272,10 @@ MCP server (`src/features/coding-agents.ts`). They have no HTTP route and no rem
   refused in a main checkout.
 - **Limits.** One running run per worktree (409 otherwise), a runtime limit of 1–240 minutes (the runner stops the CLI;
   the unit has a backstop of one minute more), and a read-only or container install refuses to start or stop a run.
-- **Stop.** Only `pb-agent-<id>` units derived from a checked run id (`ca-` and 10 hex digits), and only the pid recorded
-  in Portboard's own `meta.json`, are ever signalled.
+- **Stop.** Only `pb-agent-<id>` units derived from a checked run id (`ca-` and 10 hex digits), and only the runner pid
+  recorded in Portboard's own `meta.json`, are ever signalled, and only while that pid still has the start time recorded
+  with it (a reused pid is a `lost` run, never a target). A start takes a per-worktree lock, so two starts in one
+  worktree cannot both run.
 - **Trust.** The CLI runs as the machine user with that user's own login, so a caller that can start a run can make that
   CLI act in the worktree within its sandbox. That is the same trust as the other write tools of this server.
 
