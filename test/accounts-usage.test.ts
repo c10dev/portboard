@@ -626,6 +626,54 @@ test('observer: a Codex observer keeps at most about 1 MiB of one event, and Cla
   assert.ok((await run('codex')) <= 1024 * 1024 + 16 * 1024);
 });
 
+test('usage codex 8: a 32 MiB line with no newline in small chunks is dropped, the next response.completed is read, and the bytes are unchanged', { timeout: 60_000 }, async () => {
+  await cxAccount();
+  const piece = 'H'.repeat(1400);
+  const head = Buffer.from('data: {"pad":"', 'utf8');
+  const tail = Buffer.from(
+    '"}\n\n' + cxEvent({ type: 'response.completed', response: { usage: { input_tokens: 15, input_tokens_details: { cached_tokens: 2 }, output_tokens: 4 } } }),
+    'utf8',
+  );
+  const body = Buffer.from(piece, 'utf8');
+  const n = Math.ceil((32 * 1024 * 1024) / body.length);
+  const expected = Buffer.concat([head, ...Array.from({ length: n }, () => body), tail]);
+  let i = -1;
+  upstream = () =>
+    new Response(
+      new ReadableStream({
+        pull(c) {
+          i++;
+          if (i === 0) c.enqueue(new Uint8Array(head));
+          else if (i <= n) c.enqueue(new Uint8Array(body));
+          else {
+            c.enqueue(new Uint8Array(tail));
+            c.close();
+          }
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
+  const r = await call(CX_BODY(), '/codex/responses');
+  assert.ok(r.bytes.equals(expected), 'the caller got the upstream bytes');
+  const [line] = await lines(1);
+  assert.deepEqual([line.input, line.output, line.cacheRead, line.cacheWrite], [15, 4, 2, null]);
+});
+
+test('usage codex 9: a large response.output_item.done event does not change the counts', async () => {
+  await cxAccount();
+  const bytes = Buffer.from(
+    cxEvent({ type: 'response.output_item.done', item: { type: 'message', text: 'I'.repeat(200 * 1024), usage: { input_tokens: 999, output_tokens: 999 }, note: 'response.completed' } }) +
+      cxEvent({ type: 'response.completed', response: { usage: { input_tokens: 8, output_tokens: 3 } } }) +
+      cxEvent({ type: 'response.output_item.done', item: { text: 'J'.repeat(100 * 1024), usage: { input_tokens: 555, output_tokens: 555 } } }),
+    'utf8',
+  );
+  upstream = () => cutSse(bytes, [50_000, 220_000]);
+  const r = await call(CX_BODY(), '/codex/responses');
+  assert.ok(r.bytes.equals(bytes));
+  const [line] = await lines(1);
+  assert.deepEqual([line.input, line.output, line.cacheRead, line.cacheWrite], [8, 3, null, null]);
+});
+
 // ---- review fixes ----
 
 const enc = new TextEncoder();

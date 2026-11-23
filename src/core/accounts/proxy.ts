@@ -61,9 +61,9 @@ const PATH_CLIP = 80;
 const SHOWN_EVENTS = 20;
 /** The usage log reads at most this much of a JSON answer; a larger one is logged without token counts */
 const MAX_OBSERVE_BYTES = 1024 * 1024;
-/** The usage log's SSE buffer: a line (or an event) longer than this is dropped */
 /** `close` waits this long for the usage lines of requests that were cut */
 const CLOSE_WAIT_MS = 2000;
+/** The usage log's SSE buffer: a line (or an event) longer than this many characters (`string.length`, UTF-16 units, not bytes) is dropped */
 const MAX_SSE_BUFFER = 64 * 1024;
 /** Codex's `response.completed` holds the whole Response (every output item), so its SSE event can pass 64 KiB: Codex gets the JSON limit */
 const MAX_CODEX_SSE_BUFFER = MAX_OBSERVE_BYTES;
@@ -144,6 +144,8 @@ export class UsageObserver extends Transform {
   private data: string[] = [];
   private dataSize = 0;
   private skipping = false;
+  /** true while the rest of a line that passed the cap is being dropped */
+  private discarding = false;
 
   private readonly sse: boolean;
   private readonly countOnly: boolean;
@@ -179,13 +181,30 @@ export class UsageObserver extends Transform {
       this.chunks.push(chunk);
       return;
     }
-    this.pending += this.decoder.write(chunk);
-    let nl: number;
-    while ((nl = this.pending.indexOf('\n')) >= 0) {
-      this.line(this.pending.slice(0, nl).replace(/\r$/, ''));
-      this.pending = this.pending.slice(nl + 1);
+    // `pending` never holds a newline: only the newly decoded text is searched, so a long line costs O(n) in all
+    const text = this.decoder.write(chunk);
+    let from = 0;
+    while (from < text.length) {
+      const nl = text.indexOf('\n', from);
+      if (this.discarding) {
+        // the rest of an over-long line is dropped up to its newline
+        if (nl < 0) return;
+        this.discarding = false;
+        from = nl + 1;
+        continue;
+      }
+      if (nl < 0) {
+        this.pending += text.slice(from);
+        if (this.pending.length > this.maxBuffer) {
+          this.pending = '';
+          this.discarding = true;
+        }
+        return;
+      }
+      this.line((this.pending + text.slice(from, nl)).replace(/\r$/, ''));
+      this.pending = '';
+      from = nl + 1;
     }
-    if (this.pending.length > this.maxBuffer) this.pending = '';
   }
 
   private line(l: string): void {
@@ -214,6 +233,8 @@ export class UsageObserver extends Transform {
     const text = this.data.join('\n');
     this.data = [];
     this.dataSize = 0;
+    // Codex: a plain substring check first, so an event that cannot carry the usage is never parsed
+    if (this.provider === 'codex' && !text.includes('"response.completed"') && !text.includes('"response.incomplete"')) return;
     let ev: Record<string, unknown> | null;
     try {
       ev = objectOf(JSON.parse(text));
@@ -241,7 +262,7 @@ export class UsageObserver extends Transform {
     }
   }
 
-  /** The characters held for a half-read line or event (tests: it stays within MAX_SSE_BUFFER plus one line) */
+  /** The characters held for a half-read line or event (tests: it stays within the provider's cap, MAX_SSE_BUFFER or MAX_CODEX_SSE_BUFFER, plus one line) */
   heldSize(): number {
     return this.pending.length + this.dataSize;
   }
