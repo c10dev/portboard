@@ -177,10 +177,10 @@ test('codex parser caps the changed files at 50 and the error at 500 characters'
 
 // ---- 3. gemini (fake stream) ----
 
-test('gemini args (fake CLI, from its docs): approval mode follows the sandbox, prompt on stdin, no yolo', () => {
+test('gemini args (fake CLI, from its docs): approval mode is always default, prompt on stdin, no yolo', () => {
   const g = ca.geminiAdapter;
   assert.deepEqual(g.args({ cwd: '/w', sandbox: 'read-only', lastMessageFile: '/l' }), ['--output-format', 'stream-json', '--approval-mode', 'default']);
-  assert.deepEqual(g.args({ cwd: '/w', sandbox: 'workspace-write', model: 'gem-1', lastMessageFile: '/l' }), ['--output-format', 'stream-json', '--approval-mode', 'auto_edit', '--model=gem-1']);
+  assert.deepEqual(g.args({ cwd: '/w', sandbox: 'workspace-write', model: 'gem-1', lastMessageFile: '/l' }), ['--output-format', 'stream-json', '--approval-mode', 'default', '--model=gem-1'], 'always default: gemini never gets write access');
 });
 
 test('gemini parser on a synthetic stream (fake): deltas append, tool_use counts, result sets final text and usage', () => {
@@ -585,7 +585,7 @@ test('process start time: Linux field 22 of /proc/<pid>/stat is read from the la
   assert.equal(await ca.processStart(2 ** 22 + 12345), null);
 });
 
-test('stop is written only after the signal worked, and "stopped" needs the run to end because of it', async () => {
+test('the stop request is written before the signal, and "stopped" needs the run to end because of it', async () => {
   const meta = (extra: object = {}) => ({ id: 'ca-0123456789', kind: 'codex', cwd: '/w', owner: 'a@b', sandbox: 'read-only', model: null, promptChars: 1, startedAt: '2026-01-01T00:00:00.000Z', timeoutMinutes: 1, launcher: 'process', unit: null, pid: null, stopRequestedAt: null, session: null, ...extra }) as import('../src/core/coding-agents.ts').RunMeta;
   const t0 = '2026-01-01T00:10:00.000Z';
   const before = '2026-01-01T00:09:00.000Z';
@@ -596,6 +596,7 @@ test('stop is written only after the signal worked, and "stopped" needs the run 
   assert.equal(ca.runState(meta({ stopRequestedAt: t0 }), { code: 2, signal: null, endedAt: before }, false), 'failed', 'ended before the stop');
   assert.equal(ca.runState(meta(), { code: null, signal: 'SIGTERM', endedAt: after }, false), 'failed', 'no stop was requested');
   assert.equal(ca.runState(meta(), { code: null, signal: 'SIGTERM', endedAt: after, timedOut: true }, false), 'timed-out');
+  assert.equal(ca.runState(meta({ stopRequestedAt: t0 }), { code: null, signal: 'SIGTERM', endedAt: after, timedOut: true }, false), 'timed-out', 'it timed out after a stop that failed');
   // a stop that fails keeps stopRequestedAt: the state then follows the runner's exit evidence
   setServiceManager({ ...noServiceManager(), name: 'systemd', unavailable: null, startTransient: async () => ({ ok: true, stdout: '', stderr: '' }), show: async () => ({ ok: true, stdout: 'ActiveState=active\n', stderr: '' }), stop: async () => ({ ok: false, stdout: '', stderr: 'denied' }) });
   try {

@@ -238,8 +238,8 @@ async function unitActive(unit: string): Promise<boolean | null> {
 }
 
 /**
- * With exit.json: failed for a launch failure; stopped when a stop was requested before the runner ended and the run
- * ended because of it (signal, a non-zero code, or the runner's own `stopped` mark); timed-out; else succeeded (code 0)
+ * With exit.json: failed for a launch failure; timed-out; stopped when a stop was requested before the runner ended and the run
+ * ended because of it (signal, a non-zero code, or the runner's own `stopped` mark); else succeeded (code 0)
  * or failed. Without it: running while the unit is active / the runner is alive (same pid and start time), else lost
  * (the runner died without writing exit.json), except that a run under 30 s old that was not seen alive yet is still
  * starting and counts as running. `active` null (systemctl failed, or a live pid whose start time can't be read) keeps running: the caller marks it stateUnknown.
@@ -247,8 +247,8 @@ async function unitActive(unit: string): Promise<boolean | null> {
 export function runState(meta: RunMeta, exit: RunExit | null, active: boolean | null, now: number = Date.now()): RunState {
   if (exit) {
     if (exit.launchFailed) return 'failed';
-    if (meta.stopRequestedAt && exit.endedAt >= meta.stopRequestedAt && (exit.stopped === true || exit.signal !== null || exit.code !== 0)) return 'stopped';
     if (exit.timedOut) return 'timed-out';
+    if (meta.stopRequestedAt && exit.endedAt >= meta.stopRequestedAt && (exit.stopped === true || exit.signal !== null || exit.code !== 0)) return 'stopped';
     return exit.code === 0 ? 'succeeded' : 'failed';
   }
   if (active === true || active === null) return 'running';
