@@ -117,4 +117,15 @@ if (process.env.PORTBOARD_MCP_MODE !== 'local') {
     }
   }
 }
-await import(pathToFileURL(join(home, 'src', ...(mode === 'thin' ? ['mcp', 'thin.mjs'] : ['mcp.ts']))).href);
+const localEntry = pathToFileURL(join(home, 'src', 'mcp.ts')).href;
+if (mode === 'thin') {
+  // A checkout without src/mcp/thin.mjs (an older one) or one that fails to load it: local mode, not a dead server.
+  const thin = join(home, 'src', 'mcp', 'thin.mjs');
+  try {
+    if (!existsSync(thin)) throw new Error('not found');
+    await import(pathToFileURL(thin).href);
+  } catch (err) {
+    process.stderr.write(`portboard plugin: cannot start ${thin} (${err instanceof Error ? err.message : String(err)}); running the server in this process\n`);
+    await import(localEntry);
+  }
+} else await import(localEntry);

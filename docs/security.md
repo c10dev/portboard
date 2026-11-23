@@ -35,7 +35,7 @@ route that isn't declared a write, and the checks run in this order, before the 
 | A tagged device through serve | `serve`, no login header | no |
 | Funnel (public), if it ever pointed at 8790 | `serve` with `Tailscale-Funnel-Request` | no |
 | A tailnet device on `http://<host or 100.x IP>:8790` | `direct`: any non-loopback socket | no (read-only), whatever `Tailscale-*` headers it sends |
-| The stdio MCP server (`src/mcp.ts`) | not HTTP: a child process of a local Claude session | yes (owner); recorded as `mcp`. Its `name_device` also acknowledges the 새 기기 mark with a loopback HTTP call to `POST /api/known-devices/ack` (recorded as `loopback`) |
+| The stdio MCP server (`src/mcp.ts`) | not HTTP: a child process of a local Claude session. With the plugin in thin mode it is a loopback HTTP client of the dashboard: see [MCP through the dashboard](#mcp-through-the-dashboard) | yes (owner); recorded as `mcp`. Its `name_device` also acknowledges the 새 기기 mark with a loopback HTTP call to `POST /api/known-devices/ack` (recorded as `loopback`) |
 
 This is the default, **tailscale mode**. Token mode adds the owner token: [below](#token-mode-c10devportboard12).
 
@@ -165,7 +165,7 @@ read. Setup: [setup.md](setup.md#without-tailscale).
 | `serve`, another login, a tagged node, another local proxy | no | the owner (`token`) | no |
 | **Funnel** (`Tailscale-Funnel-Request`) | no | **no** | no |
 | Direct: LAN, tailnet IP, anything not loopback | no | the owner (`token`, with the address) | no |
-| The stdio MCP server | the owner (`mcp`), unchanged; but `name_device`'s 새 기기 acknowledgement is a tokenless loopback call to `POST /api/known-devices/ack`, refused like any other (also in read-only mode), so `acknowledged` is null | — | — |
+| The stdio MCP server (in thin mode: [MCP through the dashboard](#mcp-through-the-dashboard)) | the owner (`mcp`), unchanged; but `name_device`'s 새 기기 acknowledgement is a tokenless loopback call to `POST /api/known-devices/ack`, refused like any other (also in read-only mode), so `acknowledged` is null | — | — |
 
 Decisions behind the table (pure, `classifyToken` in `src/core/access.ts`; every cell is in `test/access-token.test.ts`):
 

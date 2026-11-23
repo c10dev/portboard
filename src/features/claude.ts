@@ -163,7 +163,8 @@ export const claudeFeature: FeatureModule = {
       path: '/api/claude/port-advice',
       async handler({ url }, ctx) {
         // `command=<bash command>`: the daemon parses it (parsePortCommands), so no hook carries a second copy of the
-        // rules. Never logged, audited or echoed. The cap keeps the query string under Node's header limit.
+        // rules. Never logged, audited or echoed. 4096 characters is a cap on the command, not on the query: a long non-ASCII
+        // command encodes to more than 16 KB and Node can refuse it with 431 before this handler runs.
         let u = url;
         const command = url.searchParams.get('command');
         if (command !== null) {

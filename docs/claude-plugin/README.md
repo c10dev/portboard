@@ -134,7 +134,7 @@ per cwd), so a loop of requests can't make it spawn `ss` or `git` per call (L1).
 
 ## `GET /api/claude/port-advice`
 
-`?port=N&cmd=start|kill&cwd=<abs dir>[&tool=<what matched>][&session=<session id>]`, or `?command=<bash command>&cwd=…` in place of `port`/`cmd`/`tool` (the dashboard parses the command with `parsePortCommands`; up to 4096 characters, else or with no port in it `{text: null}`; the command is never logged or kept), read-only, in
+`?port=N&cmd=start|kill&cwd=<abs dir>[&tool=<what matched>][&session=<session id>]`, or `?command=<bash command>&cwd=…` in place of `port`/`cmd`/`tool` (the dashboard parses the command with `parsePortCommands`; up to 4096 characters, else or with no port in it `{text: null}`; the command is never logged or kept; a long non-ASCII command can get `431` from Node before the handler, so treat any non-200 as no advice), read-only, in
 [`src/features/claude.ts`](../../src/features/claude.ts). It answers from the 2 s snapshot cache plus one `git rev-parse`
 for `cwd` (run with `core.fsmonitor=false`), normally in 10–70 ms:
 

@@ -169,4 +169,4 @@ A write tool called this way is one audit line with `source: "mcp"`, as for the 
 
 ### What this does not cover
 
-`GET /api/claude/port-advice?command=` takes a Bash command of at most 4096 characters. A longer one answers `200 {text: null}`. The hook (`claude-plugin/hooks/port-nudge.ts`) still parses up to 20000 characters itself, so it still reads commands of 4097 to 20000 characters. A client that sends the command to the dashboard instead gives no nudge for those. That is a known loss.
+`GET /api/claude/port-advice?command=` takes a Bash command of at most 4096 characters. A longer one answers `200 {text: null}`. The hook (`claude-plugin/hooks/port-nudge.ts`) still parses up to 20000 characters itself, so it still reads commands of 4097 to 20000 characters. A client that sends the command to the dashboard instead gives no nudge for those. That is a known loss. A long command made of non-ASCII characters can be refused by Node with `431` before the handler runs (the cap counts characters, not the encoded query), so a caller must treat any non-200 as "no advice".

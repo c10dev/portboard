@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { createServer as createHttp, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createNet } from 'node:net';
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -224,6 +224,9 @@ async function fake(handler: (req: IncomingMessage, res: ServerResponse, body: s
     let body = '';
     req.on('data', (c) => (body += c));
     req.on('end', () => {
+      const route = (req.url ?? '').split('?')[0];
+      // Only these two are the dashboard's: anything else (a title probe's GET /) is a 404 and is not recorded.
+      if (!((req.method === 'POST' && route === '/api/mcp') || (req.method === 'GET' && route === '/api/mcp/ping'))) return void json(res, 404, { error: 'not found' });
       // Count only what the plugin sends. A Portboard on the host probes every new loopback listener with GET /.
       const path = (req.url ?? '').split('?')[0];
       if (req.method === 'POST' && path === '/api/mcp') {
@@ -389,6 +392,22 @@ test('3 PORTBOARD_MCP_MODE=local does not ask the daemon', async () => {
   await pickedLocal(f.url, { PORTBOARD_MCP_MODE: 'local' });
   assert.equal(f.pings, 0);
   await f.close();
+});
+
+test('3 a checkout without src/mcp/thin.mjs falls back to the in-process server, with one stderr line', async () => {
+  // a checkout whose src/ has mcp.ts (a link: its imports resolve in the real tree) but no mcp/thin.mjs
+  const fakeHome = join(DIR, 'old-checkout');
+  await mkdir(join(fakeHome, 'src'), { recursive: true });
+  await symlink(join(ROOT, 'package.json'), join(fakeHome, 'package.json'));
+  await symlink(join(ROOT, 'src', 'mcp.ts'), join(fakeHome, 'src', 'mcp.ts'));
+  const f = await okDaemon(() => null);
+  const s = open({ url: f.url, extra: { PORTBOARD_HOME: fakeHome }, record: true });
+  const r = await s.call(1, 'tools/list');
+  assert.ok(r.result.tools.length > 30);
+  assert.match(s.stderr, /cannot start .*thin\.mjs/);
+  assert.equal(f.posts.length, 0, 'the daemon got no request');
+  assert.ok((await s.loaded()).some((u) => u.endsWith('/src/mcp.ts')));
+  assert.equal(await s.close(), 0);
 });
 
 test('3 token mode with the token required on loopback, and a read-only install: ping is 403 and bin/mcp.mjs picks src/mcp.ts', async () => {
