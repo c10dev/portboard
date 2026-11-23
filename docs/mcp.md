@@ -153,7 +153,7 @@ Thin mode, during a session:
 
 - A request that cannot connect (connection refused, or no connection within 2 s) is sent once more after 1 s. If that fails too, the session switches to local for good and answers that request in its own process. This keeps tools working while the dashboard restarts for a deploy.
 - A session that has switched stays local until it ends. It does not return to thin mode when the dashboard is back. A restart that takes longer than the 1 s retry window therefore leaves every session that called a tool during it at the local size.
-- A request that was already sent is never sent again, and the mode does not change: a write tool may have run (`restart_service` can restart the dashboard itself). A dropped connection, a `5xx`, a `403`, `404` or `405` in mid-session, or no answer in 10 minutes becomes the JSON-RPC error `-32603` `Portboard dashboard request failed: <status or error>` for that request id. A notification that fails is dropped.
+- A request that was already sent is never sent again, and the mode does not change: a write tool may have run (`restart_service` can restart the dashboard itself). A dropped connection, a `5xx`, a `403`, `404` or `405` in mid-session, or no answer in 10 minutes becomes the JSON-RPC error `-32603` `Portboard dashboard request failed: <tail>` for that request id. The tail is the status code (`502`), or one of three words: `lost` (the connection ended after the request was sent), `timeout` (no answer in 10 minutes), `bad reply` (a `200` whose body is not JSON). A notification that fails is dropped. The one exception to "the mode does not change" is `409 {error: "local only tool"}`: nothing ran, so the session switches to local and answers that request in its own process.
 - A line that is not JSON gets `-32700` and is not sent. Empty lines are skipped.
 - When stdin closes, the client finishes the requests in flight and exits with code 0.
 
@@ -166,6 +166,10 @@ The tools run inside the dashboard process, not in the session's. So the dev ser
 The coding-agent tools (`start_coding_agent`, `list_coding_agents`, `coding_agent_output`, `stop_coding_agent`) do not run in the dashboard: it answers a call of one of them with `409 {error: "local only tool"}`, and the thin client then answers it in its own process. That moves the session to local mode for the rest of the session (about 115 MB), because the tools need the session's own `PATH` to find `codex` or `gemini`.
 
 `list_accounts` reads the dashboard's live proxy state and the dashboard's login folders (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`), the same as `GET /api/accounts`.
+
+### The Go binary
+
+When `claude-plugin/bin/portboard-shim` exists (`npm run build:shim`) and works, `bin/run.sh` starts `portboard-shim mcp` instead of `bin/mcp.mjs`. It does the same work as the thin client above in a much smaller process, and the replies are the same bytes. `PORTBOARD_SHIM=0` goes back to Node. The details and the differences are in [claude-plugin/README.md](claude-plugin/README.md#the-go-binary).
 
 ### `POST /api/mcp` and `GET /api/mcp/ping`
 

@@ -1,0 +1,572 @@
+{
+ "about": "Contract cases for the PreToolUse nudge: claude-plugin/hooks/port-nudge.ts (Node, run as a CLI) and shim/ (Go, `nudge`) must both give each expected result. Read by test/shim-contract.test.ts and shim/main_test.go. 'input' is the hook JSON (a command may be {prefix, padTo, pad}: the prefix padded to padTo bytes); 'stdin' is the raw text instead ({repeat, times} for a long one). 'daemon' is the fake dashboard (the same body for every request; delayMs, refuse). 'expect.context' is the additionalContext printed (null: nothing on stdout); stdout, when printed, is the hookSpecificOutput JSON and a newline, byte for byte. Exit code 0 and an empty stderr are checked in every case. cwd and session are the query values the daemon got (checked when the key is present). 'go' inside 'expect' overrides a value for the Go side; a case with 'split' is one of the three accepted differences (spec: Node and Go may differ only there). The Go side also checks that the query's 'command' equals the command when 'go.command' is given. A case sets PORTBOARD_HOOK_TIMEOUT_MS through 'env'; the default here is 10000.",
+ "cases": [
+  {
+   "name": "a command that kills by port: the context is printed as one hook line",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    },
+    "cwd": "/w/app",
+    "session_id": "sess-12"
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": "[portboard] port 3000 is held by pid 1 (fixture text)",
+    "requests": 1,
+    "cwd": "/w/app",
+    "session": "sess-12"
+   }
+  },
+  {
+   "name": "a text without the [portboard] marker prints nothing",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    }
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "no marker"
+    }
+   },
+   "expect": {
+    "context": null,
+    "requests": 1
+   }
+  },
+  {
+   "name": "text null prints nothing",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    }
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": null
+    }
+   },
+   "expect": {
+    "context": null,
+    "requests": 1
+   }
+  },
+  {
+   "name": "a body that is an array prints nothing",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    }
+   },
+   "daemon": {
+    "status": 200,
+    "body": []
+   },
+   "expect": {
+    "context": null,
+    "requests": 1
+   }
+  },
+  {
+   "name": "a 201 with the text counts as ok",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    }
+   },
+   "daemon": {
+    "status": 201,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": "[portboard] port 3000 is held by pid 1 (fixture text)",
+    "requests": 1
+   }
+  },
+  {
+   "name": "a 204 prints nothing",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    }
+   },
+   "daemon": {
+    "status": 204
+   },
+   "expect": {
+    "context": null,
+    "requests": 1
+   }
+  },
+  {
+   "name": "404 prints nothing",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    }
+   },
+   "daemon": {
+    "status": 404,
+    "body": {
+     "error": "not found"
+    }
+   },
+   "expect": {
+    "context": null,
+    "requests": 1
+   }
+  },
+  {
+   "name": "500 prints nothing",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    }
+   },
+   "daemon": {
+    "status": 500
+   },
+   "expect": {
+    "context": null,
+    "requests": 1
+   }
+  },
+  {
+   "name": "connection refused prints nothing",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    }
+   },
+   "daemon": {
+    "refuse": true
+   },
+   "expect": {
+    "context": null,
+    "requests": 0
+   }
+  },
+  {
+   "name": "an answer slower than the time limit prints nothing",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    }
+   },
+   "env": {
+    "PORTBOARD_HOOK_TIMEOUT_MS": "150"
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    },
+    "delayMs": 2000
+   },
+   "expect": {
+    "context": null,
+    "requests": 1
+   }
+  },
+  {
+   "name": "a tool that is not Bash prints nothing and asks nothing",
+   "input": {
+    "tool_name": "Read",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    }
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": null,
+    "requests": 0
+   }
+  },
+  {
+   "name": "a command that is not a string prints nothing and asks nothing",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": 12345
+    }
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": null,
+    "requests": 0
+   }
+  },
+  {
+   "name": "stdin that is not JSON prints nothing",
+   "stdin": "not json",
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": null,
+    "requests": 0
+   }
+  },
+  {
+   "name": "empty stdin prints nothing",
+   "stdin": "",
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": null,
+    "requests": 0
+   }
+  },
+  {
+   "name": "stdin over 1 MB prints nothing",
+   "stdin": {
+    "repeat": " ",
+    "times": 1048577
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": null,
+    "requests": 0
+   }
+  },
+  {
+   "name": "off: PORTBOARD_NUDGE=0",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    }
+   },
+   "env": {
+    "PORTBOARD_NUDGE": "0"
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": null,
+    "requests": 0
+   }
+  },
+  {
+   "name": "off: the plugin option port_nudge is false",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    }
+   },
+   "env": {
+    "CLAUDE_PLUGIN_OPTION_PORT_NUDGE": "false"
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": null,
+    "requests": 0
+   }
+  },
+  {
+   "name": "off: the plugin option port_nudge is OFF",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    }
+   },
+   "env": {
+    "CLAUDE_PLUGIN_OPTION_PORT_NUDGE": "OFF"
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": null,
+    "requests": 0
+   }
+  },
+  {
+   "name": "off: the plugin option port_nudge is No",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    }
+   },
+   "env": {
+    "CLAUDE_PLUGIN_OPTION_PORT_NUDGE": "No"
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": null,
+    "requests": 0
+   }
+  },
+  {
+   "name": "off: the plugin option port_nudge is 0",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    }
+   },
+   "env": {
+    "CLAUDE_PLUGIN_OPTION_PORT_NUDGE": "0"
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": null,
+    "requests": 0
+   }
+  },
+  {
+   "name": "on: the plugin option port_nudge is true",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    }
+   },
+   "env": {
+    "CLAUDE_PLUGIN_OPTION_PORT_NUDGE": "true"
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": "[portboard] port 3000 is held by pid 1 (fixture text)",
+    "requests": 1
+   }
+  },
+  {
+   "name": "a relative cwd and a malformed session id are left out of the query",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    },
+    "cwd": "relative/dir",
+    "session_id": "bad session!"
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": "[portboard] port 3000 is held by pid 1 (fixture text)",
+    "requests": 1,
+    "cwd": null,
+    "session": null
+   }
+  },
+  {
+   "name": "an absolute cwd and a session id of letters, digits and dashes are sent",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    },
+    "cwd": "/home/dev/proj one",
+    "session_id": "abc-DEF-0123"
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": "[portboard] port 3000 is held by pid 1 (fixture text)",
+    "requests": 1,
+    "cwd": "/home/dev/proj one",
+    "session": "abc-DEF-0123"
+   }
+  },
+  {
+   "name": "a PORTBOARD_URL that is not http or https prints nothing and asks nothing",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill $(lsof -t -i:3000)"
+    }
+   },
+   "urlScheme": "ftp",
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": null,
+    "requests": 0
+   }
+  },
+  {
+   "name": "accepted split (a): a command the Node hook's cheap filter drops (ls) is sent by Go",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "ls"
+    }
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": null
+    }
+   },
+   "expect": {
+    "context": null,
+    "requests": 0,
+    "go": {
+     "requests": 1,
+     "command": "ls"
+    }
+   },
+   "split": "(a) Node stops at its MAYBE filter before asking; Go asks for every command"
+  },
+  {
+   "name": "accepted split (b): a command that passes the filter but names no port (kill 12345) is sent by Go",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "kill 12345"
+    }
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": null
+    }
+   },
+   "expect": {
+    "context": null,
+    "requests": 0,
+    "go": {
+     "requests": 1,
+     "command": "kill 12345"
+    }
+   },
+   "split": "(b) Node parses the command itself and finds no port; Go leaves parsing to the dashboard"
+  },
+  {
+   "name": "accepted split (c): a command over 4096 bytes is asked by Node and not by Go",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": {
+      "prefix": "vite --port 5173 # ",
+      "padTo": 4097,
+      "pad": "a"
+     }
+    }
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": "[portboard] port 3000 is held by pid 1 (fixture text)",
+    "requests": 1,
+    "go": {
+     "context": null,
+     "requests": 0
+    }
+   },
+   "split": "(c) Node has no size limit; Go keeps the query under Node's header limit by not asking"
+  },
+  {
+   "name": "a command of exactly 4096 bytes is asked by both",
+   "input": {
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": {
+      "prefix": "vite --port 5173 # ",
+      "padTo": 4096,
+      "pad": "a"
+     }
+    }
+   },
+   "daemon": {
+    "status": 200,
+    "body": {
+     "text": "[portboard] port 3000 is held by pid 1 (fixture text)"
+    }
+   },
+   "expect": {
+    "context": "[portboard] port 3000 is held by pid 1 (fixture text)",
+    "requests": 1
+   }
+  }
+ ]
+}

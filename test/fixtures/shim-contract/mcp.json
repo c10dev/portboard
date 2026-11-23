@@ -1,0 +1,601 @@
+{
+ "about": "Contract cases for the plugin's MCP process: claude-plugin/bin/mcp.mjs (Node) and shim/ (Go) must both give each expected result. Read by test/shim-contract.test.ts and shim/main_test.go. A line of 'stdin' is sent as is; {waitLines: n} waits until n lines were printed. stdout lines are compared as a set (concurrent requests answer in any order). 'node' and 'go' inside 'expect' override a value for one side. Daemon replies: reply 'echo' answers {result: {echo: method}} with the request's id; whenMethod picks the entry by the request's method; hangup closes the connection after the request was read; closeAfterPing closes the listener when the ping is answered; refuse means nothing listens. String ids and integer ids only (a Go re-encode escapes U+2028 and U+2029, JSON.stringify does not).",
+ "cases": [
+  {
+   "name": "relay: initialize, tools/list and tools/call, string and integer ids",
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "posts": [
+     {
+      "status": 200,
+      "reply": "echo"
+     }
+    ]
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}",
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}",
+    "{\"jsonrpc\":\"2.0\",\"id\":\"abc\",\"method\":\"tools/call\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"echo\":\"initialize\"}}",
+     "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"echo\":\"tools/list\"}}",
+     "{\"jsonrpc\":\"2.0\",\"id\":\"abc\",\"result\":{\"echo\":\"tools/call\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 3,
+    "bodies": [
+     "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}",
+     "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}",
+     "{\"jsonrpc\":\"2.0\",\"id\":\"abc\",\"method\":\"tools/call\"}"
+    ],
+    "session": null,
+    "pid": null
+   }
+  },
+  {
+   "name": "a notification is sent and a 204 prints nothing",
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "posts": [
+     {
+      "status": 204
+     }
+    ]
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}"
+   ],
+   "expect": {
+    "stdout": [],
+    "exit": 0,
+    "pings": 1,
+    "posts": 1
+   }
+  },
+  {
+   "name": "a message that is not an object is a notification: sent, and a 204 prints nothing",
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "posts": [
+     {
+      "status": 204
+     }
+    ]
+   },
+   "stdin": [
+    "123",
+    "[]",
+    "null"
+   ],
+   "expect": {
+    "stdout": [],
+    "exit": 0,
+    "pings": 1,
+    "posts": 3
+   }
+  },
+  {
+   "name": "empty lines are skipped, not sent",
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "posts": [
+     {
+      "status": 200,
+      "reply": "echo"
+     }
+    ]
+   },
+   "stdin": [
+    "",
+    "   ",
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"echo\":\"ping\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 1
+   }
+  },
+  {
+   "name": "a line that is not JSON gets -32700 and is not sent",
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "posts": [
+     {
+      "status": 200,
+      "reply": "echo"
+     }
+    ]
+   },
+   "stdin": [
+    "not json",
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,\"message\":\"parse error\"}}",
+     "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"echo\":\"ping\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 1
+   }
+  },
+  {
+   "name": "ping 404: the session is answered by the in-process server",
+   "daemon": {
+    "ping": {
+     "status": 404,
+     "body": "{\"error\":\"x\"}"
+    }
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"nope\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":7,\"error\":{\"code\":-32601,\"message\":\"method not found: nope\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 0
+   }
+  },
+  {
+   "name": "ping 403: the session is answered by the in-process server",
+   "daemon": {
+    "ping": {
+     "status": 403,
+     "body": "{\"error\":\"x\"}"
+    }
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"nope\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":7,\"error\":{\"code\":-32601,\"message\":\"method not found: nope\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 0
+   }
+  },
+  {
+   "name": "ping 200 without ok: true: in-process server",
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":false}"
+    }
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"nope\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":7,\"error\":{\"code\":-32601,\"message\":\"method not found: nope\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 0
+   }
+  },
+  {
+   "name": "ping with a body that is not JSON: in-process server",
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "not json"
+    }
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"nope\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":7,\"error\":{\"code\":-32601,\"message\":\"method not found: nope\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 0
+   }
+  },
+  {
+   "name": "connection refused at the ping: in-process server",
+   "daemon": {
+    "refuse": true
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"nope\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":7,\"error\":{\"code\":-32601,\"message\":\"method not found: nope\"}}"
+    ],
+    "exit": 0,
+    "pings": 0,
+    "posts": 0
+   }
+  },
+  {
+   "name": "PORTBOARD_MCP_MODE=local does not ask the dashboard",
+   "env": {
+    "PORTBOARD_MCP_MODE": "local"
+   },
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "posts": [
+     {
+      "status": 200,
+      "reply": "echo"
+     }
+    ]
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"nope\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":7,\"error\":{\"code\":-32601,\"message\":\"method not found: nope\"}}"
+    ],
+    "exit": 0,
+    "pings": 0,
+    "posts": 0
+   }
+  },
+  {
+   "name": "connection refused after the ping: one more try after 1 s, then the in-process server, which keeps the session",
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "closeAfterPing": true
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"nope\"}",
+    {
+     "waitLines": 1
+    },
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"nope\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32601,\"message\":\"method not found: nope\"}}",
+     "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32601,\"message\":\"method not found: nope\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 0
+   }
+  },
+  {
+   "name": "409 local only tool: nothing ran, the in-process server answers and keeps the session",
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "posts": [
+     {
+      "status": 409,
+      "body": "{\"error\":\"local only tool\"}"
+     }
+    ]
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"nope\"}",
+    {
+     "waitLines": 1
+    },
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"nope\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32601,\"message\":\"method not found: nope\"}}",
+     "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32601,\"message\":\"method not found: nope\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 1
+   }
+  },
+  {
+   "name": "the daemon hangs up after the request was sent: one request, -32603 lost, and no retry",
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "posts": [
+     {
+      "hangup": true
+     }
+    ]
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":5,\"error\":{\"code\":-32603,\"message\":\"Portboard dashboard request failed: lost\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 1
+   }
+  },
+  {
+   "name": "a request with id null gets the failure with id null",
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "posts": [
+     {
+      "hangup": true
+     }
+    ]
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":null,\"method\":\"x\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32603,\"message\":\"Portboard dashboard request failed: lost\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 1
+   }
+  },
+  {
+   "name": "a notification that fails is dropped",
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "posts": [
+     {
+      "hangup": true
+     }
+    ]
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"method\":\"x\"}"
+   ],
+   "expect": {
+    "stdout": [],
+    "exit": 0,
+    "pings": 1,
+    "posts": 1
+   }
+  },
+  {
+   "name": "403, 404, 405, 500 and 502 in mid-session: -32603 with the status, and no retry",
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "posts": [
+     {
+      "whenMethod": "m403",
+      "status": 403,
+      "body": "{\"error\":\"owner only\"}"
+     },
+     {
+      "whenMethod": "m404",
+      "status": 404,
+      "body": "{\"error\":\"not found\"}"
+     },
+     {
+      "whenMethod": "m405",
+      "status": 405,
+      "body": ""
+     },
+     {
+      "whenMethod": "m500",
+      "status": 500,
+      "body": "oops"
+     },
+     {
+      "whenMethod": "m502",
+      "status": 502,
+      "body": "<html>bad gateway</html>"
+     }
+    ]
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"m403\"}",
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"m404\"}",
+    "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"m405\"}",
+    "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"m500\"}",
+    "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"m502\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"Portboard dashboard request failed: 403\"}}",
+     "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32603,\"message\":\"Portboard dashboard request failed: 404\"}}",
+     "{\"jsonrpc\":\"2.0\",\"id\":3,\"error\":{\"code\":-32603,\"message\":\"Portboard dashboard request failed: 405\"}}",
+     "{\"jsonrpc\":\"2.0\",\"id\":4,\"error\":{\"code\":-32603,\"message\":\"Portboard dashboard request failed: 500\"}}",
+     "{\"jsonrpc\":\"2.0\",\"id\":5,\"error\":{\"code\":-32603,\"message\":\"Portboard dashboard request failed: 502\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 5
+   }
+  },
+  {
+   "name": "a 409 that is not local only tool is an error with the status, not a switch",
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "posts": [
+     {
+      "status": 409,
+      "body": "{\"error\":\"busy\"}"
+     }
+    ]
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"x\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"Portboard dashboard request failed: 409\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 1
+   }
+  },
+  {
+   "name": "a 200 whose body is not JSON: -32603 bad reply",
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "posts": [
+     {
+      "status": 200,
+      "body": "not json"
+     }
+    ]
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"x\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"Portboard dashboard request failed: bad reply\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 1
+   }
+  },
+  {
+   "name": "session headers: a well-formed session id and pid are sent",
+   "env": {
+    "CLAUDE_CODE_SESSION_ID": "sess-1234_abcd",
+    "CLAUDE_PID": "4242"
+   },
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "posts": [
+     {
+      "status": 200,
+      "reply": "echo"
+     }
+    ]
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"echo\":\"ping\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 1,
+    "session": "sess-1234_abcd",
+    "pid": "4242"
+   }
+  },
+  {
+   "name": "session headers: malformed values are not sent",
+   "env": {
+    "CLAUDE_CODE_SESSION_ID": "short",
+    "CLAUDE_PID": "12ab"
+   },
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "posts": [
+     {
+      "status": 200,
+      "reply": "echo"
+     }
+    ]
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"echo\":\"ping\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 1,
+    "session": null,
+    "pid": null
+   }
+  },
+  {
+   "name": "session headers: unset variables send no header",
+   "daemon": {
+    "ping": {
+     "status": 200,
+     "body": "{\"ok\":true,\"version\":\"0.0.0\"}"
+    },
+    "posts": [
+     {
+      "status": 200,
+      "reply": "echo"
+     }
+    ]
+   },
+   "stdin": [
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
+   ],
+   "expect": {
+    "stdout": [
+     "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"echo\":\"ping\"}}"
+    ],
+    "exit": 0,
+    "pings": 1,
+    "posts": 1,
+    "session": null,
+    "pid": null
+   }
+  }
+ ]
+}

@@ -29,3 +29,10 @@ jobs:
       - run: npm test
       # The same suite in English, minus the files that assert Korean wording (scripts/test-en.ts)
       - run: npm run test:en
+      # The Go binary in shim/ (docs/claude-plugin/README.md): standard library only, so nothing to download or cache.
+      # Its tests build the binary and run the shared contract cases against it, with the node set up above.
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: shim/go.mod
+          cache: false
+      - run: cd shim && go vet ./... && go test ./...

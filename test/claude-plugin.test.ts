@@ -171,7 +171,7 @@ test('nudge: silent when Portboard is down, errors, answers without the marker, 
 
 function runHook(input: string, env: Record<string, string>): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn('sh', [join(PLUGIN, 'bin/run.sh'), '--hook', join(PLUGIN, 'hooks/port-nudge.ts')], { env: { ...process.env, PORTBOARD_HOOK_TIMEOUT_MS: '10000', ...env } });
+    const child = spawn('sh', [join(PLUGIN, 'bin/run.sh'), '--hook', join(PLUGIN, 'hooks/port-nudge.ts')], { env: { ...process.env, PORTBOARD_SHIM: '0', PORTBOARD_HOOK_TIMEOUT_MS: '10000', ...env } });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (c) => (stdout += c));
@@ -201,7 +201,7 @@ test('as a command hook: PreToolUse JSON on stdin → additionalContext on stdou
 test('run.sh --hook passes silently when no node can be found; without --hook it says so', async () => {
   const run = (args: string[]) =>
     new Promise<{ code: number | null; out: string }>((resolve) => {
-      const child = spawn('/bin/sh', [join(PLUGIN, 'bin/run.sh'), ...args], { env: { PATH: '/nonexistent', HOME: '/nonexistent' } });
+      const child = spawn('/bin/sh', [join(PLUGIN, 'bin/run.sh'), ...args], { env: { PATH: '/nonexistent', HOME: '/nonexistent', PORTBOARD_SHIM: '0' } });
       let out = '';
       child.stdout.on('data', (c) => (out += c));
       child.stderr.on('data', (c) => (out += c));

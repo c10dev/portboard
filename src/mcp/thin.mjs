@@ -8,7 +8,11 @@
 //
 // Imports only node: modules. When the daemon can't be reached (before a request is sent), it switches for the rest of
 // the session to the in-process server of src/mcp.ts, loaded with dynamic import() at that moment (that load does use
-// the type stripper, as before).
+// the type stripper, as before). A request that was already sent is never sent again and never changes the mode, with
+// one exception: 409 { error: 'local only tool' } means nothing ran, so the session switches and answers it in-process.
+//
+// A failure after sending ends in one of these tails of the -32603 message: the status code, `timeout`, `bad reply` or
+// `lost` (the connection ended another way). The Go binary (shim/) writes the same words.
 //
 // Nothing but JSON-RPC lines may reach stdout.
 
@@ -75,8 +79,8 @@ async function post(line) {
     }, CONNECT_TIMEOUT_MS);
     try {
       req = lib(endpoint, { method: 'POST', agent: false, headers: { ...headers, Connection: 'close', 'Content-Length': String(Buffer.byteLength(line)) } });
-    } catch (err) {
-      return finish({ kind: 'lost', why: /** @type {{ code?: string }} */ (err).code ?? 'bad request' });
+    } catch {
+      return finish({ kind: 'lost', why: 'lost' });
     }
     const r = req;
     r.on('socket', (socket) => {
@@ -91,14 +95,14 @@ async function post(line) {
       if (socket.connecting) socket.once('connect', up);
       else up();
     });
-    r.on('error', (/** @type {NodeJS.ErrnoException} */ err) => fail(err.code ?? 'error'));
+    r.on('error', () => fail('lost'));
     r.on('response', (res) => {
       /** @type {Buffer[]} */
       const chunks = [];
       res.on('data', (/** @type {Buffer} */ c) => chunks.push(c));
       res.on('end', () => finish({ kind: 'reply', status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }));
-      res.on('error', (/** @type {NodeJS.ErrnoException} */ err) => fail(err.code ?? 'error'));
-      res.on('aborted', () => fail('aborted'));
+      res.on('error', () => fail('lost'));
+      res.on('aborted', () => fail('lost'));
     });
     r.end(line);
   });

@@ -18,7 +18,9 @@ Portboard can stop services, publish ports to the tailnet and delete worktrees.
 Read [docs/security.md](docs/security.md) before you change a write path.
 
 - Always allowed: edit files in the checkout, `npm ci`, `npm test`, `npm run test:en`, `npm run typecheck`,
-  `npm run typecheck:public`, `npm run demo`, `node bin/portboard install-service --dry-run`, `node bin/portboard uninstall-service --dry-run`.
+  `npm run typecheck:public`, `npm run demo`, `node bin/portboard install-service --dry-run`, `node bin/portboard uninstall-service --dry-run`,
+  `npm run build:shim` and `cd shim && go test ./...` (the plugin's Go binary, `shim/`; its tests start only fake dashboards on temporary ports
+  and the checkout's own `src/mcp.ts`). Go may not be on PATH: on the production server it is in `~/.local/go/bin`.
 - Only after the maintainer approves in this session: a preview, `PORTBOARD_PORT=<free port> npm start`
   ([docs/setup.md#preview-instances](docs/setup.md#preview-instances)). It needs Linux.
   Do not use 8790 (production) or 8797 (the host agent's default, `src/core/site.ts`).
@@ -77,7 +79,7 @@ Read [docs/security.md](docs/security.md) before you change a write path.
 - `src/features/`: one `FeatureModule` per feature. `registry.ts` holds `MODULES`. `FEATURES` is `MODULES` sorted by `order`.
 - `src/mcp.ts`, `src/mcp/`: the local stdio MCP server. `src/remote/`: the remote MCP server and `redact.ts`.
 - `src/agent.ts`, `src/agent/`: the host agent. `public/`: dashboard pages, served as is. `public/i18n/`: `en.json` and `ko.json`.
-- `claude-plugin/`: the Claude Code plugin. `mac-app/`: a Swift package. `menubar/`: the legacy SwiftBar script.
+- `claude-plugin/`: the Claude Code plugin. `shim/`: the plugin's Go binary, standard library only (`mcp` and `nudge`; built by `npm run build:shim` into `claude-plugin/bin/`, never committed). `mac-app/`: a Swift package. `menubar/`: the legacy SwiftBar script.
 - `scripts/`: changelog, English test runner, demo, design system, one-file agent build, deploy, smoke, Mac setup and public-tree scripts. `docs/`: one file or folder per topic.
 - `design-system/`: the design system's brand book, token notes and component previews ([docs/design-system.md](docs/design-system.md)).
 - [docs/agents.md](docs/agents.md) tells users how to run coding agents with Portboard. It is not about changing this repository.
@@ -142,6 +144,8 @@ To add or change a feature:
 - A change under `mac-app/` needs `cd mac-app && swift test`, on macOS or in the Swift Docker image
   ([docs/mac-app/README.md](docs/mac-app/README.md)). CI does not run it.
   If you cannot run it, report "not run (no Swift toolchain)". Never mark it as passed.
+- `cd shim && go vet ./... && go test ./...` runs the Go tests, which share the cases in `test/fixtures/shim-contract/` with `test/shim-contract.test.ts`.
+  If you cannot run them, report "not run (no Go toolchain)". Never mark them as passed.
 - Other commands: `npm run changelog:check` parses every fragment. `node scripts/test-en.ts --list` lists the files `test:en` runs.
 - You are done when `npm test`, `npm run test:en`, `npm run typecheck` and `npm run typecheck:public` pass,
   the pinned lists, docs and changelog fragment are updated, and the report is written.
@@ -158,7 +162,7 @@ To add or change a feature:
     `src/cli.ts`, `src/agent.ts`, `src/core/site.ts`, `src/core/agents.ts`),
     proxy code (for example the serve handling in `src/core/tailscale.ts`, `src/agent/server.ts`), `src/remote/**`,
     `src/remote.ts`, `src/features/remote-connector.ts`, `src/core/access.ts`, `src/features/router.ts`, `REMOTE_READS`,
-    runtime dependencies, `package.json`, `package-lock.json`, `tsconfig*.json`, `scripts/test-en.ts`, `scripts/deploy.sh`,
+    runtime dependencies, `shim/**` (it starts processes and sends requests to write routes), `package.json`, `package-lock.json`, `tsconfig*.json`, `scripts/test-en.ts`, `scripts/deploy.sh`,
     `scripts/deploy*.ts`, `deploy/**`, `.github/workflows/**`, `AGENTS.md`,
     `CONTRIBUTING.md`, `SECURITY.md` or `docs/security.md`. Grade 1 is any other change.
   - Both grades need an independent review comment on the pull request and a passing CI run, both on the current head commit.

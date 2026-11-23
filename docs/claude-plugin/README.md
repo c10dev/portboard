@@ -130,8 +130,11 @@ per cwd), so a loop of requests can't make it spawn `ss` or `git` per call (L1).
 - Only the nudge: turn the plugin's `port_nudge` option off (its settings under `/plugin`; the hook reads it as
   `CLAUDE_PLUGIN_OPTION_PORT_NUDGE`), or export `PORTBOARD_NUDGE=0` in the environment Claude Code starts from.
 - The whole plugin: `/plugin disable portboard@portboard` (or `claude plugin disable portboard@portboard`).
-- `PORTBOARD_HOOK_TIMEOUT_MS` (an integer from 1 to 10000) sets the hooks' HTTP time limit in milliseconds. It is for tests and slow machines. The default is each hook's own constant.
+
+### Settings
+
 - `PORTBOARD_URL` points the hooks **and the MCP server** at another Portboard (a preview: `PORTBOARD_URL=http://127.0.0.1:8800`). The MCP server's tools, write tools included, then act through that Portboard.
+- `PORTBOARD_HOOK_TIMEOUT_MS` (an integer from 1 to 10000) sets the hooks' HTTP time limit in milliseconds. It is for tests and slow machines. The default is each hook's own constant. Claude Code ends a hook after its own `timeout` (5 seconds in [`hooks/hooks.json`](../../claude-plugin/hooks/hooks.json)): a value above that ends with Claude Code's timeout, not with this limit.
 
 ## `GET /api/claude/port-advice`
 
@@ -157,6 +160,18 @@ session-end hook (#43) is a plain `onSessionEnd()` with no `$`, and both should 
 them. So this plugin uses classic command hooks, registered in [`hooks/hooks.json`](../../claude-plugin/hooks/hooks.json).
 Each hook and the MCP server start through [`bin/run.sh`](../../claude-plugin/bin/run.sh), which finds Node (≥ 22.18, for
 type stripping) on PATH or in nvm, like `bin/portboard-mcp`; for a hook, no Node at all is a silent pass.
+
+## The Go binary
+
+`npm run build:shim` builds `claude-plugin/bin/portboard-shim` ([`shim/`](../../shim/main.go), Go, standard library only, about 7 MB on disk). It is the Go version of two processes: the session's MCP client and the port nudge. Node starts for each Bash call and for each session otherwise: about 54 MB resident for the MCP client and tens of milliseconds for a hook.
+
+[`bin/run.sh`](../../claude-plugin/bin/run.sh) uses the binary when it is there and runs `portboard-shim version` successfully (a missing, damaged or other-architecture file is skipped, so a hook never prints an exec error). `bin/mcp.mjs` becomes `portboard-shim mcp`, `hooks/port-nudge.ts` becomes `portboard-shim nudge`. The other hooks always run in Node. Without the binary nothing changes: the Node files run as before. `hooks.json` and `.mcp.json` are the same either way.
+
+- **Build it where the checkout is.** The binary is not committed and not in the npm package. A plugin installed from GitHub is a copy of `claude-plugin/` alone under `~/.claude/plugins/cache/`, with no binary, so it runs Node. The plugin on the production server points at the checkout's `claude-plugin/`, so a build in the checkout is what it uses. Go may not be on PATH there: it is in `~/.local/go/bin`.
+- **Go back:** `PORTBOARD_SHIM=0` in the environment Claude Code starts from, or delete the binary.
+- **`mcp`** sends each JSON-RPC line to the dashboard like the [thin client](../mcp.md#the-plugins-two-modes) and writes the same replies byte for byte. It asks `GET /api/mcp/ping` first. When the dashboard cannot be used, or refuses a coding-agent tool, it runs `node <checkout>/src/mcp.ts` (the process is replaced at the start; a child process in mid-session). It needs the checkout only then. An `https` `PORTBOARD_URL` runs Node's `bin/mcp.mjs` instead.
+- **`nudge`** does not parse the command. It sends every Bash command of at most 4096 bytes to `GET /api/claude/port-advice?command=` and prints what the dashboard says. The Node hook asks only for commands that look like they name a port. So with the binary, each Bash call costs one request to the dashboard, and a dashboard that accepts connections and does not answer delays each Bash call by up to 300 ms. A command over 4096 bytes gets no nudge (the Node hook still reads up to 20000 characters). With a very long `cwd` the query can pass Node's header limit, and the dashboard's `431` is silence.
+- The Go and Node versions give the same results for the same input: the cases are in [`test/fixtures/shim-contract/`](../../test/fixtures/shim-contract/mcp.json), and both [`test/shim-contract.test.ts`](../../test/shim-contract.test.ts) and `cd shim && go test ./...` run them. The only accepted differences are the three in the nudge cases (the filter, the dashboard-side parse, the size limit) and two for `mcp`: Node's `mcp.mjs` exits with code 1 at the start when it finds no checkout, even if the dashboard would answer, and prints a line when the dashboard's version differs from the checkout's; the binary does neither, because it reads the checkout only when it falls back to Node.
 
 ## The worktree port as `PORT`
 
