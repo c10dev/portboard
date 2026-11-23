@@ -713,6 +713,53 @@ test('11 stdin closes: the request in flight is answered, then the exit code is 
   await f.close();
 });
 
+// ============================================================ coding agents: the caller's PATH finds the CLI
+
+test('start_coding_agent in thin mode looks for the CLI on the caller\'s PATH (X-Portboard-Path), not the dashboard\'s', async () => {
+  const cliDir = join(DIR, 'cli-bin'); // not on the dashboard's PATH
+  await mkdir(cliDir, { recursive: true });
+  await writeFile(join(cliDir, 'codex'), '#!/bin/sh\nexit 0\n');
+  await chmod(join(cliDir, 'codex'), 0o755);
+  // a dashboard whose PATH has no nvm folder (a real codex may sit next to this Node), as under systemd
+  const agentDaemon = await startDaemon({ PATH: `${join(SHIM, 'bin')}:/usr/bin:/bin` });
+  const startReq = (id: number) => rpc(id, 'tools/call', { name: 'start_coding_agent', arguments: { kind: 'codex', path: MAIN, prompt: 'hello' } });
+  const run = async (headers: Record<string, string>, id: number) => {
+    const r = await http(agentDaemon, 'POST', '/api/mcp', { headers: { ...HDR, ...headers }, body: startReq(id) });
+    assert.equal(r.status, 200);
+    return r.body.result as { isError?: boolean; content: { text: string }[] };
+  };
+  const sess = { 'X-Portboard-Session': 'sess-agent-0001' };
+
+  // without the header: the dashboard's PATH has no codex
+  const none = await run(sess, 1);
+  assert.equal(none.isError, true, none.content[0].text);
+  // relative and malformed PATHs are dropped whole (then: not installed)
+  for (const bad of ['bin:relative/dir', './x', 'a'.repeat(5000), Array.from({ length: 70 }, (_, i) => `/nope${i}`).join(':')]) {
+    const r = await run({ ...sess, 'X-Portboard-Path': bad }, 2);
+    assert.equal(r.isError, true, bad.slice(0, 40));
+  }
+  const before = (await unitSessions()).length;
+  // a relative entry is skipped, an absolute one with the CLI is used
+  const ok = await run({ ...sess, 'X-Portboard-Path': `relative:${cliDir}` }, 3);
+  assert.ok(!ok.isError, ok.content[0].text);
+  const runs = await unitSessions();
+  assert.equal(runs.length, before + 1);
+  assert.equal(runs[before].id, 'sess-agent-0001');
+  assert.ok(runs[before].line.includes(`--setenv=PATH=${cliDir}:`), runs[before].line);
+  assert.ok(!runs[before].line.includes('hello'), 'the prompt is not in the unit args');
+
+  // through the thin client: its own PATH is sent
+  // (a second dashboard: the first already has a run going in this worktree)
+  const agentDaemon2 = await startDaemon({ PATH: `${join(SHIM, 'bin')}:/usr/bin:/bin` });
+  const thin = open({ url: agentDaemon2.url, extra: { PATH: `${cliDir}:${env().PATH}`, CLAUDE_CODE_SESSION_ID: 'sess-agent-0002' } });
+  await thin.call(1, 'initialize', INIT);
+  const viaThin = await thin.call(2, 'tools/call', { name: 'start_coding_agent', arguments: { kind: 'codex', path: MAIN, prompt: 'hello' } });
+  assert.ok(!viaThin.result.isError, toolText(viaThin));
+  const after = await unitSessions();
+  assert.equal(after[after.length - 1].id, 'sess-agent-0002');
+  assert.equal(await thin.close(), 0);
+});
+
 // ============================================================ measurement: a long tool and other GETs
 
 test('measure: a long tool in the daemon does not hold up other requests', async (t) => {

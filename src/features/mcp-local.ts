@@ -14,6 +14,7 @@ import { VERSION } from '../version.ts';
 import type { Request } from '../mcp/rpc.ts';
 import type { Core } from '../mcp/kit.ts';
 import { reply } from './router.ts';
+import { startCodingAgent } from '../core/coding-agents.ts';
 import type { FeatureModule } from './types.ts';
 
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/;
@@ -31,6 +32,9 @@ async function mcpCore(): Promise<Core> {
   return (core = Object.assign({}, ...REGISTRY.features.map((f) => f.mcpCore?.() ?? {})) as Core);
 }
 
+const PATH_MAX_ENTRIES = 64;
+const PATH_MAX_BYTES = 4096;
+
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 /** The session the caller names, as the stdio server's env would: only well-formed values, never the daemon's env. */
@@ -41,6 +45,18 @@ function sessionEnv(headers: Record<string, string | string[] | undefined>): Rec
     ...(id !== undefined && SESSION_ID.test(id) ? { CLAUDE_CODE_SESSION_ID: id } : {}),
     ...(pid !== undefined && CLAUDE_PID.test(pid) ? { CLAUDE_PID: pid } : {}),
   };
+}
+
+/**
+ * The caller's PATH from X-Portboard-Path: where start_coding_agent looks for the CLI, as the stdio server did with the
+ * session's own PATH (the dashboard's service PATH has no nvm folder). Absolute entries without control characters, at
+ * most 64 entries and 4096 bytes; a header that breaks a limit is dropped whole. It chooses only where to look.
+ */
+export function callerPath(v: string | string[] | undefined): string | undefined {
+  const raw = one(v);
+  if (raw === undefined || Buffer.byteLength(raw) > PATH_MAX_BYTES) return undefined;
+  const entries = raw.split(':').filter((d) => d.startsWith('/') && !/[\x00-\x1f\x7f]/.test(d));
+  return entries.length > 0 && entries.length <= PATH_MAX_ENTRIES ? entries.join(':') : undefined;
 }
 
 export const mcpLocalFeature: FeatureModule = {
@@ -69,7 +85,14 @@ export const mcpLocalFeature: FeatureModule = {
         const env = sessionEnv(req.headers);
         const base = await mcpCore();
         // This request's session, not the daemon's process.env, goes to a started dev server's unit.
-        const perRequest: Core = { ...base, startDevServer: (path, script, port) => base.startDevServer(path, script, port, env) };
+        // start_dev_server reads only the session keys (its unit has its own PATH); the coding agent run also needs
+        // the caller's PATH to find its CLI.
+        const agentEnv: Record<string, string> = { ...env, ...(callerPath(req.headers['x-portboard-path']) ? { PATH: callerPath(req.headers['x-portboard-path'])! } : {}) };
+        const perRequest: Core = {
+          ...base,
+          startDevServer: (path, script, port) => base.startDevServer(path, script, port, env),
+          startCodingAgent: (r) => startCodingAgent(r, agentEnv),
+        };
         const { handleMessage } = await import('../mcp/rpc.ts');
         const out = await handleMessage(body as Request, perRequest, ctx.audit);
         return out ? reply(200, out) : { status: 204, body: undefined };

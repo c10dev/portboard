@@ -62,7 +62,8 @@ export async function handleMessage(msg: Request, core: Core, audit?: AuditLog |
             'For questions about the machines themselves (is the desktop up, how loaded is the server, what is running on the desktop or the Mac), use list_devices. ' +
             'For "who is using X", "when was this last used" or "is anything still using this before I stop it", call ' +
             'who_uses (optionally with port): devices connected now plus last-used history. list_ports shows group (ports ' +
-            'of the same compose project/unit/process) and lastUsed. name_device names a LAN device by the key who_uses gives.',
+            'of the same compose project/unit/process) and lastUsed. name_device names a LAN device by the key who_uses gives. ' +
+            'To hand a task to another coding agent CLI (codex, gemini) on this host, use start_coding_agent, then coding_agent_output until it is done; stop_coding_agent stops it.',
         });
       }
       case 'ping':

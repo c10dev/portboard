@@ -255,6 +255,34 @@ Off by default (`accounts.enabled` in `portboard.json`, [accounts.md](accounts.m
   `scripts/deploy.sh` does not install unit files: after this change, copy the unit to `~/.config/systemd/user/` and
   `systemctl --user daemon-reload` once. Files written before keep their old mode until their next write.
 
+### Coding agent runs
+
+`start_coding_agent`, `list_coding_agents`, `coding_agent_output` and `stop_coding_agent` exist only on the local stdio
+MCP server (`src/features/coding-agents.ts`). They have no REST route of their own and no remote tool, and `REMOTE_READS` is unchanged.
+In the plugin's thin mode they reach the dashboard through `POST /api/mcp` (same local-only and owner checks, see
+[MCP through the dashboard](#mcp-through-the-dashboard)). The header `X-Portboard-Path` there only chooses where the CLI is
+looked up (absolute entries of the caller's `PATH`); it carries the same trust as the stdio server, which used the session's `PATH`.
+
+- **What runs.** Only the fixed command of the chosen adapter (`codex exec …` or `gemini …`, `src/core/coding-agent-adapters.ts`),
+  by its absolute path found on `PATH` (absolute entries only), inside a worktree Portboard already knows. The caller
+  chooses the kind, the worktree, the prompt, the sandbox mode, a model name (letters, digits and `. _ : -`, starting with a letter or digit, passed as `--model=<name>`) and a
+  timeout; nothing else reaches the command line.
+- **The prompt** is written to `prompt.txt` (0600, in the 0700 run folder under the state dir) and given to the CLI on
+  stdin. It is never in argv, the unit description or the audit line (the audit keeps the argument names, and `path`),
+  and no tool returns it: the results carry its length.
+- **Sandbox.** For codex, `read-only` or `workspace-write` is its own OS sandbox (`codex -s`). Gemini has no such flag:
+  its read-only is only `--approval-mode default`, the CLI's approval mode, not an OS sandbox, and `workspace-write` is
+  refused for gemini. Portboard never passes a flag that turns the sandbox or the approvals off. `workspace-write` is
+  also refused in a main checkout.
+- **Limits.** One running run per worktree (409 otherwise), a runtime limit of 1–240 minutes (the runner stops the CLI;
+  the unit has a backstop of one minute more), and a read-only or container install refuses to start or stop a run.
+- **Stop.** Only `pb-agent-<id>` units derived from a checked run id (`ca-` and 10 hex digits), and only the runner pid
+  recorded in Portboard's own `meta.json`, are ever signalled, and only while that pid still has the start time recorded
+  with it (a reused pid is a `lost` run, never a target; when the start time can't be read the run stays `running` with `stateUnknown` and is not signalled). A start takes a per-worktree lock, so two starts in one
+  worktree cannot both run.
+- **Trust.** The CLI runs as the machine user with that user's own login, so a caller that can start a run can make that
+  CLI act in the worktree within its sandbox. That is the same trust as the other write tools of this server.
+
 ## MCP through the dashboard
 
 `GET /api/mcp/ping` and `POST /api/mcp` ([mcp.md](mcp.md#the-plugins-two-modes)) let the plugin's MCP process hand its JSON-RPC to the dashboard.
@@ -264,6 +292,7 @@ Off by default (`accounts.enabled` in `portboard.json`, [accounts.md](accounts.m
 - **The ping makes the same checks itself.** A `GET` skips the router's guard and audit, so the handler repeats `localOnly`, the read-only test and `resolveCaller(...).canWrite`. The ping answers `200` only when the `POST` would be accepted. It writes no audit line: a session start calls it.
 - **Audit.** The route is declared `auditOk: false`. The router leaves out the audit line for a `2xx` answer; `400`, `403` and `5xx` still get theirs. Every MCP write tool is one line with `source: "mcp"`, written by `callTool` into the dashboard's own audit log (no second `AuditLog` on the same file). Without `auditOk: false`, each read tool call would add a line and flood the file. `buildRegistry()` throws for `auditOk` on a route without `write: true`.
 - **The session headers are not a credential.** `X-Portboard-Session` (`^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$`) and `X-Portboard-Claude-Pid` (`^\d{1,10}$`) become the `CLAUDE_CODE_SESSION_ID` and `CLAUDE_PID` of that one request's `start_dev_server`, never the dashboard's own environment. A local process can write any session id. The id is only the label on the dev server's unit; it grants nothing. A header with a wrong shape is dropped.
+- **`X-Portboard-Path` is a lookup path, not a permission.** For `start_coding_agent` the dashboard has no nvm folder on its service `PATH`, so the thin client sends its own. Only absolute entries without control characters are kept (at most 64 entries and 4096 bytes; a header over a limit is dropped whole), and the value only decides where `codex` or `gemini` is found. The stdio server did the same with the session's `PATH`, so a local process gains nothing it did not have. `start_dev_server` does not use it.
 - **Same rights as the stdio server.** What a tool can do through this route is what `src/mcp.ts` can do for the same user. This route adds no tool and no argument.
 - `GET /api/claude/port-advice?command=` is read-only. The value of `command` is parsed (`parsePortCommands`) and then dropped: it is not written to the log, the audit log, the event files or the answer.
 

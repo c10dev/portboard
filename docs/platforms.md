@@ -13,6 +13,7 @@ there turned off with a clear reason instead of failing.
 | Restart / stop / logs of a docker container | `docker` | `docker` (Docker Desktop) | no (read-only; no `docker` CLI in the image) |
 | Logs of a plain process writing to a file | `/proc/<pid>/fd/1`, `2` | `lsof -d 1,2` | no |
 | Dev servers (`start_dev_server`) | `systemd-run --user` | `501`: not available | not available |
+| Coding agent runs (`start_coding_agent`) | transient unit `pb-agent-<id>` (`systemd-run --user`) | a detached process (no systemd) | refused (read-only) |
 | Memory view (`/api/memory`, `memory_usage`) | `/proc` | `501`: not available | `/proc` of the host |
 | Accounts (`/api/accounts`, `list_accounts`, off by default) | the two CLI login files; `accounts.json` and `account-homes/` in the config folder | the CLI file is read when it exists; when it is missing, `unreadable` (the Keychain is not read); `accounts.json` and `account-homes/` as on Linux | the container's two files, if any; `accounts.json` and `account-homes/` in the container's config folder (`use` and `remove` are refused unless `PORTBOARD_READ_ONLY=0`; the refresh of an expired added account is a read and still writes `accounts.json`) |
 | Network map and usage history (who is connected) | `ss -tnpiH state established` | empty for now | `ss` |

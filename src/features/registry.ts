@@ -22,6 +22,7 @@ import { adoptionFeature } from './adoption.ts';
 import { alertsFeature } from './alerts.ts';
 import { claudeSessionFeature } from './claude-session.ts';
 import { claudeFeature } from './claude.ts';
+import { codingAgentsFeature } from './coding-agents.ts';
 import { control } from './control.ts';
 import { devhealthFeature } from './devhealth.ts';
 import { devicesFeature } from './devices.ts';
@@ -58,6 +59,7 @@ export const MODULES: FeatureModule[] = [
   alertsFeature,
   claudeFeature,
   claudeSessionFeature,
+  codingAgentsFeature,
   control,
   devhealthFeature,
   devicesFeature,
