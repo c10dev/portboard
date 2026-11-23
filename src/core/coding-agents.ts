@@ -430,7 +430,7 @@ export async function startCodingAgent(req: StartRequest, env?: Record<string, s
   if (sandbox === 'workspace-write' && (await isMainCheckout(r.path))) return { ok: false, status: 400, message: t('codingAgents.mainCheckout') };
 
   const adapter = adapterFor(kind)!;
-  const binAbs = resolveBin(adapter.bin, env?.PATH ?? process.env.PATH);
+  const binAbs = resolveBin(adapter.bin);
   if (!binAbs) return { ok: false, status: 400, message: t('codingAgents.noBinary', { kind }) };
 
   try {

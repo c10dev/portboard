@@ -101,6 +101,24 @@ async function until<T>(what: string, fn: () => T | Promise<T>, ms = 15_000): Pr
   }
 }
 
+// Registered before the first process is started. The arrays are filled by the helpers below.
+const daemons: { stop(): Promise<void> }[] = [];
+const sessions: { child: { kill(sig: 'SIGKILL'): unknown } }[] = [];
+const fakes: { close(): Promise<void> }[] = [];
+// One cleanup, in this order, and one failure never skips the rest: processes first (they write into DIR), then the
+// listeners a failed assertion left open (they would keep the file from exiting), then the folder.
+after(async () => {
+  for (const s of sessions) {
+    try {
+      s.child.kill('SIGKILL');
+    } catch {
+      // already gone
+    }
+  }
+  await Promise.allSettled([...daemons.map((d) => d.stop()), ...fakes.map((f) => f.close())]);
+  await rm(DIR, { recursive: true, force: true, maxRetries: 3 }).catch(() => {});
+});
+
 interface Daemon {
   port: number;
   url: string;
@@ -108,7 +126,6 @@ interface Daemon {
   stderr(): string;
   stop(): Promise<void>;
 }
-const daemons: Daemon[] = [];
 
 async function startDaemon(extra: Record<string, string> = {}): Promise<Daemon> {
   const port = await freePort();
@@ -201,7 +218,6 @@ class Session {
   }
 }
 
-const sessions: Session[] = [];
 const open = (opts?: ConstructorParameters<typeof Session>[0]) => {
   const s = new Session(opts);
   sessions.push(s);
@@ -219,7 +235,6 @@ interface Fake {
   posts: Msg[];
   close(): Promise<void>;
 }
-const fakes: { close(): Promise<void> }[] = [];
 async function fake(handler: (req: IncomingMessage, res: ServerResponse, body: string, f: Fake) => void, port?: number): Promise<Fake> {
   const sockets = new Set<import('node:net').Socket>();
   const server: Server = createHttp((req, res) => {
@@ -715,123 +730,61 @@ test('11 stdin closes: the request in flight is answered, then the exit code is 
   await f.close();
 });
 
-// ============================================================ coding agents: the caller's PATH finds the CLI
+// ============================================================ coding-agent tools stay in the session's own process
 
-test('start_coding_agent in thin mode looks for the CLI on the caller\'s PATH (X-Portboard-Path), not the dashboard\'s', async () => {
-  const cliDir = join(DIR, 'cli-bin'); // not on the dashboard's PATH
-  await mkdir(cliDir, { recursive: true });
-  await chmod(cliDir, 0o755);
-  await writeFile(join(cliDir, 'codex'), '#!/bin/sh\nexit 0\n');
-  await chmod(join(cliDir, 'codex'), 0o755);
-  // a dashboard whose PATH has no nvm folder (a real codex may sit next to this Node), as under systemd
-  const agentDaemon = await startDaemon({ PATH: `${join(SHIM, 'bin')}:/usr/bin:/bin` });
-  const startReq = (id: number) => rpc(id, 'tools/call', { name: 'start_coding_agent', arguments: { kind: 'codex', path: MAIN, prompt: 'hello' } });
-  const run = async (headers: Record<string, string>, id: number) => {
-    const r = await http(agentDaemon, 'POST', '/api/mcp', { headers: { ...HDR, ...headers }, body: startReq(id) });
-    assert.equal(r.status, 200);
-    return r.body.result as { isError?: boolean; content: { text: string }[] };
-  };
-  const sess = { 'X-Portboard-Session': 'sess-agent-0001' };
+const CODING_AGENT_TOOLS = ['start_coding_agent', 'list_coding_agents', 'coding_agent_output', 'stop_coding_agent'];
 
-  // without the header: the dashboard's PATH has no codex
-  const none = await run(sess, 1);
-  assert.equal(none.isError, true, none.content[0].text);
-  // relative and malformed PATHs are dropped whole (then: not installed)
-  for (const bad of ['bin:relative/dir', './x', 'a'.repeat(5000), Array.from({ length: 70 }, (_, i) => `/nope${i}`).join(':')]) {
-    const r = await run({ ...sess, 'X-Portboard-Path': bad }, 2);
-    assert.equal(r.isError, true, bad.slice(0, 40));
+test('the coding-agent tools are refused by POST /api/mcp (409): nothing runs, no mcp audit line', async () => {
+  const { REGISTRY } = await import('../src/features/registry.ts');
+  const served = REGISTRY.features.filter((f) => f.name === 'coding-agents').flatMap((f) => (f.tools ?? []).map((t) => t.def.name));
+  assert.deepEqual([...served].sort(), [...CODING_AGENT_TOOLS].sort(), 'the refused set is the module\'s own tools');
+
+  const runsBefore = (await calls('systemd-run')).length;
+  const auditBefore = await auditLines();
+  for (const [i, name] of CODING_AGENT_TOOLS.entries()) {
+    const args = name === 'start_coding_agent' ? { kind: 'codex', path: MAIN, prompt: 'hello' } : name === 'list_coding_agents' ? {} : { id: 'ca-0123456789' };
+    const r = await http(main, 'POST', '/api/mcp', { headers: HDR, body: rpc(i + 1, 'tools/call', { name, arguments: args }) });
+    assert.deepEqual([r.status, r.body], [409, { error: 'local only tool' }], name);
   }
-  const before = (await unitSessions()).length;
-  // a CLI or its folder that others can write is refused ("not installed"); nothing is started
-  const mk = async (name: string, dirMode: number, fileMode: number) => {
-    const d = join(DIR, name);
-    await mkdir(d, { recursive: true });
-    await chmod(d, dirMode); // mkdir is cut by the umask
-    await writeFile(join(d, 'codex'), '#!/bin/sh\nexit 0\n');
-    await chmod(join(d, 'codex'), fileMode);
-    return d;
-  };
-  // (group-writable cases depend on the host's groups: see the in-process test below)
-  for (const [name, dirMode, fileMode] of [['cli-open-dir', 0o777, 0o755], ['cli-other-file', 0o755, 0o757]] as const) {
-    const d = await mk(name, dirMode, fileMode);
-    const r = await run({ ...sess, 'X-Portboard-Path': d }, 4);
-    assert.equal(r.isError, true, name);
-    assert.doesNotMatch(r.content[0].text, /already going/, `${name}: refused before a run is looked for`);
-  }
-  assert.equal((await unitSessions()).length, before, 'no run was started');
-  // a link to a CLI that sits in a folder others can write is refused too
-  const linkDir = join(DIR, 'cli-link');
-  await mkdir(linkDir, { recursive: true });
-  await chmod(linkDir, 0o755);
-  await symlink(join(await mk('cli-open-target', 0o777, 0o755), 'codex'), join(linkDir, 'codex'));
-  assert.equal((await run({ ...sess, 'X-Portboard-Path': linkDir }, 4)).isError, true, 'link into a writable folder');
-  assert.equal((await unitSessions()).length, before);
-  // a relative entry is skipped, an absolute one with the CLI is used
-  const ok = await run({ ...sess, 'X-Portboard-Path': `relative:${cliDir}` }, 3);
-  assert.ok(!ok.isError, ok.content[0].text);
-  const runs = await unitSessions();
-  assert.equal(runs.length, before + 1);
-  assert.equal(runs[before].id, 'sess-agent-0001');
-  assert.ok(runs[before].line.includes(`--setenv=PATH=${cliDir}:`), runs[before].line);
-  assert.ok(!runs[before].line.includes('hello'), 'the prompt is not in the unit args');
-
-  // through the thin client: its own PATH is sent
-  // (a second dashboard: the first already has a run going in this worktree)
-  const agentDaemon2 = await startDaemon({ PATH: `${join(SHIM, 'bin')}:/usr/bin:/bin` });
-  const thin = open({ url: agentDaemon2.url, extra: { PATH: `${cliDir}:${env().PATH}`, CLAUDE_CODE_SESSION_ID: 'sess-agent-0002' } });
-  await thin.call(1, 'initialize', INIT);
-  const viaThin = await thin.call(2, 'tools/call', { name: 'start_coding_agent', arguments: { kind: 'codex', path: MAIN, prompt: 'hello' } });
-  assert.ok(!viaThin.result.isError, toolText(viaThin));
-  const after = await unitSessions();
-  assert.equal(after[after.length - 1].id, 'sess-agent-0002');
-  assert.equal(await thin.close(), 0);
+  // other tools and other methods are not affected
+  assert.equal((await http(main, 'POST', '/api/mcp', { headers: HDR, body: rpc(9, 'tools/call', { name: 'list_ports', arguments: {} }) })).status, 200);
+  assert.equal((await http(main, 'POST', '/api/mcp', { headers: HDR, body: rpc(10, 'tools/list') })).status, 200);
+  assert.equal((await calls('systemd-run')).length, runsBefore, 'no unit was started');
+  const added = (await auditLines()).slice(auditBefore.length);
+  assert.equal(added.filter((l) => l.source === 'mcp').length, 0, `no source "mcp" line: ${JSON.stringify(added)}`);
+  // what the router logs for the refusals: an error line for the route, not a tool line
+  assert.ok(added.every((l) => l.route === 'POST /api/mcp' && l.result === 'error' && l.status === 409), JSON.stringify(added));
 });
 
-test('trustedPath: group write is accepted only for the user\'s own private group; other write never', async () => {
-  const { groupHasNoMembers, trustedPath } = await import('../src/features/mcp-local.ts');
-  const gid = process.getgid!();
+test('thin mode: a coding-agent tool moves the session to the in-process server, and later requests stay there', async () => {
+  const f = await fake((req, res, _body, self) => {
+    if (req.method === 'GET') return json(res, 200, { ok: true, version: '0.0.0' });
+    const m = self.posts[self.posts.length - 1];
+    if (m.method === 'tools/call' && CODING_AGENT_TOOLS.includes(m.params?.name)) return json(res, 409, { error: 'local only tool' });
+    json(res, 200, { jsonrpc: '2.0', id: m.id, result: { from: 'daemon' } });
+  });
+  const s = open({ url: f.url, record: true });
+  assert.equal((await s.call(1, 'initialize', INIT)).result.from, 'daemon');
+  assert.ok(!(await s.loaded()).some((u) => u.endsWith('/src/features/registry.ts')), 'thin so far');
+  const posts = f.posts.length;
+  const agents = await s.call(2, 'tools/call', { name: 'list_coding_agents', arguments: {} });
+  assert.ok(!agents.error && !agents.result.isError, JSON.stringify(agents));
+  assert.ok((await s.loaded()).some((u) => u.endsWith('/src/features/registry.ts')), 'now the in-process server');
+  const ports = await s.call(3, 'tools/call', { name: 'list_ports', arguments: { include_system: true } });
+  assert.ok(JSON.parse(toolText(ports)).ports.some((p: any) => p.port === LISTEN_PORT), 'answered here, from the fixture');
+  assert.equal(f.posts.length, posts + 1, 'only the refused call reached the daemon');
+  for (const l of s.lines) assert.equal(JSON.parse(l).jsonrpc, '2.0');
+  assert.equal(await s.close(), 0);
+  await f.close();
 
-  // the pure lookup, on sample /etc/group text
-  const text = 'root:x:0:\nme:x:1000:\nteam:x:1001:alice,bob\nlonely:*:1002:  \nbroken line\n:x:abc:\n';
-  assert.equal(groupHasNoMembers(text, 1000), true, 'empty member list');
-  assert.equal(groupHasNoMembers(text, 1002), true, 'blank member list');
-  assert.equal(groupHasNoMembers(text, 1001), false, 'has members');
-  assert.equal(groupHasNoMembers(text, 4242), false, 'gid not listed');
-  assert.equal(groupHasNoMembers('', 0), false);
-
-  // real folders: a 0775 folder with a 0775 codex, as an npm-global install under a user-private group
-  const make = async (name: string, dirMode: number, fileMode: number) => {
-    const d = join(DIR, name);
-    await mkdir(d, { recursive: true });
-    await chmod(d, dirMode);
-    await writeFile(join(d, 'codex'), '#!/bin/sh\nexit 0\n');
-    await chmod(join(d, 'codex'), fileMode);
-    return d;
-  };
-  const group = await make('trust-group', 0o775, 0o775);
-  assert.equal(trustedPath(group, () => false), '', 'group is not a private group: refused');
-  assert.equal(trustedPath(group, (g) => g === gid), group, 'own private group: accepted');
-  assert.equal(trustedPath(group, (g) => g !== gid), '', 'the lookup is asked about this process\'s gid');
-  // only the file, or only the folder
-  assert.equal(trustedPath(await make('trust-group-file', 0o755, 0o775), () => false), '');
-  assert.equal(trustedPath(await make('trust-group-dir', 0o775, 0o755), () => false), '');
-  assert.equal(trustedPath(await make('trust-group-file-ok', 0o755, 0o775), () => true), join(DIR, 'trust-group-file-ok'));
-  // other write is never accepted, whatever the lookup says
-  assert.equal(trustedPath(await make('trust-other-dir', 0o777, 0o755), () => true), '');
-  assert.equal(trustedPath(await make('trust-other-file', 0o755, 0o757), () => true), '');
-  // a plain 0755 folder with a 0755 codex needs no group at all
-  const plain = await make('trust-plain', 0o755, 0o755);
-  assert.equal(trustedPath(plain, () => false), plain);
-  // a link: its own mode is not looked at, the target and its folder are (npm global: bin/codex -> ../lib/.../codex.js)
-  const lib = await make('trust-lib', 0o775, 0o775);
-  const bin = join(DIR, 'trust-bin');
-  await mkdir(bin, { recursive: true });
-  await chmod(bin, 0o755);
-  await symlink(join(lib, 'codex'), join(bin, 'codex'));
-  assert.equal(trustedPath(bin, () => false), '', 'target in a group-writable folder, group not private');
-  assert.equal(trustedPath(bin, (g) => g === gid), bin, 'target and folder 0775 in the own private group');
-  // entries are filtered one by one
-  assert.equal(trustedPath(`${group}:${plain}`, () => false), plain);
+  // against the real dashboard too
+  const thin = open({ url: main.url, record: true });
+  await thin.call(1, 'initialize', INIT);
+  const r = await thin.call(2, 'tools/call', { name: 'list_coding_agents', arguments: {} });
+  assert.ok(!r.error && !r.result.isError, JSON.stringify(r));
+  assert.ok((await thin.loaded()).some((u) => u.endsWith('/src/features/registry.ts')));
+  assert.ok(!(await thin.call(3, 'tools/call', { name: 'list_ports', arguments: {} })).error);
+  assert.equal(await thin.close(), 0);
 });
 
 // ============================================================ measurement: a long tool and other GETs
@@ -850,18 +803,4 @@ test('measure: a long tool in the daemon does not hold up other requests', async
   t.diagnostic(`GET /api/mcp/ping while adoption_stats runs: ${times.join(', ')} ms`);
   console.log(`# ping latency during adoption_stats: ${times.join(', ')} ms`);
   assert.ok(Math.max(...times) < 1000, times.join(','));
-});
-
-// One cleanup, in this order, and one failure never skips the rest: processes first (they write into DIR), then the
-// listeners a failed assertion left open (they would keep the file from exiting), then the folder.
-after(async () => {
-  for (const s of sessions) {
-    try {
-      s.child.kill('SIGKILL');
-    } catch {
-      // already gone
-    }
-  }
-  await Promise.allSettled([...daemons.map((d) => d.stop()), ...fakes.map((f) => f.close())]);
-  await rm(DIR, { recursive: true, force: true, maxRetries: 3 }).catch(() => {});
 });

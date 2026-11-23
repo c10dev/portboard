@@ -40,10 +40,6 @@ const sessionId = process.env.CLAUDE_CODE_SESSION_ID;
 const claudePid = process.env.CLAUDE_PID;
 if (sessionId && SESSION_ID.test(sessionId)) headers['X-Portboard-Session'] = sessionId;
 if (claudePid && CLAUDE_PID.test(claudePid)) headers['X-Portboard-Claude-Pid'] = claudePid;
-// Where the session finds its CLIs: start_coding_agent runs in the dashboard, whose own PATH may not have them.
-// (printable ASCII only, as any other byte would make the request itself fail; at most 4096 characters and 64 entries,
-// the limits the dashboard applies)
-if (process.env.PATH && process.env.PATH.length <= 4096 && /^[\x20-\x7e]+$/.test(process.env.PATH) && process.env.PATH.split(':').length <= 64) headers['X-Portboard-Path'] = process.env.PATH;
 
 /** @param {Reply} msg */
 const send = (msg) => process.stdout.write(`${JSON.stringify(msg)}\n`);
@@ -137,6 +133,18 @@ function switchToLocal() {
 const idOf = (msg) => (msg !== null && typeof msg === 'object' && 'id' in msg ? { id: /** @type {{ id?: Id }} */ (msg).id ?? null } : null);
 
 /**
+ * @param {string} body
+ * @returns {boolean}
+ */
+function refusesTool(body) {
+  try {
+    return JSON.parse(body)?.error === 'local only tool';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * @param {string} line
  * @param {unknown} msg
  * @returns {Promise<void>}
@@ -153,7 +161,10 @@ async function handle(line, msg) {
       await sleep(RETRY_AFTER_MS);
       if (!local) sent = await post(line);
     }
-    if (sent.kind !== 'connect') {
+    // 409 { error: 'local only tool' }: the dashboard refused a tool that runs only in the session's own process
+    // (the coding-agent tools). Nothing ran, so this request is answered here, and so is the rest of the session.
+    const localOnly = sent.kind === 'reply' && sent.status === 409 && refusesTool(sent.body);
+    if (sent.kind !== 'connect' && !localOnly) {
       if (sent.kind === 'lost') return failure(sent.why);
       if (sent.status === 204) return;
       if (sent.status !== 200) return failure(String(sent.status));
@@ -165,7 +176,7 @@ async function handle(line, msg) {
       return;
     }
   }
-  // The daemon could not be reached: this request and the rest of the session are answered in this process.
+  // The daemon could not be reached, or refused the tool: this request and the rest of the session are answered in this process.
   const reply = await (await switchToLocal())(msg);
   if (reply) send(reply);
 }
