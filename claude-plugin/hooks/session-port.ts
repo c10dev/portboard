@@ -14,6 +14,7 @@
 // Portboard's src/), like session-end.ts. Off: the plugin's `session_port` option or PORTBOARD_SESSION_PORT=0.
 
 import { appendFile, readFile } from 'node:fs/promises';
+import { hookTimeoutMs } from './timeout.ts';
 
 export const DEFAULT_URL = 'http://127.0.0.1:8790';
 export const TIMEOUT_MS = 500;
@@ -51,7 +52,7 @@ export async function lookup(cwd: string, withEnv: boolean, opts: { env?: Env; t
     const env = opts.env ?? process.env;
     const base = (env.PORTBOARD_URL || DEFAULT_URL).replace(/\/+$/, '');
     const q = new URLSearchParams({ cwd, ...(withEnv ? { env: '1' } : {}), ...(multiMachine(env) ? { machines: '1' } : {}) });
-    const res = await fetch(`${base}/api/claude/session-port?${q}`, { signal: AbortSignal.timeout(opts.timeoutMs ?? TIMEOUT_MS) });
+    const res = await fetch(`${base}/api/claude/session-port?${q}`, { signal: AbortSignal.timeout(opts.timeoutMs ?? hookTimeoutMs(TIMEOUT_MS, env)) });
     if (!res.ok) {
       await res.body?.cancel().catch(() => {});
       return null;

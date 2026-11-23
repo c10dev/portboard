@@ -130,6 +130,7 @@ per cwd), so a loop of requests can't make it spawn `ss` or `git` per call (L1).
 - Only the nudge: turn the plugin's `port_nudge` option off (its settings under `/plugin`; the hook reads it as
   `CLAUDE_PLUGIN_OPTION_PORT_NUDGE`), or export `PORTBOARD_NUDGE=0` in the environment Claude Code starts from.
 - The whole plugin: `/plugin disable portboard@portboard` (or `claude plugin disable portboard@portboard`).
+- `PORTBOARD_HOOK_TIMEOUT_MS` (an integer from 1 to 10000) sets the hooks' HTTP time limit in milliseconds. It is for tests and slow machines. The default is each hook's own constant.
 - `PORTBOARD_URL` points the hooks **and the MCP server** at another Portboard (a preview: `PORTBOARD_URL=http://127.0.0.1:8800`). The MCP server's tools, write tools included, then act through that Portboard.
 
 ## `GET /api/claude/port-advice`
