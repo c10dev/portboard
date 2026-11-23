@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { request as httpRequest, type IncomingHttpHeaders, type IncomingMessage } from 'node:http';
 import { connect } from 'node:net';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -952,4 +953,85 @@ test('the page: the proxy block, the copy button for the command and the key but
   const block = src.slice(src.indexOf('function proxyBlock'));
   assert.match(block, /write: true/);
   assert.doesNotMatch(block, /textContent = (?:key|r\.key)/, 'the key is never put on the page');
+});
+
+// ---- review follow-ups ----
+
+test('counts.requests: only a caller that passed the Host, Origin and key checks is counted', async () => {
+  await claude(TOKEN.A);
+  await call({ auth: 'none' });
+  await call({ key: 'wrong' });
+  await call({ headers: { origin: 'https://example.com' } });
+  await call({ headers: { host: 'evil.example' } });
+  // a port probe: connect and leave
+  await new Promise<void>((resolve) => {
+    const sock = connect({ host: PROXY_HOST, port: portOf() }, () => sock.end());
+    sock.once('close', () => resolve());
+  });
+  assert.equal(proxy.report().counts.requests, 0);
+  await call();
+  await call({ method: 'GET', path: '/v1/models' });
+  assert.equal(proxy.report().counts.requests, 2);
+});
+
+test('an error after the listener opened closes that listener, and the next sync opens the port again', async () => {
+  const p = proxyOf();
+  await p.sync({ enabled: true, port: 0 });
+  const port = p.report().port;
+  (p as unknown as { server: { emit(e: string, err: Error): boolean } }).server.emit('error', new Error('boom'));
+  assert.equal(p.report().state, 'error');
+  assert.equal(p.boundPort(), 0);
+  // the old listener is closed: the port is free to bind again
+  await p.sync({ enabled: true, port });
+  assert.equal(p.report().state, 'listening');
+  assert.equal(p.report().port, port);
+  assert.equal((await call({ key: await p.key() }, port)).status, 503, 'it answers (no account here)');
+  await p.close();
+});
+
+test('proxyHoldsPort follows the two flags in a preview too; a replaced config (the test hook) is used as it is', () => {
+  setProxyConfigForTest(() => ({ enabled: true, port: 8795 }));
+  assert.equal(proxyHoldsPort(8795), true);
+  setProxyConfigForTest(() => ({ enabled: false, port: 8795 }));
+  assert.equal(proxyHoldsPort(8795), false);
+  // a preview process with both flags on: no proxy of its own, but the production proxy port is still refused
+  const dir = mkdtempSync(join(FAKE_HOME, 'preview-'));
+  writeFileSync(join(dir, 'portboard.json'), JSON.stringify({ accounts: { enabled: true, proxy: { enabled: true, port: 8795 } } }));
+  const code = `const m = await import(${JSON.stringify(new URL('../src/core/accounts/proxy.ts', import.meta.url).href)});
+    console.log(JSON.stringify([m.proxyConfig().enabled, m.proxyHoldsPort(8795), m.proxyHoldsPort(8796)]));`;
+  const out = (port: string) =>
+    JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', code], { env: { PATH: process.env.PATH ?? '', HOME: dir, PORTBOARD_PORT: port, PORTBOARD_SITE: join(dir, 'portboard.json') }, encoding: 'utf8' }));
+  assert.deepEqual(out('8808'), [false, true, false], 'preview: the proxy is off here, the port is still held');
+  assert.deepEqual(out('8790'), [true, true, false], 'production');
+});
+
+test('a process that never synced reports the settings and state unknown while they are on', async () => {
+  const idle = new AccountsProxy({ ...homesOpts(), keyPath: KEY_FILE });
+  setProxyConfigForTest(() => ({ enabled: true, port: 8801 }));
+  let r = idle.report();
+  assert.deepEqual([r.enabled, r.state, r.port, r.url], [true, 'unknown', 8801, null]);
+  r = (await accountsReport({ ...homesOpts(), proxy: idle })).proxy;
+  assert.equal(r.state, 'unknown');
+  setProxyConfigForTest(() => ({ enabled: false, port: 8801 }));
+  r = idle.report();
+  assert.deepEqual([r.enabled, r.state], [false, 'off']);
+  // after a sync the state is the listener's own
+  setProxyConfigForTest(() => ({ enabled: true, port: 0 }));
+  await idle.sync({ enabled: true, port: 0 });
+  assert.equal(idle.report().state, 'listening');
+  await idle.close();
+  assert.equal(idle.report().state, 'off');
+});
+
+test('no usable account is written at most once a minute', async () => {
+  const count = () => proxy.report().events.filter((e) => e.kind === 'no usable account').length;
+  assert.equal((await call()).status, 503);
+  assert.equal((await call()).status, 503);
+  assert.equal(count(), 1);
+  clock = NOW + 59_000;
+  await call();
+  assert.equal(count(), 1);
+  clock = NOW + 61_000;
+  await call();
+  assert.equal(count(), 2);
 });

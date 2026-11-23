@@ -84,6 +84,16 @@ export class Pool {
     return (this.o.now ?? Date.now)();
   }
 
+  private noAccountNoted = -Infinity;
+
+  /** `no usable account`: at most one line per minute, as for `token expired` */
+  noteNoAccount(): void {
+    const now = this.now();
+    if (now - this.noAccountNoted < EXPIRED_NOTE_MS) return;
+    this.noAccountNoted = now;
+    this.note({ kind: 'no usable account', status: 503 });
+  }
+
   /** The newest `n` events, newest first */
   recent(n: number): ProxyEvent[] {
     return this.ring.slice(-n).reverse();

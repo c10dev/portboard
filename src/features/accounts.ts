@@ -212,7 +212,7 @@ export const accountsFeature: FeatureModule = {
           'remaining limits (used percent and reset time of the 5-hour and weekly windows; none for Copilot). It reads the CLIs\' ' +
           'two login files (~/.claude/.credentials.json, ~/.codex/auth.json) and Portboard\'s own accounts file, and asks each ' +
           'vendor\'s unofficial usage endpoint (api.anthropic.com, chatgpt.com), cached for 5 minutes. It never refreshes a ' +
-          'token (only the dashboard does that, for an added account with no folder) and never returns a token. Each added account also says whether it is `active` and, once the owner chose "use this account" ' +
+          'token (only the dashboard does that, for an added account with no folder) and never returns a token. The answer also has `proxy` (the account pool proxy: enabled, state, port, current account id, resting account ids, last events, counts; never a key; state is `unknown` in this process while the settings are on). Each added account also says whether it is `active` and, once the owner chose "use this account" ' +
           'in the dashboard, the `command` that starts its CLI in its own folder. Read-only: it cannot add, use or remove an account. When accounts.enabled is off in ' +
           'portboard.json it answers "accounts disabled" and reads nothing.',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },

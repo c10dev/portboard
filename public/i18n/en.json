@@ -143,6 +143,7 @@
   "accounts.proxy.state.error": "The proxy can't start. Check the key file and the port.",
   "accounts.proxy.state.listening": "Listening on port {port}",
   "accounts.proxy.state.portInUse": "Port {port} is in use. Portboard tries again every minute.",
+  "accounts.proxy.state.unknown": "This process can't tell whether the proxy is running. The dashboard opens it.",
   "accounts.proxy.title": "Proxy",
   "accounts.proxy.unknown": "Removed account",
   "accounts.proxy.using": "In use by the proxy",

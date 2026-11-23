@@ -47,7 +47,8 @@ const MAX_PATHS = 20;
 const PATH_CLIP = 80;
 const SHOWN_EVENTS = 20;
 
-export type ProxyState = 'off' | 'listening' | 'port in use' | 'error';
+/** `unknown`: the settings say on, but this process never opened or closed the proxy (the stdio MCP server): the dashboard's may be listening */
+export type ProxyState = 'off' | 'listening' | 'port in use' | 'error' | 'unknown';
 
 export interface ProxyConfig {
   enabled: boolean;
@@ -160,6 +161,8 @@ export class AccountsProxy {
   private server: Server | null = null;
   private state: ProxyState = 'off';
   private cfg: ProxyConfig = { enabled: false, port: SITE_DEFAULTS.accounts.proxy.port };
+  /** `sync` ran in this process */
+  private synced = false;
   /** the port the open listener was asked for (0 asks for any) */
   private openedFor = 0;
   private bound = 0;
@@ -182,10 +185,12 @@ export class AccountsProxy {
 
   report(): ProxyReport {
     const listening = this.state === 'listening';
-    const port = listening ? this.bound : this.cfg.port;
+    // a process that never synced says what the settings say, and does not claim to know the listener's state
+    const cfg = this.synced ? this.cfg : proxyConfig();
+    const port = listening ? this.bound : cfg.port;
     return {
-      enabled: this.cfg.enabled,
-      state: this.state,
+      enabled: cfg.enabled,
+      state: !this.synced && cfg.enabled ? 'unknown' : this.state,
       port,
       url: listening ? `http://${PROXY_HOST}:${port}` : null,
       current: { claude: this.pool.current },
@@ -206,6 +211,7 @@ export class AccountsProxy {
   sync(cfg: ProxyConfig): Promise<void> {
     return this.enqueue(async () => {
       this.cfg = cfg;
+      this.synced = true;
       if (!cfg.enabled) {
         await this.stop();
         this.state = 'off';
@@ -270,6 +276,8 @@ export class AccountsProxy {
     // an error after the listener opened: say so once, and the next job run opens it again
     server.on('error', () => {
       if (this.server === server) this.server = null;
+      server.close();
+      server.closeAllConnections();
       this.setState('error', `listener failed on ${PROXY_HOST}:${port}`);
     });
     this.server = server;
@@ -320,12 +328,13 @@ export class AccountsProxy {
   // ---- one request ----
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    this.requests++;
     const host = String(req.headers.host ?? '').toLowerCase();
     if ((host !== `${PROXY_HOST}:${this.bound}` && host !== `localhost:${this.bound}`) || req.headers.origin !== undefined) {
       return sendJson(res, 403, BODIES.denied);
     }
     if (!this.authorized(req)) return sendJson(res, 401, BODIES.auth);
+    // only a caller that passed both checks counts (a port probe or an unauthenticated call does not)
+    this.requests++;
     const target = upstreamTarget(req);
     if (!target) {
       const path = shownPath(req);
@@ -387,7 +396,7 @@ export class AccountsProxy {
     }
     if (abort.signal.aborted) return void held?.response.body?.cancel().catch(() => {});
     if (held) return this.pass(held.response, res);
-    pool.note({ kind: 'no usable account', status: 503 });
+    pool.noteNoAccount();
     sendJson(res, 503, BODIES.noAccount);
   }
 
@@ -410,22 +419,21 @@ export class AccountsProxy {
 /** The proxy this process runs (the dashboard's `accounts-proxy` job drives it) */
 export const accountsProxy = new AccountsProxy();
 
-const settings = (): ProxyConfig => ({
-  enabled: SITE.accounts.enabled && SITE.accounts.proxy.enabled && PATHS.profile !== 'preview',
-  port: SITE.accounts.proxy.port,
-});
-let configFn: () => ProxyConfig = settings;
+/** The two flags and the port, without the preview rule: a preview's expose_port still must not touch the production proxy port */
+const flags = (): ProxyConfig => ({ enabled: SITE.accounts.enabled && SITE.accounts.proxy.enabled, port: SITE.accounts.proxy.port });
+const settings = (): ProxyConfig => ({ ...flags(), enabled: flags().enabled && PATHS.profile !== 'preview' });
+let configFn: (() => ProxyConfig) | null = null;
 
 /** What the settings say: on only when accounts.enabled and accounts.proxy.enabled are both true, and never in a preview */
-export const proxyConfig = (): ProxyConfig => configFn();
+export const proxyConfig = (): ProxyConfig => (configFn ?? settings)();
 
 /** For tests: replace the settings */
 export function setProxyConfigForTest(fn: (() => ProxyConfig) | null): void {
-  configFn = fn ?? settings;
+  configFn = fn;
 }
 
-/** True when `port` is the proxy's port in the settings of a proxy that is on (expose_port refuses it) */
+/** True when `port` is the proxy's port in the settings of a proxy that is on, also in a preview (expose_port refuses it) */
 export function proxyHoldsPort(port: number): boolean {
-  const cfg = proxyConfig();
+  const cfg = (configFn ?? flags)();
   return cfg.enabled && port === cfg.port;
 }

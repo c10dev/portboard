@@ -210,6 +210,8 @@ function proxyBlock(report) {
   if (!p) return null;
   const title = h('strong', null, t('accounts.proxy.title'));
   if (!p.enabled) return h('div', { class: 'acc-proxy' }, title, h('p', { class: 'set-note' }, t('accounts.proxy.off')));
+  // on in the settings, but this process never opened or closed it: no state to show, and no buttons
+  if (p.state === 'unknown') return h('div', { class: 'acc-proxy' }, title, h('p', { class: 'set-note' }, t('accounts.proxy.state.unknown')));
   const names = new Map(report.accounts.map((a) => [a.id, a.alias || a.email || (ADDED[a.provider] ?? a.provider)]));
   const who = (id) => (id ? (names.get(id) ?? t('accounts.proxy.unknown')) : '–');
   const listening = p.state === 'listening';
