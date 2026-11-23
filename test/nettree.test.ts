@@ -257,3 +257,44 @@ test('remote list_devices: the tree without addresses or address-made keys; show
   assert.equal(openNet.subnet.cidr, '10.0.0.0/24');
   assert.equal(openNet.name, 'LAN 10.0.0.0/24');
 });
+
+test("an empty /32 that is the router's own or one of its guests' addresses is not drawn; routes keep it", () => {
+  const cidrs = ['10.0.0.0/24', '10.0.0.2/32', '10.0.0.3/32', '10.0.0.44/32', '10.0.0.5/32', '10.0.0.7/32', '10.0.0.99/32', '10.1.0.0/24'];
+  const devices = [
+    dev('hv1', { routes: cidrs, lanIps: ['10.0.0.2'] }),
+    dev('box', { self: true }),
+    dev('store', { lanIps: ['10.0.0.3'] }),
+    dev('desk', { lanIps: ['10.0.0.7'] }),
+  ];
+  const proxmox = pve([pveHost('hv1', [
+    guest(205, 'box', { type: 'qemu', device: 'box' }),
+    guest(203, 'store', { lanIp: '10.0.0.3', device: 'store' }),
+    guest(204, 'media', { lanIp: '10.0.0.44', device: 'lan:10.0.0.44' }),
+  ], { ip: '10.0.0.2' })]);
+  const t = buildNetTree({ devices, proxmox, lanHosts: [], selfLanIps: ['10.0.0.5'] });
+  const subnets = [...walk(t.roots)].map(({ node }) => node).filter((n) => n.kind === 'subnet');
+  const subnet = (cidr: string) => subnets.find((n) => n.subnet?.cidr === cidr);
+  for (const c of ['10.0.0.2/32', '10.0.0.3/32', '10.0.0.44/32', '10.0.0.5/32']) assert.equal(subnet(c), undefined, c);
+  assert.deepEqual(subnet('10.0.0.7/32')?.children.map((c) => c.device), ['desk']);
+  assert.equal(subnet('10.0.0.99/32')?.children.length, 0);
+  assert.ok(subnet('10.0.0.0/24'));
+  assert.equal(subnet('10.1.0.0/24')?.children.length, 0);
+  assert.deepEqual(find(t, 'host:hv1').routes?.map((r) => r.cidr).sort(), [...cidrs].sort());
+
+  // a standby row on a router whose own and guests' addresses do not include the /32 stays
+  const t2 = buildNetTree({
+    devices: [...devices, dev('hv2', { standbyRoutes: ['10.0.0.3/32'] })], proxmox, lanHosts: [], selfLanIps: ['10.0.0.5'],
+  });
+  const hv2 = find(t2, 'host:hv2');
+  const standbyRow = hv2.children.filter((c) => c.kind === 'subnet');
+  assert.deepEqual(standbyRow.map((c) => [c.subnet?.cidr, c.subnet?.role, c.children.length]), [['10.0.0.3/32', 'standby', 0]]);
+  assert.deepEqual(hv2.routes?.map((r) => r.cidr), ['10.0.0.3/32']);
+
+  // another router advertising a guest's address is the only row for that route: drawn
+  const t3 = buildNetTree({
+    devices: [...devices.map((d) => (d.id === 'hv1' ? { ...d, routes: cidrs.filter((c) => c !== '10.0.0.44/32') } : d)), dev('gw', { routes: ['10.0.0.44/32'] })],
+    proxmox, lanHosts: [], selfLanIps: ['10.0.0.5'],
+  });
+  const gwRows = find(t3, 'host:gw').children.filter((c) => c.kind === 'subnet');
+  assert.deepEqual(gwRows.map((c) => [c.subnet?.cidr, c.children.length]), [['10.0.0.44/32', 0]]);
+});

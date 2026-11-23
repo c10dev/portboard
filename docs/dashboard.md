@@ -85,7 +85,7 @@ hv1                            ← a subnet router and/or Proxmox host
 ├─ store           CT 203
 ├─ media           CT 204  LAN 전용
 ├─ box             VM 205  이 서버
-└─ LAN 10.0.0.0/24 · hv1가 라우팅
+└─ LAN 10.0.0.0/24 · hv1 경유
    ├─ desk         tailnet 직접       (it has its own Tailscale address)
    ├─ tv           hv1 경유로만       (LAN only, seen connecting or named)
    └─ gateway      ARP로만 확인       (only in this server's ARP table)
@@ -95,10 +95,10 @@ hv1                            ← a subnet router and/or Proxmox host
 
 - **The model** is `src/core/nettree.ts` (`buildNetTree`, pure, tests in `test/nettree.test.ts`). It reads `routes` (Tailscale `PrimaryRoutes`) and the new `standbyRoutes` (an approved subnet in `AllowedIPs` that another router serves now), the Proxmox tree, and the LAN addresses this server knows: clients connected now and named ones (`seen: client`), and the ARP table (`seen: neighbor`, docker bridges left out).
 - **Every device appears once.** A guest stays under its Proxmox host, with its LAN IP (this server's own LAN address comes from its interfaces). A device on a routed LAN goes into that LAN group, in the most specific subnet that holds it. Everything else is 직접 연결. Funnel/ingress peers never get here.
-- **Several routers:** each LAN is listed under its primary router; a router that advertises the same subnet as a standby gets an empty `LAN … · 대기 (지금은 X가 라우팅)` row. Two nodes both claiming primary (a stale netmap): the online one, then by name. A router that isn't a Proxmox host, a Proxmox host that routes nothing, an offline router and no Proxmox token all work; exit-node routes are not LANs.
+- **Several routers:** each LAN is listed under its primary router; a router that advertises the same subnet as a standby gets an empty `LAN … · 대기 (지금은 X 경유)` row. Two nodes both claiming primary (a stale netmap): the online one, then by name. A router that isn't a Proxmox host, a Proxmox host that routes nothing, an offline router and no Proxmox token all work; exit-node routes are not LANs. A router that also advertises a /32 of its own LAN address or one of its guests' gets no extra row for it, because that host or guest row already shows the address; an empty /24 and a /32 on another router are still drawn, since those routes say something the rows don't.
 - **Where it is served:** `tree` on `GET /api/devices` (the sidebar), `GET /api/usage` (this tab) and MCP `list_devices`. The remote `list_devices` keeps names, kinds, states and `reach`, and drops subnets, addresses, endpoints and the UI's keys unless `showAddresses` is on (`src/remote/redact.ts`).
 - **A row opens** the device's card detail, a Proxmox guest's sheet, or, for a LAN address with neither, a short sheet with its address and how it is reached. A group's ▸ folds it. The sidebar remembers its folds in `pb.navFold` and paints them from the cache before anything loads (`lib/shell-boot.js`); the tab keeps its own in `pb.devTreeFold`.
-- **"<router> 경유" chips** (사용 중 chips, the headline, a card's routed block, the detail, the 서비스 detail's history) now say the route in their tooltip, e.g. "10.0.0.0/24를 hv1이 라우팅해서 출발지가 hv1로 보여요", and link to the router, whose detail explains SNAT.
+- **"<router> 경유" chips** (사용 중 chips, the headline, a card's routed block, the detail, the 서비스 detail's history) now say the route in their tooltip, e.g. "hv1 경유(10.0.0.0/24)라서 출발지가 hv1 주소로 보여요", and link to the router, whose detail explains SNAT.
 
 ### New devices (새 기기)
 

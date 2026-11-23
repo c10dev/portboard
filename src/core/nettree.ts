@@ -5,7 +5,7 @@
 //   tailnet
 //   ├─ subnet routers and Proxmox hosts           (kind host)
 //   │  ├─ guests: VMs and containers              (kind guest; a guest that routes a subnet carries its LAN group)
-//   │  └─ LAN <cidr> · <router>가 라우팅            (kind subnet; on the primary router, members listed once)
+//   │  └─ LAN <cidr> · <router> 경유               (kind subnet; on the primary router, members listed once)
 //   │     └─ LAN machines in that CIDR            (kind device, reach tailnet | routed | arp)
 //   ├─ 직접 연결: the other tailnet devices        (kind group, key direct)
 //   └─ 그 밖의 LAN 기기: LAN clients outside every routed subnet   (kind group, key other)
@@ -279,6 +279,20 @@ export function buildNetTree(inp: NetTreeInput): NetTree {
   for (const [cidr, node] of ownerNodes) {
     node.children = (members.get(cidr) ?? []).sort((a, b) => REACH[a.reach!] - REACH[b.reach!] || ipNum(a) - ipNum(b));
   }
+
+  // an empty /32 that is the router's own address or one of its guests' is not drawn (that row already shows it; `routes` keeps it)
+  const prune = (nodes: NetNode[]) => {
+    for (const p of nodes) {
+      if (p.kind !== 'host' && p.kind !== 'guest') continue;
+      const own = new Set(p.lanIps);
+      if (p.kind === 'host') for (const g of p.children) if (g.kind === 'guest') for (const ip of g.lanIps) own.add(ip);
+      p.children = p.children.filter(
+        (c) => !(c.kind === 'subnet' && c.children.length === 0 && c.subnet && prefixLen(c.subnet.cidr) === 32 && own.has(c.subnet.cidr.split('/')[0])),
+      );
+      prune(p.children);
+    }
+  };
+  prune(hosts);
 
   // ---- 직접 연결: every device not shown yet; then LAN clients outside every routed subnet ----
   const direct = devs

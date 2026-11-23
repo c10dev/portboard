@@ -48,7 +48,7 @@ test('navDevices: tree rows with depth, the groups above, fold, badges and where
     '  media [LAN 전용] (CT 204)',
     '  box [이 서버] (VM 205)',
     '  spare [오프라인] (VM 206)',
-    '  LAN 10.0.0.0/24 · hv1가 라우팅',
+    '  LAN 10.0.0.0/24 · hv1 경유',
     '    desk (10.0.0.7)',
     '    tv [경유] (10.0.0.9)',
     '    gateway [ARP] (10.0.0.1)',
@@ -135,11 +135,11 @@ test('words: reach, subnet labels, standby, the routed chip sentence, click targ
   assert.equal(reachText('arp')[0], 'ARP로만 확인');
   const { rows, names } = flatten(tree);
   const lan = rows.find((r: any) => r.node.kind === 'subnet').node;
-  assert.equal(subnetLabel(lan, 'hv1', names), 'LAN 10.0.0.0/24 · hv1가 라우팅');
+  assert.equal(subnetLabel(lan, 'hv1', names), 'LAN 10.0.0.0/24 · hv1 경유');
   const standby = { kind: 'subnet', name: 'LAN 10.0.0.0/24', subnet: { cidr: '10.0.0.0/24', router: 'gw-b', role: 'standby', primary: 'gw-a', standby: [] } };
-  assert.equal(subnetLabel(standby, 'gw-b', new Map([['gw-a', 'gw-a']])), 'LAN 10.0.0.0/24 · 대기 (지금은 gw-a가 라우팅)');
+  assert.equal(subnetLabel(standby, 'gw-b', new Map([['gw-a', 'gw-a']])), 'LAN 10.0.0.0/24 · 대기 (지금은 gw-a 경유)');
   assert.deepEqual(nodeBadges(standby).map((b: any) => b.text), ['대기']);
-  assert.match(routedTitle('gw', ['10.0.0.0/24']), /^10\.0\.0\.0\/24를 gw이 라우팅해서 출발지가 gw로 보여요/);
+  assert.match(routedTitle('gw', ['10.0.0.0/24']), /^gw 경유\(10\.0\.0\.0\/24\)라서 출발지가 gw 주소로 보여요/);
   assert.equal(nodeTarget({ device: null, guest: { node: 'hv1', vmid: 7 } }), 'guest:hv1/7');
   const tv = rows.find((r: any) => r.node.name === 'tv');
   assert.equal(tv.router, 'hv1');
