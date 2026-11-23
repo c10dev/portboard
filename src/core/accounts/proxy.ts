@@ -20,13 +20,15 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { Readable } from 'node:stream';
+import { StringDecoder } from 'node:string_decoder';
+import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { writePrivate } from '../atomic.ts';
 import { PATHS } from '../paths.ts';
 import { SITE, SITE_DEFAULTS } from '../site.ts';
 import type { HomesOptions } from './homes.ts';
 import { Pool, verdictOf, type ProxyEvent, type ProxyProvider } from './pool.ts';
+import { appendUsage, MODEL_CLIP, num as count, type UsageLine } from './usage.ts';
 
 // The URLs, the beta flag and the version header of the upstream requests live in this block and nowhere else. The shape
 // follows opencodex commit 9e0e298e (MIT): src/server/index.ts:416-417 (the path and query are kept) and
@@ -57,6 +59,12 @@ const MAX_ACCOUNTS = 4;
 const MAX_PATHS = 20;
 const PATH_CLIP = 80;
 const SHOWN_EVENTS = 20;
+/** The usage log reads at most this much of a JSON answer; a larger one is logged without token counts */
+const MAX_OBSERVE_BYTES = 1024 * 1024;
+/** The usage log's SSE buffer: a line (or an event) longer than this is dropped */
+/** `close` waits this long for the usage lines of requests that were cut */
+const CLOSE_WAIT_MS = 2000;
+const MAX_SSE_BUFFER = 64 * 1024;
 
 /** `unknown`: the settings say on, but this process never opened or closed the proxy (the stdio MCP server): the dashboard's may be listening */
 export type ProxyState = 'off' | 'listening' | 'port in use' | 'error' | 'unknown';
@@ -88,6 +96,173 @@ export interface ProxyOptions extends HomesOptions {
   maxBodyBytes?: number;
   /** tests: a shorter wait for the upstream headers */
   upstreamHeadersMs?: number;
+  /** the usage log file (tests); default PATHS.accountsUsage */
+  usagePath?: string;
+  /** tests: replace the usage log's writer */
+  appendUsage?: (line: UsageLine, path: string) => Promise<void>;
+}
+
+/** The token counts one answer carried; null where it carried none */
+interface Tokens {
+  input: number | null;
+  output: number | null;
+  cacheRead: number | null;
+  cacheWrite: number | null;
+}
+const NO_TOKENS = (): Tokens => ({ input: null, output: null, cacheRead: null, cacheWrite: null });
+const objectOf = (v: unknown): Record<string, unknown> | null => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
+
+/** The `model` of a request body: a string clipped to 128 characters, else null. Nothing else of the body is kept. */
+function modelOf(body: Buffer): string | null {
+  try {
+    const model = objectOf(JSON.parse(body.toString('utf8')))?.model;
+    return typeof model === 'string' ? model.slice(0, MODEL_CLIP) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads the token counts out of an answer as it streams by. It passes every chunk on as it came (the bytes do not change)
+ * and keeps a copy only to read: a JSON answer whole (up to MAX_OBSERVE_BYTES), an SSE answer line by line. It never throws.
+ */
+export class UsageObserver extends Transform {
+  private readonly tokens = NO_TOKENS();
+  private readonly chunks: Buffer[] = [];
+  private size = 0;
+  private over = false;
+  private readonly decoder = new StringDecoder('utf8');
+  private pending = '';
+  private data: string[] = [];
+  private dataSize = 0;
+  private skipping = false;
+
+  private readonly sse: boolean;
+  private readonly countOnly: boolean;
+
+  constructor(sse: boolean, countOnly: boolean) {
+    super();
+    this.sse = sse;
+    this.countOnly = countOnly;
+  }
+
+  override _transform(chunk: Buffer, _enc: BufferEncoding, cb: (err?: Error | null, data?: Buffer) => void): void {
+    try {
+      this.see(chunk);
+    } catch {
+      // reading is best effort; the bytes still go on
+    }
+    cb(null, chunk);
+  }
+
+  private see(chunk: Buffer): void {
+    if (!this.sse) {
+      if (this.over) return;
+      this.size += chunk.length;
+      if (this.size > MAX_OBSERVE_BYTES) {
+        this.over = true;
+        this.chunks.length = 0;
+        return;
+      }
+      this.chunks.push(chunk);
+      return;
+    }
+    this.pending += this.decoder.write(chunk);
+    let nl: number;
+    while ((nl = this.pending.indexOf('\n')) >= 0) {
+      this.line(this.pending.slice(0, nl).replace(/\r$/, ''));
+      this.pending = this.pending.slice(nl + 1);
+    }
+    if (this.pending.length > MAX_SSE_BUFFER) this.pending = '';
+  }
+
+  private line(l: string): void {
+    if (l === '') return this.event();
+    if (!l.startsWith('data:')) return;
+    const v = l.slice(5).replace(/^ /, '');
+    if (this.skipping) return;
+    // the joining character counts too, so a run of empty `data:` lines is bounded like any other
+    this.dataSize += v.length + 1;
+    if (this.dataSize > MAX_SSE_BUFFER) {
+      // too long: this event is dropped, and nothing more of it is kept up to the blank line that ends it
+      this.data = [];
+      this.dataSize = 0;
+      this.skipping = true;
+      return;
+    }
+    this.data.push(v);
+  }
+
+  private event(): void {
+    if (this.skipping) {
+      this.skipping = false;
+      return;
+    }
+    if (!this.data.length) return;
+    const text = this.data.join('\n');
+    this.data = [];
+    this.dataSize = 0;
+    let ev: Record<string, unknown> | null;
+    try {
+      ev = objectOf(JSON.parse(text));
+    } catch {
+      return;
+    }
+    if (!ev) return;
+    if (ev.type === 'message_start') {
+      const u = objectOf(objectOf(ev.message)?.usage);
+      if (!u) return;
+      this.tokens.input = count(u.input_tokens);
+      this.tokens.cacheRead = count(u.cache_read_input_tokens);
+      this.tokens.cacheWrite = count(u.cache_creation_input_tokens);
+      const out = count(u.output_tokens);
+      if (out !== null) this.tokens.output = out;
+    } else if (ev.type === 'message_delta') {
+      // the last value wins
+      const out = count(objectOf(ev.usage)?.output_tokens);
+      if (out !== null) this.tokens.output = out;
+    }
+  }
+
+  /** The characters held for a half-read line or event (tests: it stays within MAX_SSE_BUFFER plus one line) */
+  heldSize(): number {
+    return this.pending.length + this.dataSize;
+  }
+
+  /** What was seen so far: call it once the stream ended, broke off or the caller left */
+  result(): Tokens {
+    try {
+      if (this.sse) {
+        this.pending += this.decoder.end();
+        for (const l of this.pending.split('\n')) this.line(l.replace(/\r$/, ''));
+        this.pending = '';
+        this.event();
+      } else if (!this.over && this.chunks.length) {
+        const body = objectOf(JSON.parse(Buffer.concat(this.chunks).toString('utf8')));
+        if (this.countOnly) this.tokens.input = count(body?.input_tokens);
+        else {
+          const u = objectOf(body?.usage);
+          this.tokens.input = count(u?.input_tokens);
+          this.tokens.output = count(u?.output_tokens);
+          this.tokens.cacheRead = count(u?.cache_read_input_tokens);
+          this.tokens.cacheWrite = count(u?.cache_creation_input_tokens);
+        }
+        this.chunks.length = 0;
+      }
+    } catch {
+      // not the shape we read: the counts stay as they are
+    }
+    return { ...this.tokens };
+  }
+}
+
+/** What `forward` knows about the request when it writes the usage line */
+interface Seen {
+  provider: ProxyProvider;
+  model: string | null;
+  /** the path is /v1/messages/count_tokens */
+  countOnly: boolean;
+  started: number;
 }
 
 /** The closed texts of an answer: nothing of the request is in them */
@@ -236,6 +411,8 @@ export class AccountsProxy {
   private requests = 0;
   private readonly unproxied = new Map<string, number>();
   private chain: Promise<unknown> = Promise.resolve();
+  /** the requests being handled and the usage writes started, which `close` waits for (2 seconds at most) */
+  private readonly busy = new Set<Promise<unknown>>();
 
   private readonly o: ProxyOptions;
 
@@ -304,7 +481,22 @@ export class AccountsProxy {
     return this.enqueue(async () => {
       await this.stop();
       this.state = 'off';
+      // the streams that `stop` cut write their line when their handler ends: wait for those and for the writes, 2 seconds at most
+      let timer: NodeJS.Timeout | undefined;
+      const limit = new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, CLOSE_WAIT_MS);
+      });
+      const drained = (async () => {
+        while (this.busy.size) await Promise.allSettled([...this.busy]);
+      })();
+      await Promise.race([drained, limit]);
+      clearTimeout(timer);
     });
+  }
+
+  private track(p: Promise<unknown>): void {
+    this.busy.add(p);
+    void p.finally(() => this.busy.delete(p));
   }
 
   private async stop(): Promise<void> {
@@ -329,10 +521,12 @@ export class AccountsProxy {
       return this.setState('error', 'the key file cannot be used');
     }
     const server = createServer((req, res) => {
-      this.handle(req, res).catch(() => {
-        if (!res.headersSent) sendJson(res, 502, errorBody(providerOfPath(req) ?? 'claude', 'upstream'));
-        else res.destroy();
-      });
+      this.track(
+        this.handle(req, res).catch(() => {
+          if (!res.headersSent) sendJson(res, 502, errorBody(providerOfPath(req) ?? 'claude', 'upstream'));
+          else res.destroy();
+        }),
+      );
     });
     server.maxConnections = MAX_CONNECTIONS;
     server.headersTimeout = HEADERS_TIMEOUT_MS;
@@ -434,18 +628,32 @@ export class AccountsProxy {
     res.on('close', () => {
       if (!res.writableFinished) abort.abort();
     });
-    await this.forward(target.provider, req.headers, target.url, body, res, abort);
+    const seen: Seen = { provider: target.provider, model: modelOf(body), countOnly: target.url.split('?')[0].endsWith('/count_tokens'), started: this.pool.now() };
+    await this.forward(target.provider, req.headers, target.url, body, res, abort, seen);
+  }
+
+  /** Write one usage line; nothing here changes the answer, and a failed write is dropped */
+  private record(seen: Seen, account: string, status: number, tokens: Tokens): void {
+    try {
+      const line: UsageLine = { at: new Date(seen.started).toISOString(), provider: seen.provider, account, model: seen.model, status, ...tokens, ms: Math.max(0, this.pool.now() - seen.started) };
+      this.track(Promise.resolve((this.o.appendUsage ?? appendUsage)(line, this.o.usagePath ?? PATHS.accountsUsage)).catch(() => {}));
+    } catch {
+      // the log is best effort
+    }
   }
 
   /** Try the accounts in turn; hand the first answer that is not a switch to the caller */
-  private async forward(provider: ProxyProvider, from: IncomingMessage['headers'], url: string, body: Buffer, res: ServerResponse, abort: AbortController): Promise<void> {
+  private async forward(provider: ProxyProvider, from: IncomingMessage['headers'], url: string, body: Buffer, res: ServerResponse, abort: AbortController, seen: Seen): Promise<void> {
     const pool = this.pool;
     const used = new Set<string>();
+    /** the account asked last */
+    let lastId: string | null = null;
     // the last answer that asked for a switch: it is given to the caller as it is when no account is left (its body is still unread)
     let held: { response: Response; id: string } | null = null;
     for (let n = 0; n < MAX_ACCOUNTS && !abort.signal.aborted; n++) {
       const pick = await pool.next(provider, used);
       if (!pick) break;
+      lastId = pick.id;
       if (held) {
         await held.response.body?.cancel().catch(() => {});
         pool.switched(provider, held.id, pick.id, held.response.status);
@@ -464,6 +672,7 @@ export class AccountsProxy {
       } catch {
         // the caller left, the wait for the headers ran out, or the network failed: nothing was sent to the caller yet
         if (!res.destroyed && !res.headersSent) sendJson(res, 502, errorBody(provider, 'upstream'));
+        this.record(seen, pick.id, 0, NO_TOKENS());
         return;
       } finally {
         clearTimeout(timer);
@@ -471,29 +680,44 @@ export class AccountsProxy {
       const verdict = verdictOf(provider, response.status, response.headers, pool.now());
       if (!verdict) {
         if (response.status < 400) pool.current[provider] = pick.id;
-        return this.pass(response, res);
+        return this.pass(response, res, seen, pick.id);
       }
       pool.rest(provider, pick.id, verdict.restMs, response.status);
       held = { response, id: pick.id };
     }
-    if (abort.signal.aborted) return void held?.response.body?.cancel().catch(() => {});
-    if (held) return this.pass(held.response, res);
+    if (abort.signal.aborted) {
+      // the caller left (or the wait ran out) between two accounts: no answer reached the caller
+      if (lastId) this.record(seen, lastId, 0, NO_TOKENS());
+      return void held?.response.body?.cancel().catch(() => {});
+    }
+    if (held) return this.pass(held.response, res, seen, held.id);
+    // no account was left to ask: nothing to log (docs/accounts.md#usage-log)
     pool.noteNoAccount(provider);
     sendJson(res, 503, errorBody(provider, 'noAccount'));
   }
 
   /** Status and headers first, then the body as a stream; a caller that leaves ends the upstream request (the signal) */
-  private async pass(response: Response, res: ServerResponse): Promise<void> {
+  private async pass(response: Response, res: ServerResponse, seen: Seen, account: string): Promise<void> {
     const headers: Record<string, string> = {};
     for (const [k, v] of response.headers) if (!DROP_RESPONSE.has(k) && !k.startsWith('proxy-')) headers[k] = v;
-    res.writeHead(response.status, headers);
-    res.flushHeaders();
-    if (!response.body) return void res.end();
+    // an observer between the answer and the caller reads the token counts; it passes every byte on as it came
+    // a Codex answer is passed on unread: its token counts are not logged yet
+    const observer = seen.provider === 'claude' ? new UsageObserver((response.headers.get('content-type') ?? '').toLowerCase().includes('text/event-stream'), seen.countOnly) : null;
     try {
-      await pipeline(Readable.fromWeb(response.body as unknown as import('node:stream/web').ReadableStream), res);
-    } catch {
-      // upstream broke off or the caller left: the connection is closed, nothing more to say
-      res.destroy();
+      res.writeHead(response.status, headers);
+      res.flushHeaders();
+      if (!response.body) return void res.end();
+      try {
+        const source = Readable.fromWeb(response.body as unknown as import('node:stream/web').ReadableStream);
+        if (observer) await pipeline(source, observer, res);
+        else await pipeline(source, res);
+      } catch {
+        // upstream broke off or the caller left: the connection is closed, nothing more to say
+        res.destroy();
+      }
+    } finally {
+      // once, however the answer ended, with the counts seen so far
+      this.record(seen, account, response.status, observer ? observer.result() : NO_TOKENS());
     }
   }
 }

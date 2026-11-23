@@ -3,6 +3,8 @@
 //
 //   GET /api/accounts               AccountsReport. Off unless portboard.json has accounts.enabled (404 "accounts
 //                                   disabled"), and the owner's only (403 "owner only", decided like the audit log's read).
+//   GET /api/accounts/usage?days=N  {days, totals, rows}: the proxy's usage log (usage.ts), grouped by day, account and model. The same
+//                                   checks as GET /api/accounts, then 400 "invalid days" unless days is a whole number from 1 to 30 (default 7).
 //   POST /api/accounts/login/start  {provider, alias?} → the flow's id and what the owner does next
 //   POST /api/accounts/login/finish {flowId, code}     (Claude) → {account}
 //   POST /api/accounts/login/poll   {flowId}           (device code) → {state, account?, error?, interval?}
@@ -27,6 +29,7 @@ import { classify } from '../core/access.ts';
 import { cancelLogin, finishLogin, LoginError, pollLogin, startLogin, type Provider } from '../core/accounts/flows.ts';
 import { AccountError, removeAccountById, useAccount } from '../core/accounts/homes.ts';
 import { accountsProxy, proxyConfig, type ProxyConfig } from '../core/accounts/proxy.ts';
+import { summarize } from '../core/accounts/usage.ts';
 import { accountsReport, addedView, homeView } from '../core/accounts/view.ts';
 import { SITE } from '../core/site.ts';
 import { text } from '../mcp/kit.ts';
@@ -46,6 +49,13 @@ export function setAccountsEnabledForTest(fn: (() => boolean) | null): void {
 /** For tests: replace what accountsReport gets (home, env, readFile, fetch, now) */
 export function setAccountsOptionsForTest(fn: (() => ReportOptions) | null): void {
   optionsFn = fn ?? (() => ({}));
+}
+
+let usageFn: () => { path?: string; now?: () => number } = () => ({});
+
+/** For tests: replace the usage log's file and clock */
+export function setAccountsUsageForTest(fn: (() => { path?: string; now?: () => number }) | null): void {
+  usageFn = fn ?? (() => ({}));
 }
 
 /** What the login flows get: the same fetch, clock and file as the report (tests) */
@@ -83,6 +93,21 @@ export const accountsFeature: FeatureModule = {
         const c = classify(req, await ctx.owner(), await ctx.policy());
         if (!c.owner) return reply(403, { error: 'owner only', reason: c.reason ?? '' });
         return ok(await accountsReport({ ...optionsFn(), refresh: true }));
+      },
+    },
+    {
+      method: 'GET',
+      path: '/api/accounts/usage',
+      async handler({ req, url }, ctx) {
+        if (!enabledFn()) return reply(404, { error: 'accounts disabled' });
+        const c = classify(req, await ctx.owner(), await ctx.policy());
+        if (!c.owner) return reply(403, { error: 'owner only', reason: c.reason ?? '' });
+        // 1 to 30, a whole number; no `days` is 7
+        const raw = url.searchParams.get('days');
+        const days = raw === null ? 7 : /^\d{1,2}$/.test(raw) ? Number(raw) : NaN;
+        if (!(days >= 1 && days <= 30)) return reply(400, { error: 'invalid days' });
+        const o = usageFn();
+        return ok(await summarize(days, o.path, new Date((o.now ?? optionsFn().now ?? Date.now)())));
       },
     },
     {
