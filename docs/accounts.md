@@ -2,7 +2,7 @@
 
 A view of the Claude Code and Codex logins on the machine Portboard runs on, and of the accounts you add in Portboard: plan, email (Codex), when the access token expires, and the remaining limits (the 5-hour window and the weekly window). It is off by default, it is for the owner only, and no token leaves the Portboard process.
 
-It never changes a CLI login: it does not touch `~/.claude` or `~/.codex`, never refreshes the token of a CLI login, and never signs a CLI in or out. It writes only Portboard's own `accounts.json`, the folders under `account-homes/` and, when the [proxy](#proxy) is on, `accounts-proxy.key`. It writes them only when the owner adds, uses, removes or (for an added account without a folder) refreshes an account, or turns the proxy on ([Add an account](#add-an-account), [Use an account](#use-an-account), [Remove an account](#remove-an-account), [Refresh](#refresh), [Proxy](#proxy)).
+It never changes a CLI login: it does not touch `~/.claude` or `~/.codex`, never refreshes the token of a CLI login, and never signs a CLI in or out. It writes only Portboard's own `accounts.json`, the folders under `account-homes/` and, when the [proxy](#proxy) is on, `accounts-proxy.key` and `accounts-usage.jsonl` (the [usage log](#usage-log)). It writes the first three only when the owner adds, uses, removes or (for an added account without a folder) refreshes an account, or turns the proxy on, and the usage log each time the proxy sends a request on ([Add an account](#add-an-account), [Use an account](#use-an-account), [Remove an account](#remove-an-account), [Refresh](#refresh), [Proxy](#proxy)).
 
 ## Turn it on or off
 
@@ -174,6 +174,10 @@ It never records a request or answer body, a token, the proxy key, a header valu
 - **503 `no usable account` is not logged:** there is no account to name.
 - **Best effort.** A failed write is dropped without a message and never changes an answer. A log file that group or others can read or write, or that is not a regular file, is neither read nor written.
 - **30 days.** A line older than 30 days is not counted by the summary. Once a day (the first write of each UTC day after a start) the file is rewritten through `writePrivate` with only the lines of the last 30 days; a line that is not valid is dropped then.
+- **Cleanup moves forward only, and tries again.** The rewrite runs when a line's date is later than the day of the last rewrite (an older `at` never starts one). A rewrite that fails is not counted as done: the next line tries again.
+- **Size.** The file holds at most 30 days of lines, and the summary reads the whole file. The model name is read by parsing the whole request body as JSON (within the 32 MiB body limit); only the `model` string is kept.
+- **Shutdown.** When Portboard closes the proxy, it waits up to 2 seconds for the lines of requests it cuts off and for writes still running, then goes on.
+- **`unavailable`.** When the log file exists but cannot be read (group or others can read or write it, it is not a regular file, or a read error), the answer of `GET /api/accounts/usage` has `unavailable: true` with zero totals and no rows: the zeros then mean "unknown", not "no requests". A file that is not there is an empty log, and the answer has no `unavailable`.
 - **`GET /api/accounts/usage?days=N`** gives `{days, totals, rows}` for the last `N` days (a whole number from 1 to 30, default 7; else `400 invalid days`). The checks are those of `GET /api/accounts`: `404 accounts disabled`, then `403 owner only`. `rows` group the lines by UTC `day`, `provider`, `account` and `model`, with `requests` and the sums of the four counts (a request without a count adds nothing to that sum; `null` when no request had it). `totals` has `{requests, recorded}` for `claude` and `codex`: `recorded` counts the requests with both `input` and `output`.
 
 ## Errors

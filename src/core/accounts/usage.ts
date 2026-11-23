@@ -43,14 +43,18 @@ export interface UsageSummary {
   days: number;
   totals: Record<'claude' | 'codex', { requests: number; recorded: number }>;
   rows: UsageRow[];
+  /** true when the log file exists but cannot be read (loose mode, not a regular file, read error): the zeros then mean "unknown" */
+  unavailable?: boolean;
 }
 
 /** Lines older than this are not counted and are removed by the daily rewrite */
 export const KEEP_DAYS = 30;
 const DAY_MS = 86_400_000;
-const MODEL_CLIP = 128;
+/** The model name of a line is cut to this many characters (here and in the proxy) */
+export const MODEL_CLIP = 128;
 
-const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
+/** A count: a finite number of 0 or more, else null */
+export const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
 const providerOf = (v: unknown): 'claude' | 'codex' | null => (v === 'claude' || v === 'codex' ? v : null);
 
 /** One line as the file may hold it: only the allowed keys, each checked; null for a line that is not one */
@@ -92,6 +96,17 @@ async function readPrivate(path: string): Promise<string | null> {
   }
 }
 
+/** Like readPrivate, but says why there is no text: `missing` (no file: an empty log) or `unavailable` */
+async function readUsage(path: string): Promise<string | 'missing' | 'unavailable'> {
+  try {
+    const st = await stat(path);
+    if (!st.isFile() || (st.mode & 0o077) !== 0) return 'unavailable';
+    return await readFile(path, 'utf8');
+  } catch (err) {
+    return (err as { code?: unknown } | null)?.code === 'ENOENT' ? 'missing' : 'unavailable';
+  }
+}
+
 /** The same rule for a write: a missing file is fine (it is made 0600), a loose or odd one is not */
 async function writable(path: string): Promise<boolean> {
   try {
@@ -111,7 +126,8 @@ let chain: Promise<unknown> = Promise.resolve();
 
 async function prune(path: string, nowMs: number): Promise<void> {
   const text = await readPrivate(path);
-  if (text === null) return;
+  // the file was just appended to: if it cannot be read now, the rewrite failed and is tried again with the next line
+  if (text === null) throw new Error('usage log unreadable');
   const from = nowMs - KEEP_DAYS * DAY_MS;
   const keep: string[] = [];
   for (const raw of text.split('\n')) {
@@ -143,9 +159,13 @@ export function appendUsage(line: UsageLine, path: string = PATHS.accountsUsage)
       await appendPrivate(path, `${JSON.stringify(clean)}\n`);
       const at = Date.parse(clean.at);
       const nowMs = Number.isNaN(at) ? Date.now() : at;
-      if (pruned.get(path) !== utcDay(nowMs)) {
-        pruned.set(path, utcDay(nowMs));
+      // the rewrite only moves forward: a line dated before the last rewrite's day does not start another one.
+      // A failed rewrite is not marked, so the next line tries again.
+      const day = utcDay(nowMs);
+      const last = pruned.get(path);
+      if (last === undefined || day > last) {
         await prune(path, nowMs);
+        pruned.set(path, day);
       }
     } catch {
       // the log is best effort
@@ -163,8 +183,9 @@ function add(a: number | null, b: number | null): number | null {
 export async function summarize(days: number, path: string = PATHS.accountsUsage, now: Date = new Date()): Promise<UsageSummary> {
   const window = Math.min(Math.max(Math.trunc(days), 1), KEEP_DAYS);
   const out: UsageSummary = { days: window, totals: { claude: { requests: 0, recorded: 0 }, codex: { requests: 0, recorded: 0 } }, rows: [] };
-  const text = await readPrivate(path);
-  if (text === null) return out;
+  const text = await readUsage(path);
+  if (text === 'missing') return out;
+  if (text === 'unavailable') return { ...out, unavailable: true };
   const from = now.getTime() - window * DAY_MS;
   const groups = new Map<string, UsageRow>();
   for (const raw of text.split('\n')) {

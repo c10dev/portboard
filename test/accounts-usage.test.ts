@@ -28,7 +28,7 @@ process.env.PORTBOARD_ACCOUNT_HOMES = HOMES;
 process.env.PORTBOARD_ACCOUNTS_PROXY_KEY = KEY_FILE;
 process.env.PORTBOARD_ACCOUNTS_USAGE = USAGE;
 
-const { AccountsProxy, PROXY_HOST, setProxyConfigForTest } = await import('../src/core/accounts/proxy.ts');
+const { AccountsProxy, PROXY_HOST, UsageObserver, setProxyConfigForTest } = await import('../src/core/accounts/proxy.ts');
 const { appendUsage, summarize } = await import('../src/core/accounts/usage.ts');
 const { upsertAccount } = await import('../src/core/accounts/store.ts');
 const { resetRefreshForTest } = await import('../src/core/accounts/refresh.ts');
@@ -146,8 +146,8 @@ test.afterEach(async () => {
 
 // ---- the client ----
 
-function open(body: Buffer | string = REQUEST, path = '/v1/messages') {
-  const req = httpRequest({ host: PROXY_HOST, port: portOf(), path, method: 'POST', headers: { authorization: `Bearer ${key}` }, agent: false });
+function open(body: Buffer | string = REQUEST, path = '/v1/messages', port = portOf()) {
+  const req = httpRequest({ host: PROXY_HOST, port, path, method: 'POST', headers: { authorization: `Bearer ${key}` }, agent: false });
   const response = new Promise<IncomingMessage>((resolve, reject) => {
     req.on('response', resolve);
     req.on('error', reject);
@@ -155,8 +155,8 @@ function open(body: Buffer | string = REQUEST, path = '/v1/messages') {
   req.end(body);
   return { req, response };
 }
-async function call(body: Buffer | string = REQUEST, path = '/v1/messages') {
-  const res = await open(body, path).response;
+async function call(body: Buffer | string = REQUEST, path = '/v1/messages', port = portOf()) {
+  const res = await open(body, path, port).response;
   const chunks: Buffer[] = [];
   for await (const c of res) chunks.push(c as Buffer);
   const bytes = Buffer.concat(chunks);
@@ -484,4 +484,185 @@ test('usage codex: one Codex request is one line with provider codex and no toke
   const s = JSON.parse(summary) as Awaited<ReturnType<typeof summarize>>;
   assert.deepEqual(s.totals, { claude: { requests: 0, recorded: 0 }, codex: { requests: 1, recorded: 0 } });
   assert.deepEqual([s.rows[0].provider, s.rows[0].input, s.rows[0].output], ['codex', null, null]);
+});
+
+// ---- review fixes ----
+
+const enc = new TextEncoder();
+const MAX_SSE = 64 * 1024;
+const EMPTY = { claude: { requests: 0, recorded: 0 }, codex: { requests: 0, recorded: 0 } };
+
+test('observer: empty data lines, a long line and a long event keep the held size bounded, and the next events are still read', async () => {
+  // several MiB of empty `data:` lines, with no blank line between them
+  const o = new UsageObserver(true, false);
+  o.resume();
+  const chunk = Buffer.from('data:\n'.repeat(4096));
+  let worst = 0;
+  for (let i = 0; i < 200; i++) {
+    await new Promise<void>((resolve) => o.write(chunk, () => resolve()));
+    worst = Math.max(worst, o.heldSize());
+  }
+  assert.ok(worst <= MAX_SSE + 16, `held ${worst}`);
+  // the blank line ends the dropped event; the next event is read
+  o.write('\ndata: {"type":"message_start","message":{"usage":{"input_tokens":10}}}\n\n');
+  // a line of 70 KiB in 16 KiB pieces, then a message_delta
+  const line = `data: {"type":"x","pad":"${'A'.repeat(70 * 1024)}"}\n\n`;
+  for (let i = 0; i < line.length; i += 16 * 1024) {
+    await new Promise<void>((resolve) => o.write(line.slice(i, i + 16 * 1024), () => resolve()));
+    assert.ok(o.heldSize() <= MAX_SSE + 16 * 1024, 'held while a long line arrives');
+  }
+  o.write('data: {"type":"message_delta","usage":{"output_tokens":9}}\n\n');
+  o.end();
+  await new Promise((r) => o.once('end', r));
+  const t = o.result();
+  assert.deepEqual([t.input, t.output], [10, 9]);
+});
+
+test('usage: an SSE answer of empty data lines reaches the caller unchanged, and a 70 KiB line is dropped but the next message_delta is read', async () => {
+  await claude(TOKEN.A);
+  const empties = 'data:\n'.repeat(200_000);
+  upstream = () => sse([empties]);
+  const r = await call();
+  assert.ok(r.bytes.equals(Buffer.from(empties)), 'the bytes are the upstream bytes');
+  const big =
+    'data: {"type":"message_start","message":{"usage":{"input_tokens":10}}}\n\n' +
+    `data: {"type":"x","pad":"${'B'.repeat(70 * 1024)}"}\n\n` +
+    'data: {"type":"message_delta","usage":{"output_tokens":9}}\n\n';
+  upstream = () => sse([big.slice(0, 20_000), big.slice(20_000, 60_000), big.slice(60_000)]);
+  const r2 = await call();
+  assert.ok(r2.bytes.equals(Buffer.from(big)));
+  const rows = await lines(2);
+  assert.deepEqual([rows[0].input, rows[0].output, rows[1].input, rows[1].output], [null, null, 10, 9]);
+});
+
+test('usage: a JSON answer over 1 MiB is logged without counts and reaches the caller whole', async () => {
+  await claude(TOKEN.A);
+  const answer = JSON.stringify({ usage: { input_tokens: 1, output_tokens: 2 }, pad: 'C'.repeat(1_200_000) });
+  upstream = () => new Response(answer, { status: 200, headers: { 'content-type': 'application/json' } });
+  const r = await call();
+  assert.equal(r.bytes.toString('utf8'), answer);
+  const [line] = await lines(1);
+  assert.deepEqual([line.status, line.input, line.output, line.cacheRead, line.cacheWrite], [200, null, null, null, null]);
+});
+
+test('usage: an unreadable log file is `unavailable`, a missing one is an empty log', async () => {
+  const missing = (await usageRoute('?days=7')).body as { unavailable?: boolean; totals: unknown };
+  assert.ok(!missing.unavailable);
+  assert.deepEqual(missing.totals, EMPTY);
+  await appendUsage(mk(), USAGE);
+  assert.ok(!((await usageRoute('?days=7')).body as { unavailable?: boolean }).unavailable, 'a readable file is not unavailable');
+  chmodSync(USAGE, 0o644);
+  const loose = (await usageRoute('?days=7')).body as { unavailable?: boolean; totals: unknown; rows: unknown[] };
+  assert.equal(loose.unavailable, true);
+  assert.deepEqual([loose.totals, loose.rows], [EMPTY, []]);
+  // not a regular file
+  rmSync(USAGE, { force: true });
+  mkdirSync(USAGE);
+  assert.equal(((await usageRoute('?days=7')).body as { unavailable?: boolean }).unavailable, true);
+  rmSync(USAGE, { recursive: true });
+});
+
+test('usage: the daily rewrite moves forward only, and a failed rewrite is tried again with the next line', async () => {
+  const dir = join(FAKE_HOME, 'u9');
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, 'usage.jsonl');
+  const d1 = NOW;
+  const d2 = NOW + DAY;
+  const planted = () => writeFileSync(path, readFileSync(path, 'utf8') + `${JSON.stringify(mk({ at: iso(d1 - 31 * DAY), account: 'acc-old' }))}\n`, { mode: 0o600 });
+  const has = () => readFileSync(path, 'utf8').includes('acc-old');
+  await appendUsage(mk({ at: iso(d1) }), path);
+  planted();
+  await appendUsage(mk({ at: iso(d2) }), path);
+  assert.equal(has(), false, 'a later day rewrites');
+  planted();
+  // lines that alternate around midnight: the earlier day never starts another rewrite
+  await appendUsage(mk({ at: iso(d1) }), path);
+  await appendUsage(mk({ at: iso(d2) }), path);
+  await appendUsage(mk({ at: iso(d1 - DAY) }), path);
+  assert.equal(has(), true, 'no second rewrite for the same or an earlier day');
+  await appendUsage(mk({ at: iso(d2 + DAY) }), path);
+  assert.equal(has(), false);
+
+  // a failed rewrite is not marked as done (a folder that cannot be written needs a user other than root)
+  if (process.getuid?.() === 0) return;
+  const dir2 = join(FAKE_HOME, 'u9b');
+  mkdirSync(dir2, { recursive: true });
+  const p2 = join(dir2, 'usage.jsonl');
+  writeFileSync(p2, `${JSON.stringify(mk({ at: iso(d1 - 31 * DAY), account: 'acc-old' }))}\n`, { mode: 0o600 });
+  chmodSync(dir2, 0o500);
+  try {
+    await appendUsage(mk({ at: iso(d1) }), p2);
+    assert.ok(readFileSync(p2, 'utf8').includes('acc-old'), 'the rewrite failed, the old line is still there');
+  } finally {
+    chmodSync(dir2, 0o700);
+  }
+  await appendUsage(mk({ at: iso(d1) }), p2);
+  assert.ok(!readFileSync(p2, 'utf8').includes('acc-old'), 'the next line rewrites again');
+});
+
+test('usage: close() waits for the line of a stream it cuts off', { timeout: 20_000 }, async () => {
+  const a = await claude(TOKEN.A);
+  const start = 'event: message_start\ndata: ' + JSON.stringify({ type: 'message_start', message: { usage: { input_tokens: 31, output_tokens: 1 } } }) + '\n\n';
+  upstream = () => sse([start], true);
+  const { req, response } = open();
+  response.catch(() => {});
+  const res = await response;
+  res.on('error', () => {});
+  await res[Symbol.asyncIterator]().next();
+  assert.equal(existsSync(USAGE), false, 'the stream is still open and has no line yet');
+  await proxy.close();
+  // no waiting for the file: it is there when close() has returned
+  const rows = readFileSync(USAGE, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as UsageLine);
+  assert.equal(rows.length, 1);
+  assert.deepEqual([rows[0].account, rows[0].status, rows[0].input], [a.id, 200, 31]);
+  req.destroy();
+  res.destroy();
+});
+
+test('usage: a header timeout, an upstream that breaks after its headers and a caller that leaves between two accounts are one line each', { timeout: 20_000 }, async () => {
+  const a = await claude(TOKEN.A);
+  // the wait for the headers runs out: 502 and status 0
+  const slow = new AccountsProxy({
+    ...homesOpts(),
+    fetch: ((_url: string, init: RequestInit) => new Promise((_resolve, reject) => (init.signal as AbortSignal).addEventListener('abort', () => reject(new Error('aborted'))))) as unknown as typeof fetch,
+    keyPath: KEY_FILE,
+    usagePath: USAGE,
+    upstreamHeadersMs: 30,
+  });
+  await slow.sync({ enabled: true, port: 0 });
+  const r = await call(REQUEST, '/v1/messages', slow.report().port);
+  assert.equal(r.status, 502);
+  await slow.close();
+  let rows = await lines(1);
+  assert.equal(rows.length, 1);
+  assert.deepEqual([rows[0].account, rows[0].status, rows[0].input, rows[0].output], [a.id, 0, null, null]);
+
+  // the upstream breaks after its headers: the status it gave and the counts seen so far
+  const start = 'event: message_start\ndata: ' + JSON.stringify({ type: 'message_start', message: { usage: { input_tokens: 44, output_tokens: 2 } } }) + '\n\n';
+  upstream = () =>
+    new Response(new ReadableStream({ start: (c) => { c.enqueue(enc.encode(start)); setTimeout(() => c.error(new Error('broke')), 20); } }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  const broken = open();
+  broken.response.then((res) => { res.on('error', () => {}); res.resume(); }, () => {});
+  rows = await lines(2);
+  assert.equal(rows.length, 2);
+  assert.deepEqual([rows[1].account, rows[1].status, rows[1].input, rows[1].output], [a.id, 200, 44, 2]);
+  broken.req.destroy();
+
+  // the caller leaves while the first account answers a rejected limit: status 0, no second account is asked
+  const b = await claude(TOKEN.B);
+  const gone = open();
+  gone.response.catch(() => {});
+  const before = ups.length;
+  upstream = async () => {
+    gone.req.destroy();
+    const signal = ups[ups.length - 1].signal;
+    await new Promise<void>((resolve) => (signal.aborted ? resolve() : signal.addEventListener('abort', () => resolve(), { once: true })));
+    return rejected(Math.floor(NOW / 1000) + 3600);
+  };
+  rows = await lines(3);
+  assert.equal(rows.length, 3);
+  assert.equal(ups.length, before + 1, 'only one account was asked');
+  assert.equal(rows[2].status, 0);
+  assert.ok([a.id, b.id].includes(rows[2].account));
+  assert.deepEqual([rows[2].input, rows[2].output], [null, null]);
 });
