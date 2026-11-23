@@ -22,7 +22,7 @@ export function reachText(reach, router) {
   return ['', ''];
 }
 
-/** "LAN 192.168.1.0/24 · pve1가 라우팅" (standby: "… · 대기, 지금은 X가 라우팅") */
+/** "LAN 192.168.1.0/24 · pve1 경유" (standby: "… · 대기 (지금은 X 경유)") */
 export function subnetLabel(n, routerName, names = new Map()) {
   const s = n.subnet;
   if (s.role === 'primary') return `${n.name} · ${t('nettree.routedBy', { router: routerName })}`;
