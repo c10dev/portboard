@@ -119,7 +119,7 @@ function emptyNote(text) {
 
 /** Fill the inspector: the selected port p (null: nothing selected / it went away) */
 /** All definition lists of one inspector share the label column of its widest label, so their values start on one
- *  line. The owner list fills in later (features/owners.js), so a size change of the body measures again. */
+ *  line. The owner list fills in later (features/owners.js), so a size change of the body or a list measures again. */
 function alignFacts(body) {
   const st = body.style;
   // no layout engine (test/fixtures/fake-dom.ts): nothing to measure
@@ -136,8 +136,13 @@ function alignFacts(body) {
   return prev !== body.style.getPropertyValue('--insp-dt-w');
 }
 
+// Watches the body and each of its lists: the owner list fills in within the same frame as a refresh, without
+// resizing the body, but its own box grows from empty.
 const factsObserver = typeof ResizeObserver === 'function'
-  ? new ResizeObserver((entries) => { for (const e of entries) alignFacts(e.target); })
+  ? new ResizeObserver((entries) => {
+    const bodies = new Set(entries.map((e) => e.target.closest('.insp-body') ?? e.target));
+    for (const b of bodies) alignFacts(b);
+  })
   : null;
 
 export function renderInspector(insp, p, ctx) {
@@ -200,7 +205,7 @@ export function renderInspector(insp, p, ctx) {
   }
   body.replaceChildren(...parts);
   alignFacts(body);
-  factsObserver?.observe(body);
+  if (factsObserver) for (const n of [body, ...body.querySelectorAll('dl')]) factsObserver.observe(n);
   if (same) body.scrollTop = scroll;
   else body.scrollTop = 0;
 }
