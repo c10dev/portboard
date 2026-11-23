@@ -36,9 +36,17 @@ const lc = (s) => String(s ?? '').toLowerCase();
 const multi = () => machines.some((m) => m.reach === 'agent');
 const selfName = () => machines.find((m) => m.reach === 'local')?.name ?? '';
 
-/** The machine chip (only when there are several machines) and the branch name, as two grid cells */
-function branchParts(machine, text) {
-  return [multi() ? el('span', 'wt-mach', machine) : null, el('div', 'br', text)].filter(Boolean);
+/** The branch line, with the machine it is on when there are several. The chip sits in a slot that render() widens
+ *  to the list's widest chip, so the branch names of one list start on one line. */
+function branchLine(machine, text) {
+  const br = el('div', 'br');
+  if (multi()) {
+    const slot = el('span', 'wt-slot');
+    slot.append(el('span', 'wt-mach', machine));
+    br.append(slot, ' ');
+  }
+  br.append(text);
+  return br;
 }
 
 /** ↑ahead ↓behind its upstream (as of the last fetch), when they differ */
@@ -63,8 +71,8 @@ function row(repo, w, elsewhere) {
     selected.set(repo.path, set);
     render();
   });
-  const body = el('div', 'wt-body');
-  body.append(el('div', 'path', w.short));
+  const main = el('div');
+  main.append(branchLine(selfName(), w.branch ?? (w.detached ? `(${t('dev.detached')})` : '?')), el('div', 'path', w.short));
   const tags = el('div', 'tags');
   const also = w.branch ? alsoOn(elsewhere.get(lc(`${repo.name}@${w.branch}`))) : null;
   if (also) {
@@ -82,10 +90,10 @@ function row(repo, w, elsewhere) {
   if (w.main) tags.append(badge(t('dev.main'), 'info'));
   else if (!w.removable && w.keep.length) tags.append(badge(t('dev.keep', { reasons: w.keep.join(', ') })));
   if (w.removable) tags.append(badge(t('dev.removable'), 'ok'));
-  body.append(tags);
+  main.append(tags);
   const side = el('div', 'side', [ago(w.lastCommit), mb(w.sizeKb)].filter(Boolean).join(' · '));
   side.append(devControls(w.path));
-  li.append(cb, ...branchParts(selfName(), w.branch ?? (w.detached ? `(${t('dev.detached')})` : '?')), side, body);
+  li.append(cb, main, side);
   return li;
 }
 
@@ -95,8 +103,8 @@ function remoteRow(machine, w) {
   const cb = el('input');
   cb.type = 'checkbox';
   cb.disabled = true;
-  const body = el('div', 'wt-body');
-  body.append(el('div', 'path', w.path ?? t('dev.machines.noPath')));
+  const main = el('div');
+  main.append(branchLine(machine, w.branch), el('div', 'path', w.path ?? t('dev.machines.noPath')));
   const tags = el('div', 'tags');
   if (w.dirty) tags.append(badge(t('dev.changes', { n: w.dirty }), 'warn'));
   upstream(tags, w);
@@ -104,8 +112,8 @@ function remoteRow(machine, w) {
   if (w.claude) tags.append(badge(t('dev.claude'), 'info'));
   if (w.main) tags.append(badge(t('dev.main'), 'info'));
   if (w.reservedPort) tags.append(badge(`:${w.reservedPort}`));
-  body.append(tags);
-  li.append(cb, ...branchParts(machine, w.branch), el('div', 'side', ago(w.lastCommit) ?? ''), body);
+  main.append(tags);
+  li.append(cb, main, el('div', 'side', ago(w.lastCommit) ?? ''));
   return li;
 }
 
@@ -262,10 +270,19 @@ function render() {
     box.append(sec);
   }
   if (!box.children.length && doc.at) box.append(noRepos());
+  alignChips(box);
   // #settings/… is the 설정 modal over this page (features/settings-modal.js), not a worktree
   if (!hashUsed && location.hash.length > 1 && !isSettingsHash(location.hash) && box.children.length) {
     hashUsed = true;
     showWorktree(decodeURIComponent(location.hash.slice(1)));
+  }
+}
+
+/** Give each list's chip slots the width of its widest chip. Measured once the lists are in the document. */
+function alignChips(box) {
+  for (const ul of box.querySelectorAll('.wt-list')) {
+    const widths = [...ul.querySelectorAll('.wt-slot')].map((s) => s.getBoundingClientRect().width);
+    if (widths.length) ul.style.setProperty('--wt-slot-w', `${Math.ceil(Math.max(...widths))}px`);
   }
 }
 

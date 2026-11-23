@@ -46,6 +46,9 @@ fonts and hairline borders. Build new screens from the tokens and components bel
 - A list is one bordered `surface` container with flat rows split by `line` dividers: 8px corners on desktop (`radius-8` token), 10px on a phone (`radius-10` token).
 - Badges, chips and tags are pills (`radius-pill` token). Status dots are round (`radius-round` token), 8px wide.
 - Inside a panel, a table's text sits on the panel's text line: its first and last cells have no side padding, and the row dividers keep the full width (the memory panel).
+- The command palette has one box line and one text line: the search box and the selected row start 6px inside the palette, and every text (search, results, group labels, footer) starts 17px inside.
+- A fold over a dot list draws its marker in the 8px dot column, so its label starts under the titles of the list (Settings › Getting started).
+- In a worktree list the machine chips share one slot width, the widest chip of that list, so the branch names start on one line (Dev tab).
 - Spacing is literal in the CSS; there are no spacing tokens. Keep the rhythm the CSS uses: buttons 6px 11px, list rows 6px 12px (10px 12px on a phone), gaps of 4 to 8px between controls.
 - Shadows are rare and mark layers that float. The command palette and the keyboard shortcuts dialog use the `shadow-dialog` token, toasts the `shadow-toast` token, the sidebar drawer the `shadow-drawer` token and the inspector sheet the `shadow-sheet` token. Other shadows (the settings modal, menus, the device detail panel, the current tab and segment) are literal (see Not synced).
 
