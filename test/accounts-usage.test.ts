@@ -460,30 +460,218 @@ test('usage 7: the route is 404 when accounts are off, 403 for a caller that is 
 
 // ---- the Codex lane ----
 
-test('usage codex: one Codex request is one line with provider codex and no token counts; the caller gets the upstream bytes; nothing private is logged', async () => {
-  const ACCOUNT_ID = 'cx-account-leakcheck-7731';
-  const CX_TOKEN = 'TESTTOKENCODEXUSAGE0123456789';
-  const cx = await upsertAccount(
-    { provider: 'codex', alias: 'cx-usage', identity: ACCOUNT_ID, email: 'c@example.com', plan: 'plus', tokens: { access: CX_TOKEN, refresh: REFRESH, idToken: 'TESTTOKENIDTOKEN', expiresAt: iso(NOW + 100 * 3600_000) } },
+const CX_ACCOUNT_ID = 'cx-account-leakcheck-7731';
+const CX_TOKEN = 'TESTTOKENCODEXUSAGE0123456789';
+const cxAccount = () =>
+  upsertAccount(
+    { provider: 'codex', alias: 'cx-usage', identity: CX_ACCOUNT_ID, email: 'c@example.com', plan: 'plus', tokens: { access: CX_TOKEN, refresh: REFRESH, idToken: 'TESTTOKENIDTOKEN', expiresAt: iso(NOW + 100 * 3600_000) } },
     { path: FILE, now },
   );
-  // an answer that looks like Codex's stream, with usage numbers the log must not read, cut at an awkward place
-  const bytes = Buffer.from('event: response.completed\ndata: ' + JSON.stringify({ type: 'response.completed', response: { usage: { input_tokens: 5, output_tokens: 6 } } }) + '\n\n', 'utf8');
-  const answer = new Response(new ReadableStream({ start: (c) => { c.enqueue(new Uint8Array(bytes.subarray(0, 20))); c.enqueue(new Uint8Array(bytes.subarray(20))); c.close(); } }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
-  upstream = () => answer;
-  const r = await call(JSON.stringify({ model: 'gpt-test', input: [{ role: 'user', content: SECRET_TEXT }] }), '/codex/responses');
+const CX_BODY = () => JSON.stringify({ model: 'gpt-test', input: [{ role: 'user', content: SECRET_TEXT }] });
+const cxEvent = (v: unknown) => `event: ${(v as { type: string }).type}\ndata: ${JSON.stringify(v)}\n\n`;
+/** An SSE answer cut into pieces at the given byte offsets (and, when `cuts` is empty, whole) */
+const cutSse = (bytes: Buffer, cuts: number[]) => {
+  const pieces: Uint8Array[] = [];
+  let from = 0;
+  for (const c of [...cuts].sort((x, y) => x - y)) {
+    pieces.push(new Uint8Array(bytes.subarray(from, c)));
+    from = c;
+  }
+  pieces.push(new Uint8Array(bytes.subarray(from)));
+  return new Response(new ReadableStream({ start: (c) => { for (const p of pieces) c.enqueue(p); c.close(); } }), { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8' } });
+};
+/** The words of a streamed answer: the caller gets them, the usage file and the route must not hold them */
+const DELTA_TEXT = 'ANSWER-DELTA-SENTENCE-5c1e';
+const CODEX_NULLS = { input: null, output: null, cacheRead: null, cacheWrite: null };
+
+test('usage codex 1: a Codex SSE answer across chunk borders is one line; the four counts are the usage of response.completed; the bytes are unchanged; nothing private is logged', async () => {
+  const cx = await cxAccount();
+  const usage = { input_tokens: 120, input_tokens_details: { cached_tokens: 80, cache_write_tokens: 5 }, output_tokens: 34, output_tokens_details: { reasoning_tokens: 9 }, total_tokens: 154 };
+  const bytes = Buffer.from(
+    cxEvent({ type: 'response.created', response: { id: 'resp_1', usage: { input_tokens: 1, output_tokens: 2 } } }) +
+      cxEvent({ type: 'response.output_text.delta', delta: `${DELTA_TEXT} hé` }) +
+      cxEvent({ type: 'response.output_text.delta', delta: ' more text', usage: { input_tokens: 3, output_tokens: 4 } }) +
+      cxEvent({ type: 'response.completed', response: { id: 'resp_1', usage } }),
+    'utf8',
+  );
+  // cut inside a JSON value, inside a line, inside the two bytes of the "é" and inside the last event
+  const cuts = [25, bytes.indexOf('"delta"') + 4, bytes.indexOf('é') + 1, bytes.indexOf('response.completed') + 6, bytes.indexOf('"input_tokens":120') + 10, bytes.length - 2];
+  upstream = () => cutSse(bytes, cuts);
+  const r = await call(CX_BODY(), '/codex/responses');
   assert.equal(r.status, 200);
   assert.ok(r.bytes.equals(bytes), 'the caller got the upstream bytes, byte for byte');
   const rows = await lines(1);
   assert.equal(rows.length, 1);
   assert.deepEqual(Object.keys(rows[0]).sort(), LINE_KEYS);
-  assert.deepEqual({ ...rows[0], ms: 0 }, { at: iso(NOW), provider: 'codex', account: cx.id, model: 'gpt-test', status: 200, input: null, output: null, cacheRead: null, cacheWrite: null, ms: 0 });
+  assert.deepEqual({ ...rows[0], ms: 0 }, { at: iso(NOW), provider: 'codex', account: cx.id, model: 'gpt-test', status: 200, input: 120, output: 34, cacheRead: 80, cacheWrite: 5, ms: 0 });
   const text = readFileSync(USAGE, 'utf8');
   const summary = JSON.stringify((await usageRoute('?days=7')).body);
-  for (const o of [text, summary]) for (const bad of [CX_TOKEN, ACCOUNT_ID, key, SECRET_TEXT, 'TESTTOKEN']) assert.ok(!o.includes(bad), `holds ${bad}`);
+  for (const o of [text, summary]) for (const bad of [CX_TOKEN, CX_ACCOUNT_ID, key, SECRET_TEXT, 'TESTTOKEN', DELTA_TEXT, 'more text']) assert.ok(!o.includes(bad), `holds ${bad}`);
   const s = JSON.parse(summary) as Awaited<ReturnType<typeof summarize>>;
-  assert.deepEqual(s.totals, { claude: { requests: 0, recorded: 0 }, codex: { requests: 1, recorded: 0 } });
-  assert.deepEqual([s.rows[0].provider, s.rows[0].input, s.rows[0].output], ['codex', null, null]);
+  assert.deepEqual(s.totals, { claude: { requests: 0, recorded: 0 }, codex: { requests: 1, recorded: 1 } });
+  assert.deepEqual([s.rows[0].provider, s.rows[0].input, s.rows[0].output, s.rows[0].cacheRead, s.rows[0].cacheWrite], ['codex', 120, 34, 80, 5]);
+});
+
+test('usage codex 2: the usage of response.incomplete is read too', async () => {
+  await cxAccount();
+  const bytes = Buffer.from(
+    cxEvent({ type: 'response.created', response: {} }) +
+      cxEvent({ type: 'response.incomplete', response: { incomplete_details: { reason: 'max_output_tokens' }, usage: { input_tokens: 50, input_tokens_details: { cached_tokens: 10 }, output_tokens: 7 } } }),
+    'utf8',
+  );
+  upstream = () => cutSse(bytes, [40, bytes.length - 9]);
+  const r = await call(CX_BODY(), '/codex/responses');
+  assert.ok(r.bytes.equals(bytes));
+  const [line] = await lines(1);
+  assert.deepEqual([line.input, line.output, line.cacheRead, line.cacheWrite], [50, 7, 10, null]);
+});
+
+test('usage codex 3: a missing cache_write_tokens or input_tokens_details is null, and so is a count that is not a number', async () => {
+  await cxAccount();
+  const answer = (usage: unknown) => cutSse(Buffer.from(cxEvent({ type: 'response.completed', response: { usage } }), 'utf8'), []);
+  upstream = () => answer({ input_tokens: 10, input_tokens_details: { cached_tokens: 4 }, output_tokens: 3 });
+  await call(CX_BODY(), '/codex/responses');
+  upstream = () => answer({ input_tokens: 10, output_tokens: 3 });
+  await call(CX_BODY(), '/codex/responses');
+  upstream = () => answer({ input_tokens: '10', input_tokens_details: { cached_tokens: -1, cache_write_tokens: null }, output_tokens: 3 });
+  await call(CX_BODY(), '/codex/responses');
+  upstream = () => answer(undefined);
+  await call(CX_BODY(), '/codex/responses');
+  const rows = await lines(4);
+  const four = (l: UsageLine) => [l.input, l.output, l.cacheRead, l.cacheWrite];
+  assert.deepEqual(four(rows[0]), [10, 3, 4, null]);
+  assert.deepEqual(four(rows[1]), [10, 3, null, null]);
+  assert.deepEqual(four(rows[2]), [null, 3, null, null]);
+  assert.deepEqual(four(rows[3]), [null, null, null, null]);
+});
+
+test('usage codex 4: a Codex JSON answer is read from its top-level usage; one over 1 MiB is not counted', async () => {
+  await cxAccount();
+  const answer = { id: 'resp_2', usage: { input_tokens: 21, input_tokens_details: { cached_tokens: 6, cache_write_tokens: 2 }, output_tokens: 8 }, nested: { usage: { input_tokens: 999, output_tokens: 999 } } };
+  upstream = () => json(answer);
+  const r = await call(CX_BODY(), '/codex/responses');
+  assert.deepEqual(JSON.parse(r.bytes.toString('utf8')), answer, 'the caller got the answer as it is');
+  upstream = () => new Response(JSON.stringify({ usage: { input_tokens: 1, output_tokens: 2 }, pad: 'D'.repeat(1_200_000) }), { status: 200, headers: { 'content-type': 'application/json' } });
+  await call(CX_BODY(), '/codex/responses');
+  const rows = await lines(2);
+  assert.deepEqual([rows[0].input, rows[0].output, rows[0].cacheRead, rows[0].cacheWrite, rows[0].provider], [21, 8, 6, 2, 'codex']);
+  assert.deepEqual([rows[1].status, rows[1].input, rows[1].output, rows[1].cacheRead, rows[1].cacheWrite], [200, null, null, null, null]);
+});
+
+test('usage codex 5: a caller that leaves before response.completed is one line with four null counts', { timeout: 20_000 }, async () => {
+  const cx = await cxAccount();
+  const start = cxEvent({ type: 'response.created', response: { usage: { input_tokens: 61, output_tokens: 1 } } }) + cxEvent({ type: 'response.output_text.delta', delta: 'partial' });
+  upstream = () => sse([start], true);
+  const { req, response } = open(CX_BODY(), '/codex/responses');
+  const res = await response;
+  await res[Symbol.asyncIterator]().next();
+  const signal = ups[0].signal;
+  req.destroy();
+  res.destroy();
+  const rows = await lines(1);
+  assert.equal(rows.length, 1);
+  assert.deepEqual({ account: rows[0].account, status: rows[0].status, ...CODEX_NULLS, ...Object.fromEntries(Object.keys(CODEX_NULLS).map((k) => [k, rows[0][k as keyof UsageLine]])) }, { account: cx.id, status: 200, ...CODEX_NULLS });
+  assert.equal(signal.aborted, true);
+});
+
+test('usage codex 6: totals.codex.recorded is the number of Codex requests with both input and output', async () => {
+  await cxAccount();
+  const done = (usage: unknown) => cutSse(Buffer.from(cxEvent({ type: 'response.completed', response: { usage } }), 'utf8'), []);
+  for (const u of [{ input_tokens: 5, output_tokens: 6 }, { input_tokens: 7 }, { output_tokens: 2 }, { input_tokens: 1, output_tokens: 1, input_tokens_details: { cached_tokens: 1 } }]) {
+    upstream = () => done(u);
+    await call(CX_BODY(), '/codex/responses');
+  }
+  upstream = () => json({ id: 'no usage here' });
+  await call(CX_BODY(), '/codex/responses');
+  await lines(5);
+  const s = (await usageRoute('?days=7')).body as Awaited<ReturnType<typeof summarize>>;
+  assert.deepEqual(s.totals, { claude: { requests: 0, recorded: 0 }, codex: { requests: 5, recorded: 2 } });
+  assert.deepEqual([s.rows[0].requests, s.rows[0].input, s.rows[0].output, s.rows[0].cacheRead], [5, 13, 9, 1]);
+});
+
+test('usage codex 7: a response.completed of 300 KiB is read; one over 1 MiB is dropped (null counts) and its bytes reach the caller unchanged', async () => {
+  await cxAccount();
+  const completed = (text: string) =>
+    cxEvent({ type: 'response.completed', response: { output: [{ type: 'message', content: [{ type: 'output_text', text }] }], usage: { input_tokens: 90, input_tokens_details: { cached_tokens: 30, cache_write_tokens: 3 }, output_tokens: 12 } } });
+  const big = Buffer.from(cxEvent({ type: 'response.created', response: {} }) + completed('E'.repeat(300 * 1024)), 'utf8');
+  const cuts = [100, 70_000, 150_000, 299_000, big.length - 5];
+  upstream = () => cutSse(big, cuts);
+  const r1 = await call(CX_BODY(), '/codex/responses');
+  assert.ok(r1.bytes.equals(big), 'the caller got the upstream bytes');
+  const huge = Buffer.from(completed('F'.repeat(1_100_000)), 'utf8');
+  upstream = () => cutSse(huge, [200_000, 900_000]);
+  const r2 = await call(CX_BODY(), '/codex/responses');
+  assert.ok(r2.bytes.equals(huge), 'the caller got the upstream bytes of the long event');
+  const rows = await lines(2);
+  assert.deepEqual([rows[0].input, rows[0].output, rows[0].cacheRead, rows[0].cacheWrite], [90, 12, 30, 3]);
+  assert.deepEqual([rows[1].status, rows[1].input, rows[1].output, rows[1].cacheRead, rows[1].cacheWrite], [200, null, null, null, null]);
+  const text = readFileSync(USAGE, 'utf8');
+  assert.ok(!text.includes('EEEE') && !text.includes('FFFF'), 'no answer text in the file');
+});
+
+test('observer: a Codex observer keeps at most about 1 MiB of one event, and Claude keeps 64 KiB', async () => {
+  const run = async (provider: 'claude' | 'codex') => {
+    const o = new UsageObserver(true, false, provider);
+    o.resume();
+    let worst = 0;
+    const line = `data: {"type":"x","pad":"${'G'.repeat(3 * 1024 * 1024)}"}\n\n`;
+    for (let i = 0; i < line.length; i += 16 * 1024) {
+      await new Promise<void>((resolve) => o.write(line.slice(i, i + 16 * 1024), () => resolve()));
+      worst = Math.max(worst, o.heldSize());
+    }
+    o.end();
+    return worst;
+  };
+  assert.ok((await run('claude')) <= MAX_SSE + 16 * 1024);
+  assert.ok((await run('codex')) <= 1024 * 1024 + 16 * 1024);
+});
+
+test('usage codex 8: a 32 MiB line with no newline in small chunks is dropped, the next response.completed is read, and the bytes are unchanged', { timeout: 60_000 }, async () => {
+  await cxAccount();
+  const piece = 'H'.repeat(1400);
+  const head = Buffer.from('data: {"pad":"', 'utf8');
+  const tail = Buffer.from(
+    '"}\n\n' + cxEvent({ type: 'response.completed', response: { usage: { input_tokens: 15, input_tokens_details: { cached_tokens: 2 }, output_tokens: 4 } } }),
+    'utf8',
+  );
+  const body = Buffer.from(piece, 'utf8');
+  const n = Math.ceil((32 * 1024 * 1024) / body.length);
+  const expected = Buffer.concat([head, ...Array.from({ length: n }, () => body), tail]);
+  let i = -1;
+  upstream = () =>
+    new Response(
+      new ReadableStream({
+        pull(c) {
+          i++;
+          if (i === 0) c.enqueue(new Uint8Array(head));
+          else if (i <= n) c.enqueue(new Uint8Array(body));
+          else {
+            c.enqueue(new Uint8Array(tail));
+            c.close();
+          }
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
+  const r = await call(CX_BODY(), '/codex/responses');
+  assert.ok(r.bytes.equals(expected), 'the caller got the upstream bytes');
+  const [line] = await lines(1);
+  assert.deepEqual([line.input, line.output, line.cacheRead, line.cacheWrite], [15, 4, 2, null]);
+});
+
+test('usage codex 9: a large response.output_item.done event does not change the counts', async () => {
+  await cxAccount();
+  const bytes = Buffer.from(
+    cxEvent({ type: 'response.output_item.done', item: { type: 'message', text: 'I'.repeat(200 * 1024), usage: { input_tokens: 999, output_tokens: 999 }, note: 'response.completed' } }) +
+      cxEvent({ type: 'response.completed', response: { usage: { input_tokens: 8, output_tokens: 3 } } }) +
+      cxEvent({ type: 'response.output_item.done', item: { text: 'J'.repeat(100 * 1024), usage: { input_tokens: 555, output_tokens: 555 } } }),
+    'utf8',
+  );
+  upstream = () => cutSse(bytes, [50_000, 220_000]);
+  const r = await call(CX_BODY(), '/codex/responses');
+  assert.ok(r.bytes.equals(bytes));
+  const [line] = await lines(1);
+  assert.deepEqual([line.input, line.output, line.cacheRead, line.cacheWrite], [8, 3, null, null]);
 });
 
 // ---- review fixes ----

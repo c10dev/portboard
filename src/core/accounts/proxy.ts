@@ -61,10 +61,12 @@ const PATH_CLIP = 80;
 const SHOWN_EVENTS = 20;
 /** The usage log reads at most this much of a JSON answer; a larger one is logged without token counts */
 const MAX_OBSERVE_BYTES = 1024 * 1024;
-/** The usage log's SSE buffer: a line (or an event) longer than this is dropped */
 /** `close` waits this long for the usage lines of requests that were cut */
 const CLOSE_WAIT_MS = 2000;
+/** The usage log's SSE buffer: a line (or an event) longer than this many characters (`string.length`, UTF-16 units, not bytes) is dropped */
 const MAX_SSE_BUFFER = 64 * 1024;
+/** Codex's `response.completed` holds the whole Response (every output item), so its SSE event can pass 64 KiB: Codex gets the JSON limit */
+const MAX_CODEX_SSE_BUFFER = MAX_OBSERVE_BYTES;
 
 /** `unknown`: the settings say on, but this process never opened or closed the proxy (the stdio MCP server): the dashboard's may be listening */
 export type ProxyState = 'off' | 'listening' | 'port in use' | 'error' | 'unknown';
@@ -112,6 +114,12 @@ interface Tokens {
 const NO_TOKENS = (): Tokens => ({ input: null, output: null, cacheRead: null, cacheWrite: null });
 const objectOf = (v: unknown): Record<string, unknown> | null => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
 
+/** The four counts of a Codex `usage` object. `input` includes the cached tokens (OpenAI's rule); a missing or non-numeric field is null. */
+function codexTokens(u: Record<string, unknown> | null): Tokens {
+  const details = objectOf(u?.input_tokens_details);
+  return { input: count(u?.input_tokens), output: count(u?.output_tokens), cacheRead: count(details?.cached_tokens), cacheWrite: count(details?.cache_write_tokens) };
+}
+
 /** The `model` of a request body: a string clipped to 128 characters, else null. Nothing else of the body is kept. */
 function modelOf(body: Buffer): string | null {
   try {
@@ -127,7 +135,7 @@ function modelOf(body: Buffer): string | null {
  * and keeps a copy only to read: a JSON answer whole (up to MAX_OBSERVE_BYTES), an SSE answer line by line. It never throws.
  */
 export class UsageObserver extends Transform {
-  private readonly tokens = NO_TOKENS();
+  private tokens = NO_TOKENS();
   private readonly chunks: Buffer[] = [];
   private size = 0;
   private over = false;
@@ -136,14 +144,20 @@ export class UsageObserver extends Transform {
   private data: string[] = [];
   private dataSize = 0;
   private skipping = false;
+  /** true while the rest of a line that passed the cap is being dropped */
+  private discarding = false;
 
   private readonly sse: boolean;
   private readonly countOnly: boolean;
+  private readonly provider: ProxyProvider;
+  private readonly maxBuffer: number;
 
-  constructor(sse: boolean, countOnly: boolean) {
+  constructor(sse: boolean, countOnly: boolean, provider: ProxyProvider = 'claude') {
     super();
     this.sse = sse;
     this.countOnly = countOnly;
+    this.provider = provider;
+    this.maxBuffer = provider === 'codex' ? MAX_CODEX_SSE_BUFFER : MAX_SSE_BUFFER;
   }
 
   override _transform(chunk: Buffer, _enc: BufferEncoding, cb: (err?: Error | null, data?: Buffer) => void): void {
@@ -167,13 +181,30 @@ export class UsageObserver extends Transform {
       this.chunks.push(chunk);
       return;
     }
-    this.pending += this.decoder.write(chunk);
-    let nl: number;
-    while ((nl = this.pending.indexOf('\n')) >= 0) {
-      this.line(this.pending.slice(0, nl).replace(/\r$/, ''));
-      this.pending = this.pending.slice(nl + 1);
+    // `pending` never holds a newline: only the newly decoded text is searched, so a long line costs O(n) in all
+    const text = this.decoder.write(chunk);
+    let from = 0;
+    while (from < text.length) {
+      const nl = text.indexOf('\n', from);
+      if (this.discarding) {
+        // the rest of an over-long line is dropped up to its newline
+        if (nl < 0) return;
+        this.discarding = false;
+        from = nl + 1;
+        continue;
+      }
+      if (nl < 0) {
+        this.pending += text.slice(from);
+        if (this.pending.length > this.maxBuffer) {
+          this.pending = '';
+          this.discarding = true;
+        }
+        return;
+      }
+      this.line((this.pending + text.slice(from, nl)).replace(/\r$/, ''));
+      this.pending = '';
+      from = nl + 1;
     }
-    if (this.pending.length > MAX_SSE_BUFFER) this.pending = '';
   }
 
   private line(l: string): void {
@@ -183,7 +214,7 @@ export class UsageObserver extends Transform {
     if (this.skipping) return;
     // the joining character counts too, so a run of empty `data:` lines is bounded like any other
     this.dataSize += v.length + 1;
-    if (this.dataSize > MAX_SSE_BUFFER) {
+    if (this.dataSize > this.maxBuffer) {
       // too long: this event is dropped, and nothing more of it is kept up to the blank line that ends it
       this.data = [];
       this.dataSize = 0;
@@ -202,6 +233,8 @@ export class UsageObserver extends Transform {
     const text = this.data.join('\n');
     this.data = [];
     this.dataSize = 0;
+    // Codex: a plain substring check first, so an event that cannot carry the usage is never parsed
+    if (this.provider === 'codex' && !text.includes('"response.completed"') && !text.includes('"response.incomplete"')) return;
     let ev: Record<string, unknown> | null;
     try {
       ev = objectOf(JSON.parse(text));
@@ -209,6 +242,11 @@ export class UsageObserver extends Transform {
       return;
     }
     if (!ev) return;
+    if (this.provider === 'codex') {
+      // only the two events that end a Codex response carry its usage
+      if (ev.type === 'response.completed' || ev.type === 'response.incomplete') this.tokens = codexTokens(objectOf(objectOf(ev.response)?.usage));
+      return;
+    }
     if (ev.type === 'message_start') {
       const u = objectOf(objectOf(ev.message)?.usage);
       if (!u) return;
@@ -224,7 +262,7 @@ export class UsageObserver extends Transform {
     }
   }
 
-  /** The characters held for a half-read line or event (tests: it stays within MAX_SSE_BUFFER plus one line) */
+  /** The characters held for a half-read line or event (tests: it stays within the provider's cap, MAX_SSE_BUFFER or MAX_CODEX_SSE_BUFFER, plus one line) */
   heldSize(): number {
     return this.pending.length + this.dataSize;
   }
@@ -239,7 +277,8 @@ export class UsageObserver extends Transform {
         this.event();
       } else if (!this.over && this.chunks.length) {
         const body = objectOf(JSON.parse(Buffer.concat(this.chunks).toString('utf8')));
-        if (this.countOnly) this.tokens.input = count(body?.input_tokens);
+        if (this.provider === 'codex') this.tokens = codexTokens(objectOf(body?.usage));
+        else if (this.countOnly) this.tokens.input = count(body?.input_tokens);
         else {
           const u = objectOf(body?.usage);
           this.tokens.input = count(u?.input_tokens);
@@ -701,23 +740,21 @@ export class AccountsProxy {
     const headers: Record<string, string> = {};
     for (const [k, v] of response.headers) if (!DROP_RESPONSE.has(k) && !k.startsWith('proxy-')) headers[k] = v;
     // an observer between the answer and the caller reads the token counts; it passes every byte on as it came
-    // a Codex answer is passed on unread: its token counts are not logged yet
-    const observer = seen.provider === 'claude' ? new UsageObserver((response.headers.get('content-type') ?? '').toLowerCase().includes('text/event-stream'), seen.countOnly) : null;
+    const observer = new UsageObserver((response.headers.get('content-type') ?? '').toLowerCase().includes('text/event-stream'), seen.countOnly, seen.provider);
     try {
       res.writeHead(response.status, headers);
       res.flushHeaders();
       if (!response.body) return void res.end();
       try {
         const source = Readable.fromWeb(response.body as unknown as import('node:stream/web').ReadableStream);
-        if (observer) await pipeline(source, observer, res);
-        else await pipeline(source, res);
+        await pipeline(source, observer, res);
       } catch {
         // upstream broke off or the caller left: the connection is closed, nothing more to say
         res.destroy();
       }
     } finally {
       // once, however the answer ended, with the counts seen so far
-      this.record(seen, account, response.status, observer ? observer.result() : NO_TOKENS());
+      this.record(seen, account, response.status, observer.result());
     }
   }
 }
