@@ -45,6 +45,8 @@ export interface Paths {
   accounts: string;
   /** account-homes/: one folder per added account that "use this account" made, with the CLI login file in it (0700; src/core/accounts/homes.ts, docs/accounts.md) */
   accountHomes: string;
+  /** accounts-proxy.key: the key a client sends to the accounts proxy (0600; src/core/accounts/proxy.ts, docs/accounts.md#proxy) */
+  accountsProxyKey: string;
 
   // read only (the owner edits it)
   /** portboard.json: host, tailnet, checkout, repos root and other site values (site.ts, docs/config.md) */
@@ -112,6 +114,7 @@ export function resolvePaths(env: Env = process.env, home = homedir()): Paths {
     remoteConfig: env.PORTBOARD_REMOTE_CONFIG ?? join(configDir, 'remote.json'),
     accounts: env.PORTBOARD_ACCOUNTS ?? join(configDir, 'accounts.json'),
     accountHomes: env.PORTBOARD_ACCOUNT_HOMES ?? join(configDir, 'account-homes'),
+    accountsProxyKey: env.PORTBOARD_ACCOUNTS_PROXY_KEY ?? join(configDir, 'accounts-proxy.key'),
     site: env.PORTBOARD_SITE ?? join(configDir, 'portboard.json'),
     // A preview's own (it starts without one: no allowlist), never production's.
     access: env.PORTBOARD_ACCESS ?? join(configDir, 'access.json'),

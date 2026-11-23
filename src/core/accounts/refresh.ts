@@ -47,9 +47,10 @@ export function refreshResting(id: string, now: number): boolean {
 
 /**
  * Refresh one account. Calls for the same account at once share one request. `rest`: honour the wait after a
- * transient failure (the quota path); a use of the account passes false.
+ * transient failure (the quota path); a use of the account passes false. `skewMs`: a token that expires within this
+ * many ms counts as expired (default 0; only the proxy asks for 60 s, pool.ts).
  */
-export function refreshAccount(id: string, o: HomesOptions & { rest?: boolean; forUse?: boolean } = {}): Promise<RefreshOutcome> {
+export function refreshAccount(id: string, o: HomesOptions & { rest?: boolean; forUse?: boolean; skewMs?: number } = {}): Promise<RefreshOutcome> {
   const now = (o.now ?? Date.now)();
   if (o.rest && refreshResting(id, now)) return Promise.resolve({ state: 'transient' });
   const running = inflight.get(id);
@@ -69,7 +70,7 @@ export function refreshAccount(id: string, o: HomesOptions & { rest?: boolean; f
  * `forUse`: a use of the account asks. A folder login file that is there then does not stop the refresh (the use is about to
  * replace it); only the `home` mark does.
  */
-async function run(id: string, o: HomesOptions & { forUse?: boolean }): Promise<RefreshOutcome> {
+async function run(id: string, o: HomesOptions & { forUse?: boolean; skewMs?: number }): Promise<RefreshOutcome> {
   const loaded = await loadAccounts({ path: o.accountsPath });
   if ('error' in loaded) return { state: 'transient' };
   const a = loaded.accounts.find((x) => x.id === id);
@@ -78,7 +79,7 @@ async function run(id: string, o: HomesOptions & { forUse?: boolean }): Promise<
   if (a.home || (!o.forUse && (await hasHome(a, o)))) return { state: 'unusable' };
   // the record was read again: a refresh that finished meanwhile left a token that has not expired
   const at0 = (o.now ?? Date.now)();
-  if (a.tokens.expiresAt === null || Date.parse(a.tokens.expiresAt) >= at0) return { state: 'done', account: a };
+  if (a.tokens.expiresAt === null || Date.parse(a.tokens.expiresAt) >= at0 + (o.skewMs ?? 0)) return { state: 'done', account: a };
   const refresh = a.tokens.refresh;
   const spec = a.provider === 'claude' ? LOGIN_REQUESTS.claude : LOGIN_REQUESTS.codex;
   const request =

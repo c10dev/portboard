@@ -4,6 +4,7 @@
 import { detectLogins, type DetectOptions, type LocalLogin } from './detect.ts';
 import { hasHome, homeCommand, readHomeLogin } from './homes.ts';
 import { fetchQuota, type QuotaResult, type QuotaWindow } from './quota.ts';
+import { accountsProxy, type AccountsProxy, type ProxyReport } from './proxy.ts';
 import { refreshAccount } from './refresh.ts';
 import { loadAccounts, type StoredAccount } from './store.ts';
 
@@ -30,6 +31,8 @@ export interface AccountView {
 export interface AccountsReport {
   at: string;
   accounts: AccountView[];
+  /** the account pool proxy (proxy.ts): its state, the accounts it rests, its last events. No key and no token. */
+  proxy: ProxyReport;
 }
 
 function viewOf(l: LocalLogin, q: QuotaResult | null, now: number): AccountView {
@@ -159,7 +162,7 @@ async function addedReport(
 
 /** detect → quota → view, for both CLIs, then the added accounts. A login that is missing or unreadable is not asked for limits. */
 export async function accountsReport(
-  o: DetectOptions & { fetch?: typeof fetch; now?: () => number; accountsPath?: string; accountHomes?: string; refresh?: boolean } = {},
+  o: DetectOptions & { fetch?: typeof fetch; now?: () => number; accountsPath?: string; accountHomes?: string; refresh?: boolean; proxy?: AccountsProxy } = {},
 ): Promise<AccountsReport> {
   const now = o.now ?? Date.now;
   const logins = await detectLogins({ home: o.home, env: o.env, readFile: o.readFile, platform: o.platform });
@@ -178,5 +181,5 @@ export async function accountsReport(
   } else {
     added = await Promise.all(stored.accounts.map((a) => addedReport(a, stored.active[a.provider as 'claude' | 'codex'] === a.id, o)));
   }
-  return { at: new Date(now()).toISOString(), accounts: [...local, ...added] };
+  return { at: new Date(now()).toISOString(), accounts: [...local, ...added], proxy: (o.proxy ?? accountsProxy).report() };
 }

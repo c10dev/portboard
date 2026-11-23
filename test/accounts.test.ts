@@ -206,7 +206,7 @@ test('the view is an allowlist: only the named fields, no account id', async () 
     assert.equal(a.source, 'local-cli');
     assert.equal(a.alias, null);
   }
-  assert.deepEqual(Object.keys(r).sort(), ['accounts', 'at']);
+  assert.deepEqual(Object.keys(r).sort(), ['accounts', 'at', 'proxy']);
   assert.match(r.accounts[1].id, /^codex-[0-9a-f]{12}$/);
   assert.equal(r.at, new Date(NOW).toISOString());
 });
@@ -344,7 +344,7 @@ test('list_accounts is not on the remote server', () => {
   const def = REGISTRY.tools.find((t) => t.def.name === 'list_accounts')?.def;
   assert.deepEqual(def?.annotations, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true });
   assert.equal(accountsFeature.order, 2575);
-  // one read, the four login writes and the two writes of an added account (each `write: true`, so the router checks the owner and the header first)
+  // one read, the four login writes, the two writes of an added account and the proxy key (each `write: true`, so the router checks the owner and the header first)
   assert.deepEqual((accountsFeature.routes ?? []).map((r) => `${r.method} ${r.path}`), [
     'GET /api/accounts',
     'POST /api/accounts/login/start',
@@ -353,6 +353,7 @@ test('list_accounts is not on the remote server', () => {
     'POST /api/accounts/login/cancel',
     'POST /api/accounts/use',
     'POST /api/accounts/remove',
+    'POST /api/accounts/proxy/key',
   ]);
   assert.ok((accountsFeature.routes ?? []).filter((r) => r.method !== 'GET').every((r) => r.write === true));
 });
