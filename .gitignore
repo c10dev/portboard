@@ -15,3 +15,6 @@ mac-app/build.env
 # The static demo site (npm run demo, docs/demo.md): built from example data, published by .github/workflows/demo.yml
 /demo/
 /demo.staging/
+# npm run build:shim: the plugin's Go binary (shim/). Built per machine, never committed or packed.
+/claude-plugin/bin/portboard-shim
+/claude-plugin/bin/.portboard-shim.tmp

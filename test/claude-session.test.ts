@@ -11,6 +11,9 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 
+// A hook's HTTP limit from the caller's environment would change what these tests wait for.
+delete process.env.PORTBOARD_HOOK_TIMEOUT_MS;
+
 // Before any Portboard module computes PATHS: this file's prefs and ended list are its own.
 const DIR = await mkdtemp(join(tmpdir(), 'pb-claude-session-'));
 process.env.PORTBOARD_PREFS = join(DIR, 'prefs.json');

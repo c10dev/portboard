@@ -5,7 +5,7 @@
 // plugin's MCP process. Fake dashboards (plain http servers) stand in where a test needs the daemon to refuse,
 // vanish or hang up. The commands the dashboard runs (ss, git, systemctl, systemd-run, tailscale, ...) are shell shims
 // first on PATH: they log their argv and print canned output, so this proves wiring only, not real `ss` or systemd.
-import { test, after } from 'node:test';
+import { test, after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { createServer as createHttp, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -25,13 +25,14 @@ const MCP_BIN = join(ROOT, 'claude-plugin', 'bin', 'mcp.mjs');
 const SERVER = join(ROOT, 'src', 'server.ts');
 const RECORDER = join(ROOT, 'test', 'fixtures', 'record-loads.ts');
 
-const DIR = await mkdtemp(join(tmpdir(), 'pb-mcp-local-'));
-const HOME = join(DIR, 'home');
-const SHIM = join(DIR, 'shim');
-const OUT = join(SHIM, 'out');
-const CALLS = join(SHIM, 'calls.log');
-const REPOS = join(DIR, 'repos');
-const MAIN = join(REPOS, 'shop-web');
+// Set in before(): a failed setup still reaches the after() cleanup, which removes DIR and stops what was started.
+let DIR = '';
+let HOME = '';
+let SHIM = '';
+let OUT = '';
+let CALLS = '';
+let REPOS = '';
+let MAIN = '';
 
 // ---- the shims: one script per command, logging "<cmd> <args>" and printing out/<key> ----
 
@@ -47,21 +48,9 @@ exit 0
   await writeFile(join(SHIM, 'bin', cmd), script);
   await chmod(join(SHIM, 'bin', cmd), 0o755);
 }
-await mkdir(join(SHIM, 'bin'), { recursive: true });
-await mkdir(OUT, { recursive: true });
-await mkdir(HOME, { recursive: true });
-await shim('git', 'git-$(basename "$2")');
-await shim('systemctl', 'systemctl-$2');
-for (const c of ['ss', 'systemd-run', 'journalctl', 'tailscale', 'docker', 'ip', 'gh']) await shim(c, c);
 const out = (key: string, text: string) => writeFile(join(OUT, key), text);
 const calls = async (cmd: string) => (await readFile(CALLS, 'utf8').catch(() => '')).split('\n').filter((l) => l.startsWith(`${cmd} `));
-
 const LISTEN_PORT = 4173;
-await out('ss', `LISTEN 0      511        127.0.0.1:${LISTEN_PORT}        0.0.0.0:*\n`);
-await out('systemd-run', '');
-await mkdir(join(MAIN, '.git'), { recursive: true });
-await writeFile(join(MAIN, 'package.json'), JSON.stringify({ scripts: { dev: 'vite' } }));
-await out('git-shop-web', `worktree ${MAIN}\nHEAD ${'a'.repeat(40)}\nbranch refs/heads/main\n\n`);
 
 const DAEMON_SESSION = 'daemon-session-must-not-leak';
 
@@ -309,10 +298,35 @@ async function http(d: { url: string }, method: 'GET' | 'POST', path: string, o:
 const HDR = { 'X-Portboard': '1', 'Content-Type': 'application/json' };
 const rpc = (id: number, method: string, params?: unknown) => JSON.stringify({ jsonrpc: '2.0', id, method, ...(params === undefined ? {} : { params }) });
 
-// A real preview-profile dashboard shared by most tests (its state lives under the temp HOME).
-const main = await startDaemon();
+// A real preview-profile dashboard shared by most tests (its state lives under the temp HOME). Started in before().
+let main: Daemon;
 // The sessions use the same state profile as this dashboard.
-const PATHS = resolvePaths(env({ PORTBOARD_PORT: String(main.port) }), HOME);
+let PATHS: ReturnType<typeof resolvePaths>;
+// The shared setup. It runs under node:test's before(), so when a step throws, after() still runs: it removes DIR and
+// stops every daemon already registered in `daemons`.
+before(async () => {
+  DIR = await mkdtemp(join(tmpdir(), 'pb-mcp-local-'));
+  HOME = join(DIR, 'home');
+  SHIM = join(DIR, 'shim');
+  OUT = join(SHIM, 'out');
+  CALLS = join(SHIM, 'calls.log');
+  REPOS = join(DIR, 'repos');
+  MAIN = join(REPOS, 'shop-web');
+  await mkdir(join(SHIM, 'bin'), { recursive: true });
+  await mkdir(OUT, { recursive: true });
+  await mkdir(HOME, { recursive: true });
+  await shim('git', 'git-$(basename "$2")');
+  await shim('systemctl', 'systemctl-$2');
+  for (const c of ['ss', 'systemd-run', 'journalctl', 'tailscale', 'docker', 'ip', 'gh']) await shim(c, c);
+  await out('ss', `LISTEN 0      511        127.0.0.1:${LISTEN_PORT}        0.0.0.0:*\n`);
+  await out('systemd-run', '');
+  await mkdir(join(MAIN, '.git'), { recursive: true });
+  await writeFile(join(MAIN, 'package.json'), JSON.stringify({ scripts: { dev: 'vite' } }));
+  await out('git-shop-web', `worktree ${MAIN}\nHEAD ${'a'.repeat(40)}\nbranch refs/heads/main\n\n`);
+  main = await startDaemon();
+  PATHS = resolvePaths(env({ PORTBOARD_PORT: String(main.port) }), HOME);
+});
+
 const auditLines = async (path = PATHS.audit) =>
   (await readFile(path, 'utf8').catch(() => '')).split('\n').filter(Boolean).map((l) => JSON.parse(l) as Msg);
 

@@ -294,6 +294,19 @@ only in the session's own process ([MCP through the dashboard](#mcp-through-the-
 - **Same rights as the stdio server.** What a tool can do through this route is what `src/mcp.ts` can do for the same user. This route adds no tool and no argument.
 - `GET /api/claude/port-advice?command=` is read-only. The value of `command` is parsed (`parsePortCommands`) and then dropped: it is not written to the log, the audit log, the event files or the answer.
 
+## The plugin's Go binary
+
+`claude-plugin/bin/portboard-shim` ([`shim/`](../shim/main.go); [claude-plugin/README.md](claude-plugin/README.md#the-go-binary)) is a client of the routes above, not a new route.
+
+- **Standard library only.** No Go module is required, and the binary is built on the machine that uses it (`npm run build:shim`). It is not committed and not in the npm package.
+- **No credentials.** It reads no token, key or account file. The Portboard and Claude variables it reads are `PORTBOARD_URL`, `PORTBOARD_MCP_MODE`, `PORTBOARD_HOME`, `PORTBOARD_NUDGE`, `PORTBOARD_HOOK_TIMEOUT_MS`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID`, `CLAUDE_PLUGIN_OPTION_PORT_NUDGE`, `PATH` and `HOME` from its environment, and the `package.json` and `src/mcp.ts` of the checkout candidates (only to fall back to node). It chooses node only as `bin/run.sh` does (`node` on PATH, else the highest nvm version). It does not use the environment's proxy settings. The Go runtime and its TLS code also read their usual system settings (for example `SSL_CERT_FILE`, `SSL_CERT_DIR`, `/etc/hosts` and `/etc/resolv.conf`).
+- **Loopback by default.** `PORTBOARD_URL` defaults to `http://127.0.0.1:8790`. `mcp` and `nudge` send only to `PORTBOARD_URL`; an `https` address for `mcp` is handed to Node's client.
+- **What it sends.** `mcp`: `GET /api/mcp/ping`, then `POST /api/mcp` with the headers `X-Portboard: 1`, `Content-Type: application/json`, and `X-Portboard-Session` and `X-Portboard-Claude-Pid` only in the shapes of [MCP through the dashboard](#mcp-through-the-dashboard). `nudge`: `GET /api/claude/port-advice` with `command` (at most 4096 bytes), and `cwd` and `session` in their allowed shapes. It never sends a request again after the request may have run, except a connection that was refused, once. Redirects are not followed. Go's HTTP client adds `User-Agent: Go-http-client/1.1` and `Accept-Encoding: gzip` to every request, and `Authorization: Basic` when `PORTBOARD_URL` has user information (`http://user:password@host`).
+- **Whatever answers on `PORTBOARD_URL` receives every Bash command** of at most 4096 bytes, as the `command` query value. The Node hook sent only the port, the kind and the tool name of a command that names a port. The default address is loopback, so the receiver is the dashboard unless `PORTBOARD_URL` points elsewhere.
+- **The command goes only in the query.** The dashboard parses it and drops it (see above): it is not logged by the dashboard. The binary writes no log and no file, and writes nothing to stderr in `nudge`.
+- **No decision.** `nudge` adds context only: exit code 0 always, no `permissionDecision`.
+- **What it starts.** In `mcp`, only `node` with `<checkout>/src/mcp.ts` (it passes its whole environment on to node) (found as `claude-plugin/bin/mcp.mjs` finds the checkout), or Node's `bin/mcp.mjs` next to the binary for an `https` address. Nothing else, and no argument from a request.
+
 ## Open items
 
 - ~~**Loopback has no token**~~: opt-in since #12, token mode with `requireTokenOnLoopback`. The default is unchanged
