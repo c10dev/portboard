@@ -184,7 +184,11 @@ export const accountsFeature: FeatureModule = {
       async handler({ body }) {
         if (!enabledFn() || !proxySettings().enabled) return reply(404, { error: 'accounts proxy disabled' });
         try {
-          return ok({ key: await proxyOf().key((body as { rotate?: unknown } | null)?.rotate === true) });
+          const rotate = (body as { rotate?: unknown } | null)?.rotate === true;
+          const key = await proxyOf().key(rotate);
+          // a proxy stuck in `error` on a bad key file opens at once with the new key
+          if (rotate) await proxyOf().sync(proxySettings());
+          return ok({ key });
         } catch {
           return reply(500, { error: 'proxy key unusable' });
         }

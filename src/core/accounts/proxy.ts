@@ -15,7 +15,8 @@
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { writePrivate } from '../atomic.ts';
@@ -90,7 +91,7 @@ const BODIES = {
 } as const;
 
 const HOP = ['connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'te', 'trailer'];
-const DROP_REQUEST = new Set([...HOP, 'host', 'content-length', 'authorization', 'x-api-key', 'cookie', 'origin', 'referer', 'accept-encoding']);
+const DROP_REQUEST = new Set([...HOP, 'host', 'content-length', 'authorization', 'x-api-key', 'cookie', 'origin', 'referer', 'accept-encoding', 'expect']);
 const DROP_RESPONSE = new Set([...HOP, 'set-cookie', 'content-encoding', 'content-length']);
 
 const digest = (s: string) => createHash('sha256').update(s).digest();
@@ -156,6 +157,38 @@ function readBody(req: IncomingMessage, max: number): Promise<Buffer | 'too larg
   });
 }
 
+/**
+ * The upstream call when no `fetch` is injected. Node's fetch adds headers of its own (`accept`, `accept-language`,
+ * `sec-fetch-mode`), and the proxy must not invent headers, so this sends exactly the headers it is given and nothing
+ * more. It answers with what the proxy reads from a fetch answer: `status`, `headers` and `body` (a web stream). It does not
+ * follow a redirect and ends the request when the signal aborts.
+ */
+export function upstreamRequest(url: string | URL | Request, init?: RequestInit): Promise<Response> {
+  const target = new URL(String(url));
+  const send = target.protocol === 'http:' ? httpRequest : httpsRequest;
+  const signal = init?.signal ?? undefined;
+  const body = init?.body as Buffer | undefined;
+  return new Promise<Response>((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error('aborted'));
+    const headers: Record<string, string> = { ...(init?.headers as Record<string, string>) };
+    if (body) headers['content-length'] = String(body.length);
+    const req = send(target, { method: init?.method ?? 'GET', headers });
+    const onAbort = () => req.destroy(new Error('aborted'));
+    signal?.addEventListener('abort', onAbort, { once: true });
+    req.once('error', reject);
+    req.once('response', (res) => {
+      req.off('error', reject);
+      res.once('close', () => signal?.removeEventListener('abort', onAbort));
+      // an abort after the headers ends the stream with an error, which the proxy's pipeline handles
+      req.on('error', () => res.destroy());
+      const h = new Headers();
+      for (let i = 0; i + 1 < res.rawHeaders.length; i += 2) h.append(res.rawHeaders[i], res.rawHeaders[i + 1]);
+      resolve({ status: res.statusCode ?? 502, headers: h, body: Readable.toWeb(res) } as unknown as Response);
+    });
+    req.end(body);
+  });
+}
+
 export class AccountsProxy {
   readonly pool: Pool;
   private server: Server | null = null;
@@ -217,7 +250,17 @@ export class AccountsProxy {
         this.state = 'off';
         return;
       }
-      if (this.server && this.openedFor === cfg.port) return;
+      if (this.server && this.openedFor === cfg.port) {
+        // the same rules as at open: a key file that others can read, or that is not a key, closes the listener; an edited key applies now
+        try {
+          await this.readKey(false);
+        } catch {
+          await this.stop();
+          this.keyHash = null;
+          this.setState('error', 'the key file cannot be used');
+        }
+        return;
+      }
       await this.stop();
       await this.open(cfg.port);
     });
@@ -372,7 +415,7 @@ export class AccountsProxy {
       let response: Response;
       const timer = setTimeout(() => abort.abort(), this.o.upstreamHeadersMs ?? UPSTREAM_HEADERS_MS);
       try {
-        response = await (this.o.fetch ?? fetch)(url, {
+        response = await (this.o.fetch ?? upstreamRequest)(url, {
           method: 'POST',
           headers: upstreamHeaders(from, pick.token),
           body: body as unknown as BodyInit,
@@ -432,8 +475,20 @@ export function setProxyConfigForTest(fn: (() => ProxyConfig) | null): void {
   configFn = fn;
 }
 
-/** True when `port` is the proxy's port in the settings of a proxy that is on, also in a preview (expose_port refuses it) */
+/** The port a proxy that production runs uses when nothing says otherwise */
+const DEFAULT_PORT = SITE_DEFAULTS.accounts.proxy.port;
+
+/**
+ * True when `port` is the proxy's port in the settings of a proxy that is on (expose_port refuses it). A preview reads its
+ * own copy of portboard.json, made once, so it can miss a proxy that production turned on later: there the preview's
+ * configured port and the default port count whatever the flags say. A replaced config (the test hook) is used as it is.
+ */
 export function proxyHoldsPort(port: number): boolean {
-  const cfg = (configFn ?? flags)();
+  if (configFn) {
+    const cfg = configFn();
+    return cfg.enabled && port === cfg.port;
+  }
+  const cfg = flags();
+  if (PATHS.profile === 'preview') return port === cfg.port || port === DEFAULT_PORT;
   return cfg.enabled && port === cfg.port;
 }

@@ -222,12 +222,32 @@ function proxyBlock(report) {
       : t('accounts.proxy.state.error');
   const note = h('span', { class: 'set-state warn acc-line', role: 'alert' });
   const say = (text) => { note.textContent = text; };
-  const copy = button(t('accounts.proxy.copy'), async () => {
-    say('');
+  // the command (and the key in it) is drawn here only when the clipboard is not usable, after the owner's click, for a minute
+  const manual = h('div', { class: 'set-row acc-line', hidden: true });
+  let manualTimer = 0;
+  const showManual = (command) => {
+    const input = h('input', { type: 'text', class: 'ctl-text', readonly: true, value: command, 'aria-label': t('accounts.proxy.copy'), spellcheck: 'false' });
+    manual.replaceChildren(h('span', { class: 'set-note' }, t('accounts.proxy.manual')), input);
+    manual.hidden = false;
+    input.focus();
+    input.select();
+    clearTimeout(manualTimer);
+    manualTimer = setTimeout(hideManual, 60_000);
+  };
+  function hideManual() {
+    clearTimeout(manualTimer);
+    manual.replaceChildren();
+    manual.hidden = true;
+  }
+  const commandOf = async () => {
+    const { key } = await postOrThrow('api/accounts/proxy/key', {});
+    return `ANTHROPIC_BASE_URL=${p.url} ANTHROPIC_AUTH_TOKEN=${key} claude`;
+  };
+  /** The key request failed, or both clipboard ways did: say it, or show the command to copy by hand */
+  const fallback = async (pending) => {
     let command;
     try {
-      const { key } = await postOrThrow('api/accounts/proxy/key', {});
-      command = `ANTHROPIC_BASE_URL=${p.url} ANTHROPIC_AUTH_TOKEN=${key} claude`;
+      command = await pending;
     } catch (err) {
       return say(errorText(reason(err)));
     }
@@ -235,9 +255,24 @@ function proxyBlock(report) {
       await navigator.clipboard.writeText(command);
       copy.textContent = t('accounts.add.copied');
     } catch {
-      // clipboard blocked: the key is not on the page, so there is nothing to select
-      say(t('accounts.proxy.error.clipboard'));
+      showManual(command);
     }
+  };
+  const copy = button(t('accounts.proxy.copy'), () => {
+    say('');
+    hideManual();
+    const pending = commandOf();
+    pending.catch(() => {});
+    // Safari and WKWebView accept a clipboard write only while the click is handled: it gets a promise of the text, not the text
+    if (window.ClipboardItem && navigator.clipboard?.write) {
+      const blob = pending.then((c) => new Blob([c], { type: 'text/plain' }));
+      navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]).then(
+        () => { copy.textContent = t('accounts.add.copied'); },
+        () => fallback(pending),
+      );
+      return;
+    }
+    fallback(pending);
   }, { write: true, disabled: !listening });
   const rotate = button(t('accounts.proxy.rotate'), async () => {
     say('');
@@ -249,7 +284,7 @@ function proxyBlock(report) {
     } catch (err) {
       say(errorText(reason(err)));
     }
-  }, { write: true, disabled: !listening });
+  }, { write: true, disabled: !listening && p.state !== 'error' });
   const lines = (p.events ?? []).map((e) => {
     const move = e.kind === 'switch' ? `${who(e.from)} → ${who(e.to)}` : who(e.from ?? e.to);
     return h('p', { class: 'set-note' }, [when(e.at), KIND[e.kind] ?? e.kind, move, e.status ?? null].filter((x) => x !== null).join(' · '));
@@ -262,6 +297,7 @@ function proxyBlock(report) {
     listening ? h('p', { class: 'set-note' }, t('accounts.proxy.lead')) : null,
     h('div', { class: 'set-row acc-line' }, copy, rotate),
     note,
+    manual,
     h('p', { class: 'set-note' }, t('accounts.proxy.events')),
     lines.length ? lines : h('p', { class: 'set-note' }, t('accounts.proxy.noEvents')),
   );

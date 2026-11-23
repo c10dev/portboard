@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { request as httpRequest, type IncomingHttpHeaders, type IncomingMessage } from 'node:http';
+import { createServer, request as httpRequest, type IncomingHttpHeaders, type IncomingMessage } from 'node:http';
 import { connect } from 'node:net';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -29,7 +29,7 @@ process.env.PORTBOARD_ACCOUNTS = FILE;
 process.env.PORTBOARD_ACCOUNT_HOMES = HOMES;
 process.env.PORTBOARD_ACCOUNTS_PROXY_KEY = KEY_FILE;
 
-const { AccountsProxy, PROXY_HOST, PROXY_REQUESTS, proxyHoldsPort, setProxyConfigForTest } = await import('../src/core/accounts/proxy.ts');
+const { AccountsProxy, PROXY_HOST, PROXY_REQUESTS, proxyHoldsPort, setProxyConfigForTest, upstreamRequest } = await import('../src/core/accounts/proxy.ts');
 const { verdictOf, DEFAULT_REST_MS, MAX_REST_MS } = await import('../src/core/accounts/pool.ts');
 const { LOGIN_REQUESTS } = await import('../src/core/accounts/flows.ts');
 const { refreshAccount, resetRefreshForTest } = await import('../src/core/accounts/refresh.ts');
@@ -953,6 +953,12 @@ test('the page: the proxy block, the copy button for the command and the key but
   const block = src.slice(src.indexOf('function proxyBlock'));
   assert.match(block, /write: true/);
   assert.doesNotMatch(block, /textContent = (?:key|r\.key)/, 'the key is never put on the page');
+  // the clipboard write is made inside the click, with a promise of the text; a text field is the last resort
+  assert.match(block, /new ClipboardItem\(\{ 'text\/plain': blob \}\)/);
+  assert.match(block, /navigator\.clipboard\?\.write/);
+  assert.match(block, /readonly: true/);
+  assert.match(block, /setTimeout\(hideManual, 60_000\)/);
+  assert.match(block, /disabled: !listening && p\.state !== 'error'/);
 });
 
 // ---- review follow-ups ----
@@ -1003,6 +1009,14 @@ test('proxyHoldsPort follows the two flags in a preview too; a replaced config (
     JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', code], { env: { PATH: process.env.PATH ?? '', HOME: dir, PORTBOARD_PORT: port, PORTBOARD_SITE: join(dir, 'portboard.json') }, encoding: 'utf8' }));
   assert.deepEqual(out('8808'), [false, true, false], 'preview: the proxy is off here, the port is still held');
   assert.deepEqual(out('8790'), [true, true, false], 'production');
+  // a preview whose copy of portboard.json has the flags off (production turned the proxy on later), and a port of its own
+  writeFileSync(join(dir, 'portboard.json'), JSON.stringify({ accounts: { proxy: { port: 8801 } } }));
+  const code2 = `const m = await import(${JSON.stringify(new URL('../src/core/accounts/proxy.ts', import.meta.url).href)});
+    console.log(JSON.stringify([m.proxyConfig().enabled, m.proxyHoldsPort(8801), m.proxyHoldsPort(8795), m.proxyHoldsPort(8796)]));`;
+  const out2 = (port: string) =>
+    JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', code2], { env: { PATH: process.env.PATH ?? '', HOME: dir, PORTBOARD_PORT: port, PORTBOARD_SITE: join(dir, 'portboard.json') }, encoding: 'utf8' }));
+  assert.deepEqual(out2('8808'), [false, true, true, false], 'preview, flags off: its own port and the default are held');
+  assert.deepEqual(out2('8790'), [false, false, false, false], 'production, flags off: nothing is held');
 });
 
 test('a process that never synced reports the settings and state unknown while they are on', async () => {
@@ -1034,4 +1048,109 @@ test('no usable account is written at most once a minute', async () => {
   clock = NOW + 61_000;
   await call();
   assert.equal(count(), 2);
+});
+
+// ---- second review round ----
+
+test('sync re-reads the key file: a loose or odd file closes the listener, an edited key applies at once', async () => {
+  const p = proxyOf();
+  await p.sync({ enabled: true, port: 0 });
+  const port = p.report().port;
+  const old = await p.key();
+  const fresh = `pbp-${'ab'.repeat(16)}`;
+  writeFileSync(KEY_FILE, `${fresh}\n`, { mode: 0o600 });
+  await p.sync({ enabled: true, port });
+  assert.equal(p.report().state, 'listening');
+  assert.equal((await call({ key: old }, port)).status, 401, 'the old key is refused');
+  assert.equal((await call({ key: fresh }, port)).status, 503, 'the edited key is accepted (no account here)');
+  chmodSync(KEY_FILE, 0o644);
+  await p.sync({ enabled: true, port });
+  assert.equal(p.report().state, 'error');
+  assert.equal(p.boundPort(), 0, 'the listener is closed');
+  assert.match(logged.join('\n'), /accounts proxy: the key file cannot be used/);
+  for (const l of logged) assert.ok(!l.includes(fresh) && !l.includes(old));
+  chmodSync(KEY_FILE, 0o600);
+  writeFileSync(KEY_FILE, 'junk\n', { mode: 0o600 });
+  await p.sync({ enabled: true, port });
+  assert.equal(p.report().state, 'error');
+  writeFileSync(KEY_FILE, `${old}\n`, { mode: 0o600 });
+  await p.sync({ enabled: true, port });
+  assert.equal(p.report().state, 'listening');
+  await p.close();
+});
+
+test('an Expect header is not sent upstream', async () => {
+  await claude(TOKEN.A);
+  const r = await call({ headers: { expect: '100-continue' } });
+  assert.equal(r.status, 200);
+  assert.ok(!('expect' in ups[0].headers));
+});
+
+test('upstreamRequest: only the given headers go out, a stream arrives in order, an abort ends the request, a redirect is not followed', { timeout: 20_000 }, async () => {
+  const seen: { headers: IncomingHttpHeaders; body: string; method: string }[] = [];
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const server = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      seen.push({ headers: req.headers, body: Buffer.concat(chunks).toString(), method: req.method ?? '' });
+      if (req.url === '/redirect') return void res.writeHead(302, { location: '/elsewhere', 'set-cookie': ['a=1', 'b=2'] }).end();
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.write('one\n');
+      if (req.url === '/hang') return;
+      void gate.then(() => res.end('two\n'));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  try {
+    const sent = { authorization: 'Bearer X', 'x-custom': 'yes', 'content-type': 'application/json' };
+    const ac = new AbortController();
+    const res = await upstreamRequest(`${base}/stream?q=1`, { method: 'POST', headers: sent, body: Buffer.from('{"a":1}') as unknown as BodyInit, redirect: 'manual', signal: ac.signal });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'text/event-stream');
+    const reader = res.body!.getReader();
+    assert.equal(Buffer.from((await reader.read()).value!).toString(), 'one\n', 'the first piece while the server is still open');
+    release();
+    assert.equal(Buffer.from((await reader.read()).value!).toString(), 'two\n');
+    assert.equal((await reader.read()).done, true);
+    const [got] = seen;
+    assert.equal(got.method, 'POST');
+    assert.equal(got.body, '{"a":1}');
+    for (const [k, v] of Object.entries(sent)) assert.equal(got.headers[k], v);
+    for (const k of ['accept', 'accept-language', 'sec-fetch-mode', 'user-agent', 'accept-encoding']) assert.ok(!(k in got.headers), `${k} is not added`);
+    // a redirect is the answer, not followed
+    const red = await upstreamRequest(`${base}/redirect`, { method: 'POST', headers: sent, body: Buffer.alloc(0) as unknown as BodyInit });
+    assert.equal(red.status, 302);
+    assert.equal(red.headers.get('location'), '/elsewhere');
+    assert.equal(seen.length, 2);
+    // an abort after the headers ends the stream with an error
+    const hang = await upstreamRequest(`${base}/hang`, { method: 'POST', headers: sent, body: Buffer.alloc(0) as unknown as BodyInit, signal: ac.signal });
+    const r2 = hang.body!.getReader();
+    await r2.read();
+    ac.abort();
+    await assert.rejects(() => r2.read());
+    // an abort before the call
+    await assert.rejects(() => upstreamRequest(`${base}/stream`, { method: 'POST', headers: sent, signal: ac.signal }));
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test('change key in the error state: rotate reopens the proxy with the new key', async () => {
+  await claude(TOKEN.A);
+  const p = proxyOf();
+  setAccountsOptionsForTest(() => ({ ...homesOpts(), proxy: p }));
+  chmodSync(KEY_FILE, 0o644);
+  await p.sync({ enabled: true, port: 0 });
+  assert.equal(p.report().state, 'error');
+  const r = await keyRoute({ rotate: true });
+  assert.equal(r.status, 200);
+  const fresh = (r.body as { key: string }).key;
+  assert.equal(p.report().state, 'listening');
+  assert.equal(statSync(KEY_FILE).mode & 0o777, 0o600);
+  assert.equal((await call({ key: fresh }, p.report().port)).status, 200);
+  await p.close();
 });
