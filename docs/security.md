@@ -35,7 +35,7 @@ route that isn't declared a write, and the checks run in this order, before the 
 | A tagged device through serve | `serve`, no login header | no |
 | Funnel (public), if it ever pointed at 8790 | `serve` with `Tailscale-Funnel-Request` | no |
 | A tailnet device on `http://<host or 100.x IP>:8790` | `direct`: any non-loopback socket | no (read-only), whatever `Tailscale-*` headers it sends |
-| The stdio MCP server (`src/mcp.ts`) | not HTTP: a child process of a local Claude session | yes (owner); recorded as `mcp`. Its `name_device` also acknowledges the 새 기기 mark with a loopback HTTP call to `POST /api/known-devices/ack` (recorded as `loopback`) |
+| The stdio MCP server (`src/mcp.ts`) | not HTTP: a child process of a local Claude session. With the plugin in thin mode it is a loopback HTTP client of the dashboard: see [MCP through the dashboard](#mcp-through-the-dashboard) | yes (owner); recorded as `mcp`. Its `name_device` also acknowledges the 새 기기 mark with a loopback HTTP call to `POST /api/known-devices/ack` (recorded as `loopback`) |
 
 This is the default, **tailscale mode**. Token mode adds the owner token: [below](#token-mode-c10devportboard12).
 
@@ -165,7 +165,7 @@ read. Setup: [setup.md](setup.md#without-tailscale).
 | `serve`, another login, a tagged node, another local proxy | no | the owner (`token`) | no |
 | **Funnel** (`Tailscale-Funnel-Request`) | no | **no** | no |
 | Direct: LAN, tailnet IP, anything not loopback | no | the owner (`token`, with the address) | no |
-| The stdio MCP server | the owner (`mcp`), unchanged; but `name_device`'s 새 기기 acknowledgement is a tokenless loopback call to `POST /api/known-devices/ack`, refused like any other (also in read-only mode), so `acknowledged` is null | — | — |
+| The stdio MCP server (in thin mode: [MCP through the dashboard](#mcp-through-the-dashboard)) | the owner (`mcp`), unchanged; but `name_device`'s 새 기기 acknowledgement is a tokenless loopback call to `POST /api/known-devices/ack`, refused like any other (also in read-only mode), so `acknowledged` is null | — | — |
 
 Decisions behind the table (pure, `classifyToken` in `src/core/access.ts`; every cell is in `test/access-token.test.ts`):
 
@@ -258,7 +258,8 @@ Off by default (`accounts.enabled` in `portboard.json`, [accounts.md](accounts.m
 ### Coding agent runs
 
 `start_coding_agent`, `list_coding_agents`, `coding_agent_output` and `stop_coding_agent` exist only on the local stdio
-MCP server (`src/features/coding-agents.ts`). They have no HTTP route and no remote tool, and `REMOTE_READS` is unchanged.
+MCP server (`src/features/coding-agents.ts`). They have no HTTP route and no remote tool, and `REMOTE_READS` is unchanged. `POST /api/mcp` refuses them (409), so they run
+only in the session's own process ([MCP through the dashboard](#mcp-through-the-dashboard)).
 
 - **What runs.** Only the fixed command of the chosen adapter (`codex exec …` or `gemini …`, `src/core/coding-agent-adapters.ts`),
   by its absolute path found on `PATH` (absolute entries only), inside a worktree Portboard already knows. The caller
@@ -279,6 +280,19 @@ MCP server (`src/features/coding-agents.ts`). They have no HTTP route and no rem
   worktree cannot both run.
 - **Trust.** The CLI runs as the machine user with that user's own login, so a caller that can start a run can make that
   CLI act in the worktree within its sandbox. That is the same trust as the other write tools of this server.
+
+## MCP through the dashboard
+
+`GET /api/mcp/ping` and `POST /api/mcp` ([mcp.md](mcp.md#the-plugins-two-modes)) let the plugin's MCP process hand its JSON-RPC to the dashboard.
+
+- **Local processes only.** Both handlers check `localOnly(req)`: a loopback socket and none of the `tailscale serve` / Funnel headers. A request through `tailscale serve` arrives from 127.0.0.1 too, so the socket address alone is not enough. For `POST` this check runs after the router's checks and after the body is read, which the router's owner check makes harmless.
+- **The router's checks apply to `POST`.** `X-Portboard: 1`, the read-only install and the machine owner (`classify`, token mode and its `requireTokenOnLoopback` included). A refusal is an audit line, `denied`, in `audit-denied.jsonl`.
+- **The ping makes the same checks itself.** A `GET` skips the router's guard and audit, so the handler repeats `localOnly`, the read-only test and `resolveCaller(...).canWrite`. The ping answers `200` only when the `POST` would be accepted. It writes no audit line: a session start calls it.
+- **Audit.** The route is declared `auditOk: false`. The router leaves out the audit line for a `2xx` answer; `400`, `403` and `5xx` still get theirs. Every MCP write tool is one line with `source: "mcp"`, written by `callTool` into the dashboard's own audit log (no second `AuditLog` on the same file). Without `auditOk: false`, each read tool call would add a line and flood the file. `buildRegistry()` throws for `auditOk` on a route without `write: true`.
+- **The session headers are not a credential.** `X-Portboard-Session` (`^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$`) and `X-Portboard-Claude-Pid` (`^\d{1,10}$`) become the `CLAUDE_CODE_SESSION_ID` and `CLAUDE_PID` of that one request's `start_dev_server`, never the dashboard's own environment. A local process can write any session id. The id is only the label on the dev server's unit; it grants nothing. A header with a wrong shape is dropped.
+- **The coding-agent tools are refused.** `POST /api/mcp` answers a `tools/call` of `start_coding_agent`, `list_coding_agents`, `coding_agent_output` or `stop_coding_agent` (the tools of the `coding-agents` feature module, taken from the registry) with `409 {error: "local only tool"}` before anything runs, so they still run only in the session's own process, with its own `PATH` and session. The router logs the 409 as an `error` line for `POST /api/mcp`; no `source: "mcp"` line is written. The thin client then answers that request, and the rest of the session, in its own process.
+- **Same rights as the stdio server.** What a tool can do through this route is what `src/mcp.ts` can do for the same user. This route adds no tool and no argument.
+- `GET /api/claude/port-advice?command=` is read-only. The value of `command` is parsed (`parsePortCommands`) and then dropped: it is not written to the log, the audit log, the event files or the answer.
 
 ## Open items
 

@@ -50,6 +50,11 @@ export interface WriteRoute extends RouteBase {
   write: true;
   /** Read and parse a JSON body up to this many bytes (400 "invalid JSON body" otherwise) */
   body?: { limit: number };
+  /**
+   * `false`: a 2xx answer from this route is not written to the audit log (denied, bad-body and failed requests still
+   * are). For a route whose handler records its own writes, as POST /api/mcp does through callTool.
+   */
+  auditOk?: false;
 }
 
 export type Route = ReadRoute | WriteRoute;

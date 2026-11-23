@@ -35,7 +35,8 @@ export interface KnownDir {
 declare module '../mcp/kit.ts' {
   interface Core {
     devServers(): Promise<DevServersDoc>;
-    startDevServer(path: string, script?: string, port?: number): Promise<{ ok: boolean; message: string; port?: number; unit?: string }>;
+    /** `env`: where the session id for the unit comes from; the stdio server's own process.env when omitted */
+    startDevServer(path: string, script?: string, port?: number, env?: Record<string, string | undefined>): Promise<{ ok: boolean; message: string; port?: number; unit?: string }>;
     stopDevServer(path: string): Promise<{ ok: boolean; message: string }>;
     writeLaunchConfig(path: string, script?: string, mode?: LaunchMode): Promise<LaunchConfigResult>;
   }
@@ -319,5 +320,5 @@ export const devServersFeature: FeatureModule = {
   ],
   tools: [listTool, startTool, stopTool, launchTool],
   // The stdio server is a Claude session's child: its CLAUDE_* env tells owners.ts whose unit this is (#43).
-  mcpCore: () => ({ devServers: devServersDoc, startDevServer: (path: string, script?: string, port?: number) => startDevServer(path, script, port, process.env), stopDevServer, writeLaunchConfig }),
+  mcpCore: () => ({ devServers: devServersDoc, startDevServer: (path: string, script?: string, port?: number, env: Record<string, string | undefined> = process.env) => startDevServer(path, script, port, env), stopDevServer, writeLaunchConfig }),
 };

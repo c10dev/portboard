@@ -179,6 +179,8 @@ export function createRouter(routes: Route[], guard?: WriteGuard) {
       await log(out, targetOf(params, body));
       return out;
     }
+    // A route that records its own writes (auditOk: false) leaves successful answers out of the log.
+    if (r.write && r.auditOk === false && out.status >= 200 && out.status < 300) return out;
     await log(out, withReplyPort(targetOf(params, body), out));
     return out;
   };

@@ -125,3 +125,56 @@ Resources and prompts the same way:
 ```bash
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"cli","version":"0"}}}' '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"portboard://status"}}' '{"jsonrpc":"2.0","id":3,"method":"prompts/get","params":{"name":"why_not_open","arguments":{"port":"3000"}}}' | node src/mcp.ts
 ```
+
+## The plugin's two modes
+
+The Claude Code plugin starts `claude-plugin/bin/mcp.mjs` for each session. It runs in one of two modes, chosen when the session starts:
+
+| Mode | What runs in the session's process | Size |
+|---|---|---|
+| thin | `src/mcp/thin.mjs`. It sends each JSON-RPC line to the dashboard (`POST /api/mcp`) and prints the answer. It loads no feature module. | about 59 MB idle. Both files are plain JavaScript (`.mjs`), so Node does not load its TypeScript type stripper (about 19 MB). |
+| local | `src/mcp.ts`, as before: the whole server in the session's process. | about 115 MB |
+
+How `bin/mcp.mjs` chooses:
+
+1. `PORTBOARD_MCP_MODE=local` picks local without asking. This is the switch to go back.
+2. Otherwise it sends `GET <PORTBOARD_URL>/api/mcp/ping` with a 300 ms limit. `PORTBOARD_URL` defaults to `http://127.0.0.1:8790`, as for the plugin's hooks.
+3. `200` with `ok: true` picks thin. Everything else picks local: no dashboard, no answer in 300 ms, `403` (token mode, a read-only install, or a caller that may not write), `404` (an older dashboard).
+
+The ping says `200` only when `POST /api/mcp` would accept the same caller, so a thin client never starts against a dashboard that will then refuse it.
+
+`PORTBOARD_URL` may be `https:` too; `node:https` is loaded only then, so it costs nothing otherwise.
+
+The ping answer holds the dashboard's `version`. When it differs from this checkout's version, the plugin writes one line to stderr and still runs thin. The tool list is then the dashboard's, not the checkout's, until the dashboard is deployed again.
+
+`claude mcp add portboard -- node src/mcp.ts` always runs local. Only the plugin has two modes.
+
+Thin mode, during a session:
+
+- A request that cannot connect (connection refused, or no connection within 2 s) is sent once more after 1 s. If that fails too, the session switches to local for good and answers that request in its own process. This keeps tools working while the dashboard restarts for a deploy.
+- A session that has switched stays local until it ends. It does not return to thin mode when the dashboard is back. A restart that takes longer than the 1 s retry window therefore leaves every session that called a tool during it at the local size.
+- A request that was already sent is never sent again, and the mode does not change: a write tool may have run (`restart_service` can restart the dashboard itself). A dropped connection, a `5xx`, a `403`, `404` or `405` in mid-session, or no answer in 10 minutes becomes the JSON-RPC error `-32603` `Portboard dashboard request failed: <status or error>` for that request id. A notification that fails is dropped.
+- A line that is not JSON gets `-32700` and is not sent. Empty lines are skipped.
+- When stdin closes, the client finishes the requests in flight and exits with code 0.
+
+The thin client sends `CLAUDE_CODE_SESSION_ID` and `CLAUDE_PID` from its own environment as the headers `X-Portboard-Session` and `X-Portboard-Claude-Pid`, so `start_dev_server` tags the unit with the calling session. Without them (Claude Desktop) the unit has no session, as for the stdio server.
+
+### In thin mode
+
+The tools run inside the dashboard process, not in the session's. So the dev server's `PATH` comes from the dashboard's Node, `list_suggestions` treats the dashboard's own unit as its own, and the stop tools refuse the dashboard's own pid. These are the answers the dashboard's REST routes give for the same actions.
+
+The coding-agent tools (`start_coding_agent`, `list_coding_agents`, `coding_agent_output`, `stop_coding_agent`) do not run in the dashboard: it answers a call of one of them with `409 {error: "local only tool"}`, and the thin client then answers it in its own process. That moves the session to local mode for the rest of the session (about 115 MB), because the tools need the session's own `PATH` to find `codex` or `gemini`.
+
+`list_accounts` reads the dashboard's live proxy state and the dashboard's login folders (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`), the same as `GET /api/accounts`.
+
+### `POST /api/mcp` and `GET /api/mcp/ping`
+
+`POST /api/mcp` takes one JSON-RPC message (not a batch, 1 MB at most) and answers `200` with the JSON-RPC reply, or `204` for a notification. The dashboard builds the stdio server's `Core` once, on first use, and calls the same `handleMessage` as `src/mcp.ts`. Its caches are separate from the dashboard's own. The route has the checks of every write route: `X-Portboard: 1`, a read-only install, and the machine owner (`403`). Its handler also requires a local process (`403 {error: "loopback only"}`), also when the owner check passed. The security notes are in [security.md](security.md#mcp-through-the-dashboard).
+
+The same route and the `command` argument of `GET /api/claude/port-advice` are what a thin client needs: the hook and the MCP client carry no copy of the feature code.
+
+A write tool called this way is one audit line with `source: "mcp"`, as for the stdio server. The route itself leaves no line for a successful call.
+
+### What this does not cover
+
+`GET /api/claude/port-advice?command=` takes a Bash command of at most 4096 characters. A longer one answers `200 {text: null}`. The hook (`claude-plugin/hooks/port-nudge.ts`) still parses up to 20000 characters itself, so it still reads commands of 4097 to 20000 characters. A client that sends the command to the dashboard instead gives no nudge for those. That is a known loss. A long command made of non-ASCII characters can be refused by Node with `431` before the handler runs (the cap counts characters, not the encoded query), so a caller must treat any non-200 as "no advice".

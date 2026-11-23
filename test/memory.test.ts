@@ -132,6 +132,8 @@ test('classify: Claude CLIs, known MCP servers with their wrappers, other *mcp* 
   assert.deepEqual(classify(['node', '/x/node_modules/@playwright/mcp/cli.js']), { kind: 'mcp', name: 'playwright' });
   assert.deepEqual(classify(['node', '/home/u/projects/portboard/src/mcp.ts']), { kind: 'mcp', name: 'portboard' });
   assert.deepEqual(classify(['node', '/home/u/.claude/plugins/cache/p/claude-plugin/bin/mcp.ts']), { kind: 'mcp', name: 'portboard' });
+  assert.deepEqual(classify(['node', '/home/u/.claude/plugins/cache/portboard/portboard/1.2.0/bin/mcp.mjs']), { kind: 'mcp', name: 'portboard' });
+  assert.deepEqual(classify(['node', '/home/u/.claude/plugins/cache/p/claude-plugin/bin/mcp.mjs']), { kind: 'mcp', name: 'portboard' });
   // the portboard command (#9)
   assert.deepEqual(classify(['node', '/home/u/.nvm/versions/node/v24.19.0/bin/portboard', 'mcp']), { kind: 'mcp', name: 'portboard' });
   assert.deepEqual(classify(['npm', 'exec', 'portboard', 'mcp']), { kind: 'mcp', name: 'portboard' });
