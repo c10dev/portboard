@@ -132,7 +132,7 @@
   "accounts.proxy.kind.switch": "Switch",
   "accounts.proxy.kind.tokenExpired": "Token expired",
   "accounts.proxy.lead": "Start Claude Code with the copied command. When an account hits a shared limit, the proxy sends the request to the next one. The key is never shown here.",
-  "accounts.proxy.manual": "The clipboard isn't available here. Select the command below and copy it by hand. It hides after a minute.",
+  "accounts.proxy.manual": "The clipboard isn't available here. Copy this command by hand: it reads the key from the key file, so the key is not shown.",
   "accounts.proxy.noEvents": "Nothing yet.",
   "accounts.proxy.off": "The proxy is off. Set accounts.proxy.enabled to true in portboard.json (accounts.enabled stays on) and restart Portboard.",
   "accounts.proxy.resting": "Resting until {at}",

@@ -222,40 +222,42 @@ function proxyBlock(report) {
       : t('accounts.proxy.state.error');
   const note = h('span', { class: 'set-state warn acc-line', role: 'alert' });
   const say = (text) => { note.textContent = text; };
-  // the command (and the key in it) is drawn here only when the clipboard is not usable, after the owner's click, for a minute
+  // when the clipboard is not usable the page draws a command that reads the key from the key file: the key itself is never drawn
   const manual = h('div', { class: 'set-row acc-line', hidden: true });
-  let manualTimer = 0;
   const showManual = (command) => {
     const input = h('input', { type: 'text', class: 'ctl-text', readonly: true, value: command, 'aria-label': t('accounts.proxy.copy'), spellcheck: 'false' });
     manual.replaceChildren(h('span', { class: 'set-note' }, t('accounts.proxy.manual')), input);
     manual.hidden = false;
     input.focus();
     input.select();
-    clearTimeout(manualTimer);
-    manualTimer = setTimeout(hideManual, 60_000);
   };
   function hideManual() {
-    clearTimeout(manualTimer);
     manual.replaceChildren();
     manual.hidden = true;
   }
+  /** `'…'` with every quote inside closed and reopened (as shellQuote in src/core/accounts/homes.ts) */
+  const shellQuote = (x) => `'${x.replace(/'/g, `'\\''`)}'`;
+  /** `command` (with the key) is for the clipboard; `byHand` reads the key from `keyFile` and has no key in it */
   const commandOf = async () => {
-    const { key } = await postOrThrow('api/accounts/proxy/key', {});
-    return `ANTHROPIC_BASE_URL=${p.url} ANTHROPIC_AUTH_TOKEN=${key} claude`;
+    const { key, keyFile } = await postOrThrow('api/accounts/proxy/key', {});
+    return {
+      command: `ANTHROPIC_BASE_URL=${p.url} ANTHROPIC_AUTH_TOKEN=${key} claude`,
+      byHand: `ANTHROPIC_BASE_URL=${p.url} ANTHROPIC_AUTH_TOKEN="$(cat ${shellQuote(keyFile)})" claude`,
+    };
   };
-  /** The key request failed, or both clipboard ways did: say it, or show the command to copy by hand */
+  /** The key request failed, or both clipboard ways did: say it, or show the by-hand command */
   const fallback = async (pending) => {
-    let command;
+    let got;
     try {
-      command = await pending;
+      got = await pending;
     } catch (err) {
       return say(errorText(reason(err)));
     }
     try {
-      await navigator.clipboard.writeText(command);
+      await navigator.clipboard.writeText(got.command);
       copy.textContent = t('accounts.add.copied');
     } catch {
-      showManual(command);
+      showManual(got.byHand);
     }
   };
   const copy = button(t('accounts.proxy.copy'), () => {
@@ -265,7 +267,7 @@ function proxyBlock(report) {
     pending.catch(() => {});
     // Safari and WKWebView accept a clipboard write only while the click is handled: it gets a promise of the text, not the text
     if (window.ClipboardItem && navigator.clipboard?.write) {
-      const blob = pending.then((c) => new Blob([c], { type: 'text/plain' }));
+      const blob = pending.then((c) => new Blob([c.command], { type: 'text/plain' }));
       navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]).then(
         () => { copy.textContent = t('accounts.add.copied'); },
         () => fallback(pending),

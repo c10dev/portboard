@@ -857,7 +857,8 @@ test('key route: not the owner is 403, off is 404, the owner gets the key, rotat
   // the owner
   const r = await keyRoute({});
   assert.equal(r.status, 200);
-  assert.deepEqual(Object.keys(r.body as object), ['key']);
+  assert.deepEqual(Object.keys(r.body as object), ['key', 'keyFile']);
+  assert.equal((r.body as { keyFile: string }).keyFile, KEY_FILE);
   assert.equal((r.body as { key: string }).key, key);
   assert.equal((await keyRoute(undefined)).status, 200, 'no body at all');
   assert.equal(((await keyRoute({ rotate: 'true' })).body as { key: string }).key, key, 'only true rotates');
@@ -957,7 +958,13 @@ test('the page: the proxy block, the copy button for the command and the key but
   assert.match(block, /new ClipboardItem\(\{ 'text\/plain': blob \}\)/);
   assert.match(block, /navigator\.clipboard\?\.write/);
   assert.match(block, /readonly: true/);
-  assert.match(block, /setTimeout\(hideManual, 60_000\)/);
+  // the drawn fallback holds no key: its value is built from the key file path and `$(cat`
+  const by = block.slice(block.indexOf('byHand:'));
+  assert.match(by.split('\n')[0], /\$\(cat \$\{shellQuote\(keyFile\)\}\)/);
+  assert.doesNotMatch(by.split('\n')[0], /\$\{key\}/);
+  assert.match(block, /showManual\(got\.byHand\)/);
+  assert.doesNotMatch(block, /showManual\(got\.command\)/);
+  assert.match(block, /const \{ key, keyFile \} = await postOrThrow/);
   assert.match(block, /disabled: !listening && p\.state !== 'error'/);
 });
 

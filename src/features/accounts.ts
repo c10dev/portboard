@@ -9,7 +9,7 @@
 //   POST /api/accounts/login/cancel {flowId}           → {ok: true}
 //   POST /api/accounts/use          {id} → {account, command}: the account's own CLI folder and the command that starts the CLI as it
 //   POST /api/accounts/remove       {id} → {ok: true}: the record and the folder Portboard made for it
-//   POST /api/accounts/proxy/key    {rotate?} → {key}: the proxy key (404 "accounts proxy disabled" when the proxy is off)
+//   POST /api/accounts/proxy/key    {rotate?} → {key, keyFile}: the proxy key (404 "accounts proxy disabled" when the proxy is off)
 //   MCP list_accounts               the same report, local stdio server only: no `remote`, so the remote server never
 //                                   offers it. There is no MCP tool that adds an account.
 //
@@ -188,7 +188,8 @@ export const accountsFeature: FeatureModule = {
           const key = await proxyOf().key(rotate);
           // a proxy stuck in `error` on a bad key file opens at once with the new key
           if (rotate) await proxyOf().sync(proxySettings());
-          return ok({ key });
+          // the path is for the owner's own machine, like `command` of /api/accounts/use: the page shows a command that reads the key from it
+          return ok({ key, keyFile: proxyOf().keyFile() });
         } catch {
           return reply(500, { error: 'proxy key unusable' });
         }

@@ -355,6 +355,11 @@ export class AccountsProxy {
     return key;
   }
 
+  /** The absolute path of the key file */
+  keyFile(): string {
+    return this.o.keyPath ?? PATHS.accountsProxyKey;
+  }
+
   /** The proxy key (made on first use); `rotate` writes a new one first, so the old one stops working. Throws `proxy key unusable`. */
   key(rotate = false): Promise<string> {
     return this.enqueue(() => (rotate ? this.writeKey(this.o.keyPath ?? PATHS.accountsProxyKey) : this.readKey(true)));

@@ -129,7 +129,7 @@
   "accounts.proxy.kind.switch": "전환",
   "accounts.proxy.kind.tokenExpired": "토큰 만료",
   "accounts.proxy.lead": "복사한 명령으로 Claude Code를 띄우세요. 계정이 공유 한도에 걸리면 프록시가 다음 계정으로 요청을 다시 보내요. 키는 여기에 보이지 않아요.",
-  "accounts.proxy.manual": "여기서는 클립보드를 쓸 수 없어요. 아래 명령을 선택해 직접 복사하세요. 1분 뒤에 숨겨져요.",
+  "accounts.proxy.manual": "여기서는 클립보드를 쓸 수 없어요. 이 명령을 직접 복사하세요. 키는 키 파일에서 읽어 오므로 화면에 보이지 않아요.",
   "accounts.proxy.noEvents": "아직 없어요.",
   "accounts.proxy.off": "프록시가 꺼져 있어요. portboard.json에서 accounts.proxy.enabled를 true로 켜고(accounts.enabled도 켠 채) Portboard를 다시 시작하세요.",
   "accounts.proxy.resting": "쉼, {at}까지",
