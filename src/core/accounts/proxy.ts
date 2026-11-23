@@ -1,12 +1,15 @@
 // Accounts proxy (docs/accounts.md#proxy): a loopback HTTP listener that sends Claude Code's requests to Anthropic with the
-// OAuth token of one added Claude account, and sends the same request to the next account when a shared limit is rejected.
-// Claude Code reaches it with ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN (the proxy key).
+// OAuth token of one added Claude account, and Codex's requests to chatgpt.com with the token of one added ChatGPT/Codex
+// account, and sends the same request to the next account of that provider when a limit is reached.
+// Claude Code reaches it with ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN (the proxy key). Codex reaches it with a
+// `model_provider` whose `base_url` ends in /codex and whose `env_key` holds the proxy key.
 //
 //   - It binds 127.0.0.1 only (PROXY_HOST, a constant: no setting or variable changes it) and is never published with
 //     `tailscale serve`. The Host header must be 127.0.0.1:<port> or localhost:<port>, and a request with an Origin is refused.
 //   - The caller sends the proxy key (accounts-proxy.key, 0600) as `Authorization: Bearer` or `x-api-key`. The key and the
 //     client's cookies never go upstream; the account's token goes upstream and nowhere else.
-//   - Only POST /v1/messages and POST /v1/messages/count_tokens are sent on (PROXY_REQUESTS). Other paths are counted.
+//   - Only POST /v1/messages, POST /v1/messages/count_tokens (Claude) and POST /codex/responses (Codex) are sent on
+//     (PROXY_REQUESTS). Other paths are counted. WebSocket upgrades are not sent on.
 //   - The request body goes upstream as the bytes it came in; the answer streams back. A switch happens only before the first
 //     byte of an answer reaches the caller (pool.ts decides which answers move on).
 //   - The dashboard process opens the listener from the `accounts-proxy` job (src/features/accounts.ts); the stdio MCP server never does.
@@ -23,16 +26,23 @@ import { writePrivate } from '../atomic.ts';
 import { PATHS } from '../paths.ts';
 import { SITE, SITE_DEFAULTS } from '../site.ts';
 import type { HomesOptions } from './homes.ts';
-import { Pool, verdictOf, type ProxyEvent } from './pool.ts';
+import { Pool, verdictOf, type ProxyEvent, type ProxyProvider } from './pool.ts';
 
-// The URL, the beta flag and the version header of the upstream request live in this block and nowhere else. The shape
-// follows opencodex commit 9e0e298e (MIT): src/server/index.ts:416-417 (the path and query are kept). No code is copied.
+// The URLs, the beta flag and the version header of the upstream requests live in this block and nowhere else. The shape
+// follows opencodex commit 9e0e298e (MIT): src/server/index.ts:416-417 (the path and query are kept) and
+// src/server/responses/core-auth.ts (the Codex address). No code is copied. A Codex request goes to
+// `origin + upstreamPath` (+ its query) when it came in on one of `paths`.
 export const PROXY_REQUESTS = {
   claude: {
     origin: 'https://api.anthropic.com',
     paths: ['/v1/messages', '/v1/messages/count_tokens'] as readonly string[],
     oauthBeta: 'oauth-2025-04-20',
     defaultVersion: '2023-06-01',
+  },
+  codex: {
+    origin: 'https://chatgpt.com',
+    upstreamPath: '/backend-api/codex/responses',
+    paths: ['/codex/responses'] as readonly string[],
   },
 };
 
@@ -63,7 +73,7 @@ export interface ProxyReport {
   port: number;
   /** listening only */
   url: string | null;
-  current: { claude: string | null };
+  current: { claude: string | null; codex: string | null };
   resting: { id: string; until: string }[];
   /** newest first, 20 */
   events: ProxyEvent[];
@@ -90,6 +100,11 @@ const BODIES = {
   tooLarge: { type: 'error', error: { type: 'invalid_request_error', message: 'request too large' } },
 } as const;
 
+/** The error body of the Codex paths: the shape of an OpenAI error, with the same closed words as the Claude paths */
+const codexBody = (message: string) => ({ error: { type: 'proxy_error', code: message, message } });
+type ErrorKind = 'auth' | 'denied' | 'noAccount' | 'upstream' | 'tooLarge';
+const errorBody = (provider: ProxyProvider, kind: ErrorKind) => (provider === 'codex' ? codexBody(BODIES[kind].error.message) : BODIES[kind]);
+
 const HOP = ['connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'te', 'trailer'];
 const DROP_REQUEST = new Set([...HOP, 'host', 'content-length', 'authorization', 'x-api-key', 'cookie', 'origin', 'referer', 'accept-encoding', 'expect']);
 const DROP_RESPONSE = new Set([...HOP, 'set-cookie', 'content-encoding', 'content-length']);
@@ -102,8 +117,8 @@ function sendJson(res: ServerResponse, status: number, body: unknown, extra: Rec
   res.end(JSON.stringify(body));
 }
 
-/** The request headers that go upstream: the client's, minus the listed ones, plus the account's token */
-function upstreamHeaders(from: IncomingMessage['headers'], token: string): Record<string, string> {
+/** The request headers that go upstream: the client's, minus the listed ones, plus the account's token (Codex: and its account id) */
+function upstreamHeaders(from: IncomingMessage['headers'], provider: ProxyProvider, token: string, accountId: string | null): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(from)) {
     if (v === undefined || DROP_REQUEST.has(k) || k.startsWith('proxy-')) continue;
@@ -111,6 +126,12 @@ function upstreamHeaders(from: IncomingMessage['headers'], token: string): Recor
   }
   out.authorization = `Bearer ${token}`;
   out['accept-encoding'] = 'identity';
+  if (provider === 'codex') {
+    // the client's own headers (originator, session-id, x-codex-*, user-agent) go on; nothing else is made up
+    delete out['chatgpt-account-id'];
+    if (accountId) out['chatgpt-account-id'] = accountId;
+    return out;
+  }
   const beta = PROXY_REQUESTS.claude.oauthBeta;
   const have = (out['anthropic-beta'] ?? '').split(',').map((x) => x.trim()).filter(Boolean);
   if (!have.includes(beta)) out['anthropic-beta'] = [...have, beta].join(',');
@@ -118,12 +139,22 @@ function upstreamHeaders(from: IncomingMessage['headers'], token: string): Recor
   return out;
 }
 
-/** The path of a request that is one the proxy sends on, with its query as it came; null for anything else */
-function upstreamTarget(req: IncomingMessage): string | null {
+/** The provider a path belongs to (the query is not read); null for a path of neither. The method is not read: an error body follows the path. */
+function providerOfPath(req: IncomingMessage): ProxyProvider | null {
   const url = req.url ?? '';
-  if (req.method !== 'POST' || !url.startsWith('/')) return null;
+  const path = url.indexOf('?') < 0 ? url : url.slice(0, url.indexOf('?'));
+  if (PROXY_REQUESTS.codex.paths.includes(path)) return 'codex';
+  return PROXY_REQUESTS.claude.paths.includes(path) ? 'claude' : null;
+}
+
+/** The provider and the full upstream address of a request the proxy sends on, with its query as it came; null for anything else */
+function upstreamTarget(req: IncomingMessage): { provider: ProxyProvider; url: string } | null {
+  const url = req.url ?? '';
+  const provider = providerOfPath(req);
+  if (req.method !== 'POST' || !url.startsWith('/') || !provider) return null;
   const q = url.indexOf('?');
-  return PROXY_REQUESTS.claude.paths.includes(q < 0 ? url : url.slice(0, q)) ? url : null;
+  if (provider === 'codex') return { provider, url: PROXY_REQUESTS.codex.origin + PROXY_REQUESTS.codex.upstreamPath + (q < 0 ? '' : url.slice(q)) };
+  return { provider, url: PROXY_REQUESTS.claude.origin + url };
 }
 
 /** A path as a person reads it: no query, printable ASCII, 80 characters */
@@ -226,7 +257,7 @@ export class AccountsProxy {
       state: !this.synced && cfg.enabled ? 'unknown' : this.state,
       port,
       url: listening ? `http://${PROXY_HOST}:${port}` : null,
-      current: { claude: this.pool.current },
+      current: { ...this.pool.current },
       resting: this.pool.restingNow(),
       events: this.pool.recent(SHOWN_EVENTS),
       counts: { requests: this.requests, switches: this.pool.switches },
@@ -297,7 +328,7 @@ export class AccountsProxy {
     }
     const server = createServer((req, res) => {
       this.handle(req, res).catch(() => {
-        if (!res.headersSent) sendJson(res, 502, BODIES.upstream);
+        if (!res.headersSent) sendJson(res, 502, errorBody(providerOfPath(req) ?? 'claude', 'upstream'));
         else res.destroy();
       });
     });
@@ -377,10 +408,11 @@ export class AccountsProxy {
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const host = String(req.headers.host ?? '').toLowerCase();
+    const shape = providerOfPath(req) ?? 'claude';
     if ((host !== `${PROXY_HOST}:${this.bound}` && host !== `localhost:${this.bound}`) || req.headers.origin !== undefined) {
-      return sendJson(res, 403, BODIES.denied);
+      return sendJson(res, 403, errorBody(shape, 'denied'));
     }
-    if (!this.authorized(req)) return sendJson(res, 401, BODIES.auth);
+    if (!this.authorized(req)) return sendJson(res, 401, errorBody(shape, 'auth'));
     // only a caller that passed both checks counts (a port probe or an unauthenticated call does not)
     this.requests++;
     const target = upstreamTarget(req);
@@ -392,7 +424,7 @@ export class AccountsProxy {
     const body = await readBody(req, this.o.maxBodyBytes ?? MAX_BODY_BYTES);
     if (body === null) return;
     if (body === 'too large') {
-      sendJson(res, 413, BODIES.tooLarge, { connection: 'close' });
+      sendJson(res, 413, errorBody(target.provider, 'tooLarge'), { connection: 'close' });
       req.resume();
       return;
     }
@@ -400,21 +432,21 @@ export class AccountsProxy {
     res.on('close', () => {
       if (!res.writableFinished) abort.abort();
     });
-    await this.forward(req.headers, PROXY_REQUESTS.claude.origin + target, body, res, abort);
+    await this.forward(target.provider, req.headers, target.url, body, res, abort);
   }
 
   /** Try the accounts in turn; hand the first answer that is not a switch to the caller */
-  private async forward(from: IncomingMessage['headers'], url: string, body: Buffer, res: ServerResponse, abort: AbortController): Promise<void> {
+  private async forward(provider: ProxyProvider, from: IncomingMessage['headers'], url: string, body: Buffer, res: ServerResponse, abort: AbortController): Promise<void> {
     const pool = this.pool;
     const used = new Set<string>();
     // the last answer that asked for a switch: it is given to the caller as it is when no account is left (its body is still unread)
     let held: { response: Response; id: string } | null = null;
     for (let n = 0; n < MAX_ACCOUNTS && !abort.signal.aborted; n++) {
-      const pick = await pool.next(used);
+      const pick = await pool.next(provider, used);
       if (!pick) break;
       if (held) {
         await held.response.body?.cancel().catch(() => {});
-        pool.switched(held.id, pick.id, held.response.status);
+        pool.switched(provider, held.id, pick.id, held.response.status);
         held = null;
       }
       let response: Response;
@@ -422,30 +454,30 @@ export class AccountsProxy {
       try {
         response = await (this.o.fetch ?? upstreamRequest)(url, {
           method: 'POST',
-          headers: upstreamHeaders(from, pick.token),
+          headers: upstreamHeaders(from, provider, pick.token, pick.accountId),
           body: body as unknown as BodyInit,
           redirect: 'manual',
           signal: abort.signal,
         });
       } catch {
         // the caller left, the wait for the headers ran out, or the network failed: nothing was sent to the caller yet
-        if (!res.destroyed && !res.headersSent) sendJson(res, 502, BODIES.upstream);
+        if (!res.destroyed && !res.headersSent) sendJson(res, 502, errorBody(provider, 'upstream'));
         return;
       } finally {
         clearTimeout(timer);
       }
-      const verdict = verdictOf(response.status, response.headers, pool.now());
+      const verdict = verdictOf(provider, response.status, response.headers, pool.now());
       if (!verdict) {
-        if (response.status < 400) pool.current = pick.id;
+        if (response.status < 400) pool.current[provider] = pick.id;
         return this.pass(response, res);
       }
-      pool.rest(pick.id, verdict.restMs, response.status);
+      pool.rest(provider, pick.id, verdict.restMs, response.status);
       held = { response, id: pick.id };
     }
     if (abort.signal.aborted) return void held?.response.body?.cancel().catch(() => {});
     if (held) return this.pass(held.response, res);
-    pool.noteNoAccount();
-    sendJson(res, 503, BODIES.noAccount);
+    pool.noteNoAccount(provider);
+    sendJson(res, 503, errorBody(provider, 'noAccount'));
   }
 
   /** Status and headers first, then the body as a stream; a caller that leaves ends the upstream request (the signal) */

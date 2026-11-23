@@ -10,15 +10,20 @@
 // An added Claude or Codex account has two more buttons (POST /api/accounts/use and /remove): "use this account" makes
 // the account's own CLI folder and shows the command that starts the CLI in it (with a copy button); "remove" asks first.
 //
-// Below the list, the account pool proxy (report.proxy): its state and port, "copy command" (asks POST
+// Below the list, the account pool proxy (report.proxy): its state and port, "copy Claude command" (asks POST
 // /api/accounts/proxy/key and puts ANTHROPIC_BASE_URL=… ANTHROPIC_AUTH_TOKEN=<key> claude on the clipboard: the key is
-// never drawn on the page), "change key" (asks first), the accounts that rest, and the last switches.
+// never drawn on the page), "copy Codex command" (the same, for `codex` with a `portboard` model provider), "change key"
+// (asks first), the accounts that rest, and the last switches.
 
 import { getInit, post, postOrThrow } from '../lib/api.js';
 import { modal } from '../lib/dialog.js';
 import { $, button, el, extLink, h } from '../lib/dom.js';
 import { locale, t } from '../lib/i18n.js';
 
+// The `version` header the Codex command sends: the Codex CLI that wrote the request shape this proxy follows, 0.159.3
+// (`codex-cli 0.159.3` was the version installed on the maintainer's machine; its source, tag rust-v0.159.3, was read on
+// 2026-11-23). A built-in provider sends this header, a user provider does not, so the command adds it. Written here only.
+const CODEX_VERSION = '0.159.3';
 const DOCS = 'https://github.com/c10dev/portboard/blob/main/docs/accounts.md';
 const TONE = { ok: 'ok', expired: 'warn', none: 'todo', unreadable: 'todo' };
 const STATUS = {
@@ -182,7 +187,7 @@ function row(a, proxy) {
       { class: 'set-extra' },
       added ? h('span', { class: 'set-state' }, t('accounts.added')) : null,
       a.active ? h('span', { class: 'set-state ok' }, t('accounts.active')) : null,
-      proxy?.current?.claude === a.id ? h('span', { class: 'set-state ok' }, t('accounts.proxy.using')) : null,
+      proxy?.current?.claude === a.id || proxy?.current?.codex === a.id ? h('span', { class: 'set-state ok' }, t('accounts.proxy.using')) : null,
       resting ? h('span', { class: 'set-state warn' }, t('accounts.proxy.resting', { at: when(resting.until) ?? '' })) : null,
       exp ? h('span', null, t(Date.parse(a.expiresAt) < Date.now() ? 'accounts.expiredAt' : 'accounts.expires', { date: exp })) : null,
       a.needsReauth ? h('span', { class: 'set-state warn' }, t('accounts.reauth')) : null,
@@ -197,6 +202,8 @@ function row(a, proxy) {
   );
 }
 
+// the provider in an event line: Claude / Codex (the list's PROVIDER says "Claude Code")
+const PROVIDER_SHORT = { claude: t('accounts.proxy.provider.claude'), codex: t('accounts.proxy.provider.codex') };
 const KIND = {
   switch: t('accounts.proxy.kind.switch'),
   rest: t('accounts.proxy.kind.rest'),
@@ -238,15 +245,22 @@ function proxyBlock(report) {
   /** `'…'` with every quote inside closed and reopened (as shellQuote in src/core/accounts/homes.ts) */
   const shellQuote = (x) => `'${x.replace(/'/g, `'\\''`)}'`;
   /** `command` (with the key) is for the clipboard; `byHand` reads the key from `keyFile` and has no key in it */
-  const commandOf = async () => {
+  const commandOf = async (codex) => {
     const { key, keyFile } = await postOrThrow('api/accounts/proxy/key', {});
+    if (codex) {
+      const tail = `codex -c 'model_provider="portboard"' -c 'model_providers.portboard={name="portboard",base_url="${p.url}/codex",env_key="PORTBOARD_PROXY_KEY",wire_api="responses",http_headers={version="${CODEX_VERSION}"}}'`;
+      return {
+        command: `PORTBOARD_PROXY_KEY=${key} ${tail}`,
+        byHand: `PORTBOARD_PROXY_KEY="$(cat ${shellQuote(keyFile)})" ${tail}`,
+      };
+    }
     return {
       command: `ANTHROPIC_BASE_URL=${p.url} ANTHROPIC_AUTH_TOKEN=${key} claude`,
       byHand: `ANTHROPIC_BASE_URL=${p.url} ANTHROPIC_AUTH_TOKEN="$(cat ${shellQuote(keyFile)})" claude`,
     };
   };
   /** The key request failed, or both clipboard ways did: say it, or show the by-hand command */
-  const fallback = async (pending) => {
+  const fallback = async (pending, copy) => {
     let got;
     try {
       got = await pending;
@@ -260,28 +274,35 @@ function proxyBlock(report) {
       showManual(got.byHand);
     }
   };
-  const copy = button(t('accounts.proxy.copy'), () => {
-    say('');
-    hideManual();
-    const pending = commandOf();
-    pending.catch(() => {});
-    // Safari and WKWebView accept a clipboard write only while the click is handled: it gets a promise of the text, not the text
-    if (window.ClipboardItem && navigator.clipboard?.write) {
-      const blob = pending.then((c) => new Blob([c.command], { type: 'text/plain' }));
-      navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]).then(
-        () => { copy.textContent = t('accounts.add.copied'); },
-        () => fallback(pending),
-      );
-      return;
-    }
-    fallback(pending);
-  }, { write: true, disabled: !listening });
+  /** A copy button for one command (`codex` false: Claude, true: Codex): the clipboard write, then the by-hand field */
+  const copyButton = (label, codex) => {
+    const copy = button(label, () => {
+      say('');
+      hideManual();
+      const pending = commandOf(codex);
+      pending.catch(() => {});
+      // Safari and WKWebView accept a clipboard write only while the click is handled: it gets a promise of the text, not the text
+      if (window.ClipboardItem && navigator.clipboard?.write) {
+        const blob = pending.then((c) => new Blob([c.command], { type: 'text/plain' }));
+        navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]).then(
+          () => { copy.textContent = t('accounts.add.copied'); },
+          () => fallback(pending, copy),
+        );
+        return;
+      }
+      fallback(pending, copy);
+    }, { write: true, disabled: !listening });
+    return copy;
+  };
+  const copy = copyButton(t('accounts.proxy.copy'), false);
+  const copyCodex = copyButton(t('accounts.proxy.copyCodex'), true);
   const rotate = button(t('accounts.proxy.rotate'), async () => {
     say('');
     if (!(await confirmRemove(t('accounts.proxy.rotate.confirm'), t('accounts.proxy.rotate.yes')))) return;
     try {
       await postOrThrow('api/accounts/proxy/key', { rotate: true });
       copy.textContent = t('accounts.proxy.copy');
+      copyCodex.textContent = t('accounts.proxy.copyCodex');
       say(t('accounts.proxy.rotated'));
     } catch (err) {
       say(errorText(reason(err)));
@@ -289,7 +310,7 @@ function proxyBlock(report) {
   }, { write: true, disabled: !listening && p.state !== 'error' });
   const lines = (p.events ?? []).map((e) => {
     const move = e.kind === 'switch' ? `${who(e.from)} → ${who(e.to)}` : who(e.from ?? e.to);
-    return h('p', { class: 'set-note' }, [when(e.at), KIND[e.kind] ?? e.kind, move, e.status ?? null].filter((x) => x !== null).join(' · '));
+    return h('p', { class: 'set-note' }, [when(e.at), PROVIDER_SHORT[e.provider] ?? null, KIND[e.kind] ?? e.kind, move, e.status ?? null].filter((x) => x !== null).join(' · '));
   });
   return h(
     'div',
@@ -297,7 +318,7 @@ function proxyBlock(report) {
     title,
     h('div', { class: 'set-row acc-line' }, h('span', { class: `set-state ${listening ? 'ok' : 'warn'}` }, stateText), h('span', null, t('accounts.proxy.counts', { requests: p.counts.requests, switches: p.counts.switches }))),
     listening ? h('p', { class: 'set-note' }, t('accounts.proxy.lead')) : null,
-    h('div', { class: 'set-row acc-line' }, copy, rotate),
+    h('div', { class: 'set-row acc-line' }, copy, copyCodex, rotate),
     note,
     manual,
     h('p', { class: 'set-note' }, t('accounts.proxy.events')),

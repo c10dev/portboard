@@ -556,7 +556,7 @@ test('rest time: retry-after first, then the later reset of a rejected window, t
   const sec = Math.floor(t / 1000);
   const rej = { 'anthropic-ratelimit-unified-status': 'rejected' };
   const ms = (status: number, o: Record<string, string>) => {
-    const v = verdictOf(status, h(o), t);
+    const v = verdictOf('claude', status, h(o), t);
     return v && v.kind === 'limit' ? v.restMs : v;
   };
   assert.equal(ms(429, { ...rej, 'retry-after': '120' }), 120_000);
@@ -570,7 +570,7 @@ test('rest time: retry-after first, then the later reset of a rejected window, t
   assert.equal(ms(429, { 'anthropic-ratelimit-unified-status': 'allowed', 'retry-after': '5' }), null);
   assert.equal(ms(429, { 'retry-after': '30' }), null, 'retry-after alone is a short limit: no switch');
   for (const status of [200, 400, 403, 500, 502, 503, 529]) assert.equal(ms(status, { ...rej, 'retry-after': '30' }), null, String(status));
-  assert.deepEqual(verdictOf(401, h({}), t), { kind: 'unauthorized', restMs: 600_000 });
+  assert.deepEqual(verdictOf('claude', 401, h({}), t), { kind: 'unauthorized', restMs: 600_000 });
 });
 
 // ---- 7. no switch ----
@@ -1160,4 +1160,397 @@ test('change key in the error state: rotate reopens the proxy with the new key',
   assert.equal(statSync(KEY_FILE).mode & 0o777, 0o600);
   assert.equal((await call({ key: fresh }, p.report().port)).status, 200);
   await p.close();
+});
+
+// ---- the Codex path (docs/accounts.md#proxy, spec 5) ----
+
+const CX = { A: 'TESTTOKENCODEXA0123456789', B: 'TESTTOKENCODEXB0123456789', C: 'TESTTOKENCODEXC0123456789' };
+const CX_FOLDER = 'TESTTOKENCODEXFOLDER0123456789';
+const CX_NEW = 'TESTTOKENCODEXNEW0123456789';
+const ACCOUNT_ID = { A: 'cx-account-aaaa', B: 'cx-account-bbbb', C: 'cx-account-cccc' };
+const cxName = (token: string) => Object.entries(CX).find(([, v]) => v === token)?.[0] ?? '?';
+let cxSeq = 0;
+const codex = (access: string, identity: string, extra: Record<string, unknown> = {}, tokens: Partial<Tokens> = {}) =>
+  upsertAccount(
+    { provider: 'codex', alias: `cx-${cxSeq++}`, identity, email: 'c@example.com', plan: 'plus', tokens: { access, refresh: REFRESH, idToken: 'TESTTOKENIDTOKEN', expiresAt: iso(NOW + 100 * 3600_000), ...tokens }, ...extra },
+    { path: FILE, now },
+  );
+const codexFile = (id: string) => join(HOMES, id, 'auth.json');
+/** A JWT-shaped access token with an `exp` claim (seconds); the marker is in the signature part */
+const jwt = (expMs: number, mark: string) => `${Buffer.from('{"alg":"none"}').toString('base64url')}.${Buffer.from(JSON.stringify({ exp: Math.floor(expMs / 1000) })).toString('base64url')}.${mark}`;
+const rewriteCodexFolder = (id: string, edit: (tokens: Record<string, unknown>) => void) => {
+  const doc = JSON.parse(readFileSync(codexFile(id), 'utf8'));
+  edit(doc.tokens);
+  writeFileSync(codexFile(id), JSON.stringify(doc));
+};
+const limited = (reset: number, marker: string, extra: Record<string, string> = {}, status = 429) =>
+  new Response(JSON.stringify({ error: { type: 'usage_limit_reached', marker } }), {
+    status,
+    headers: { 'content-type': 'application/json', 'x-codex-primary-used-percent': '100', 'x-codex-primary-window-minutes': '300', 'x-codex-primary-reset-at': String(reset), 'x-answer-from': marker, ...extra },
+  });
+const CODEX_URL = 'https://chatgpt.com/backend-api/codex/responses';
+const codexCall = (o: CallOpts = {}) => call({ path: '/codex/responses', ...o });
+
+test('codex paths: only POST /codex/responses goes on, to the chatgpt.com address with its query; GET, other paths and an upgrade are 404 "not proxied"', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  const notFound = { type: 'error', error: { type: 'not_found_error', message: 'not proxied' } };
+  for (const o of [{ method: 'GET', path: '/codex/responses' }, { method: 'POST', path: '/codex/models' }, { method: 'POST', path: '/codex/responses/' }, { method: 'POST', path: '/codex' }, { method: 'PUT', path: '/codex/responses' }]) {
+    const r = await call(o);
+    assert.deepEqual([r.status, r.json], [404, notFound], `${o.method} ${o.path}`);
+  }
+  // a WebSocket upgrade request is a GET: it is 404 too (the listener has no upgrade handler)
+  const up = await new Promise<number>((resolve, reject) => {
+    const req = httpRequest({ host: PROXY_HOST, port: portOf(), path: '/codex/responses', method: 'GET', agent: false, headers: { authorization: `Bearer ${key}`, connection: 'Upgrade', upgrade: 'websocket' } });
+    req.on('response', (res) => {
+      res.resume();
+      resolve(res.statusCode ?? 0);
+    });
+    req.on('upgrade', (res) => {
+      res.destroy();
+      resolve(101);
+    });
+    req.on('error', reject);
+    req.end();
+  });
+  assert.equal(up, 404);
+  assert.equal(ups.length, 0);
+  assert.deepEqual(Object.fromEntries(report().unproxied.map((x) => [x.path, x.count])), { '/codex': 1, '/codex/models': 1, '/codex/responses': 3, '/codex/responses/': 1 });
+  const r = await codexCall({ path: '/codex/responses?x=1', body: '{"model":"gpt-x","input":[]}' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(ups.map((u) => u.url), [`${CODEX_URL}?x=1`]);
+  // the Claude paths still go to Anthropic, and Claude does not take the Codex path's accounts
+  assert.equal((await call()).status, 503);
+  assert.equal(ups.length, 1);
+  assert.ok(PROXY_REQUESTS.codex.origin === 'https://chatgpt.com' && PROXY_REQUESTS.codex.upstreamPath === '/backend-api/codex/responses');
+});
+
+test('codex headers: the account token and id, no key, cookie or Claude header; the client\'s own headers and the body bytes go on', async () => {
+  const folder = await codex(CX.A, ACCOUNT_ID.A);
+  await useAccount(folder.id, homesOpts());
+  rewriteCodexFolder(folder.id, (t) => {
+    t.access_token = CX_FOLDER;
+    t.account_id = 'cx-folder-file-id';
+  });
+  const bytes = Buffer.from([0x7b, 0x22, 0x61, 0x22, 0x3a, 0xff, 0xfe, 0x00, 0x80, 0x7d, 0x0a]);
+  const r = await codexCall({
+    body: bytes,
+    headers: {
+      'content-type': 'application/json',
+      'user-agent': 'codex_cli_rs/0.159.3',
+      originator: 'codex_cli_rs',
+      'session-id': 'sess-1',
+      'x-codex-turn-state': 'turn-1',
+      version: '0.159.3',
+      cookie: 'session=COOKIEVALUE',
+      referer: 'https://example.com/',
+      'accept-encoding': 'gzip, br',
+      'x-api-key': key,
+      'anthropic-beta': 'x',
+      'anthropic-version': '2023-06-01',
+      'chatgpt-account-id': 'CLIENT-SPOOF',
+      'proxy-authorization': 'Basic abc',
+    },
+  });
+  assert.equal(r.status, 200);
+  const [u] = ups;
+  assert.equal(u.headers.authorization, `Bearer ${CX_FOLDER}`, 'the folder file is the original of the token');
+  assert.equal(u.headers['chatgpt-account-id'], 'cx-folder-file-id', 'a folder account: the account_id of its file');
+  assert.equal(u.headers['accept-encoding'], 'identity');
+  for (const gone of ['cookie', 'x-api-key', 'referer', 'origin', 'proxy-authorization', 'connection', 'host', 'content-length']) assert.ok(!(gone in u.headers), gone);
+  assert.equal(u.headers.originator, 'codex_cli_rs');
+  assert.equal(u.headers['session-id'], 'sess-1');
+  assert.equal(u.headers['x-codex-turn-state'], 'turn-1');
+  assert.equal(u.headers['user-agent'], 'codex_cli_rs/0.159.3');
+  assert.equal(u.headers.version, '0.159.3');
+  assert.equal(u.headers['content-type'], 'application/json');
+  assert.ok(!JSON.stringify(u.headers).includes(key), 'the key is nowhere in the headers');
+  assert.ok(u.body.equals(bytes), 'the body bytes are the same');
+  assert.equal(u.redirect, 'manual');
+  assert.equal(u.url, CODEX_URL);
+  // a client's Claude headers go on untouched: the Codex path adds and removes none of them
+  assert.equal(u.headers['anthropic-beta'], 'x');
+  assert.equal(u.headers['anthropic-version'], '2023-06-01');
+  // an account without a folder: the id of its record
+  rmSync(FILE);
+  rmSync(HOMES, { recursive: true, force: true });
+  await codex(CX.B, ACCOUNT_ID.B);
+  ups.length = 0;
+  await codexCall();
+  assert.equal(ups[0].headers.authorization, `Bearer ${CX.B}`);
+  assert.equal(ups[0].headers['chatgpt-account-id'], ACCOUNT_ID.B);
+  assert.deepEqual(Object.keys(ups[0].headers).filter((k) => k.startsWith('anthropic')), [], 'no Claude header is made up');
+});
+
+test('codex switch: a 429 with a used-up window sends the same body to the next account and the rest ends at the reset; 402 switches too; the event says codex', async () => {
+  const a = await codex(CX.A, ACCOUNT_ID.A);
+  const b = await codex(CX.B, ACCOUNT_ID.B);
+  const reset = Math.floor(NOW / 1000) + 3600;
+  upstream = (u) => (u.token === CX.A ? limited(reset, 'A-BODY') : ok('B-BODY'));
+  const bytes = Buffer.from('{"input":[{"role":"user","content":"hi é"}]}');
+  const r = await codexCall({ body: bytes });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.marker, 'B-BODY');
+  assert.deepEqual(ups.map((u) => [u.token, u.headers['chatgpt-account-id']]), [[CX.A, ACCOUNT_ID.A], [CX.B, ACCOUNT_ID.B]]);
+  assert.ok(ups[0].body.equals(bytes) && ups[1].body.equals(bytes), 'the same body goes to both');
+  const rep = report();
+  assert.deepEqual(rep.resting, [{ id: a.id, until: iso(reset * 1000) }]);
+  assert.deepEqual(rep.events.filter((e) => e.kind === 'switch'), [{ at: iso(NOW), provider: 'codex', kind: 'switch', from: a.id, to: b.id, status: 429, restUntil: null }]);
+  assert.deepEqual(rep.events.filter((e) => e.kind === 'rest').map((e) => [e.provider, e.from, e.status, e.restUntil]), [['codex', a.id, 429, iso(reset * 1000)]]);
+  assert.deepEqual(rep.current, { claude: null, codex: b.id });
+  // the next request starts with B (current)
+  ups.length = 0;
+  await codexCall();
+  assert.deepEqual(ups.map((u) => u.token), [CX.B]);
+  // 402 switches as well, and the response with no window headers rests 60 s
+  upstream = (u) => (u.token === CX.B ? new Response('{}', { status: 402 }) : ok('A-BODY'));
+  clock = reset * 1000 + 1;
+  ups.length = 0;
+  const p = await codexCall();
+  assert.equal(p.status, 200);
+  assert.deepEqual(ups.map((u) => u.token), [CX.B, CX.A]);
+  assert.deepEqual(proxy.report().resting, [{ id: b.id, until: iso(clock + DEFAULT_REST_MS) }]);
+  // a 500 and a 403 are not a switch
+  upstream = () => json({ error: 'x' }, 500);
+  ups.length = 0;
+  assert.equal((await codexCall()).status, 500);
+  assert.equal(ups.length, 1);
+});
+
+test('codex rest time: retry-after, then the later reset of a window at 100 percent, then the earlier reset ahead, then 60 s; bounds 60 s and 6 hours', () => {
+  const t = NOW;
+  const sec = Math.floor(t / 1000);
+  const ms = (status: number, o: Record<string, string>) => {
+    const v = verdictOf('codex', status, new Headers(o), t);
+    return v && v.kind === 'limit' ? v.restMs : v;
+  };
+  const used = (w: 'primary' | 'secondary', pct: number, reset: number) => ({ [`x-codex-${w}-used-percent`]: String(pct), [`x-codex-${w}-reset-at`]: String(reset) });
+  // 1. retry-after wins
+  assert.equal(ms(429, { 'retry-after': '120', ...used('primary', 100, sec + 999) }), 120_000);
+  // 2. the later reset of the windows at 100 percent or more
+  assert.equal(ms(429, { ...used('primary', 100, sec + 300), ...used('secondary', 100, sec + 900) }), 900_000);
+  assert.equal(ms(429, { ...used('primary', 100, sec + 300), ...used('secondary', 40, sec + 9000) }), 300_000, 'only a window at 100 percent counts');
+  assert.equal(ms(429, { ...used('primary', 140, sec + 300) }), 300_000, 'more than 100 counts');
+  // 3. no window at 100 percent: the earlier reset that is still ahead (a reset in the past is not)
+  assert.equal(ms(429, { ...used('primary', 90, sec + 300), ...used('secondary', 10, sec + 5000) }), 300_000);
+  assert.equal(ms(429, { ...used('primary', 90, sec - 300), ...used('secondary', 10, sec + 5000) }), 5_000_000);
+  // 4. nothing: 60 s
+  assert.equal(ms(429, {}), DEFAULT_REST_MS);
+  assert.equal(ms(402, {}), DEFAULT_REST_MS);
+  // the bounds
+  assert.equal(ms(429, { ...used('primary', 100, sec - 50) }), DEFAULT_REST_MS, 'a used-up window whose reset has passed: 0 or less is 60 s');
+  assert.equal(ms(429, { 'retry-after': '0' }), DEFAULT_REST_MS);
+  assert.equal(ms(429, { 'retry-after': '999999' }), MAX_REST_MS);
+  assert.equal(ms(429, { ...used('primary', 100, sec + 100000) }), MAX_REST_MS);
+  // a body is not read, and other statuses are not a switch; 401 is Claude's rule
+  for (const status of [200, 400, 403, 404, 500, 503, 529]) assert.equal(ms(status, { ...used('primary', 100, sec + 300) }), null, String(status));
+  assert.deepEqual(verdictOf('codex', 401, new Headers(), t), { kind: 'unauthorized', restMs: 600_000 });
+  // the Claude rule does not take the Codex headers, and the Codex rule does not take the Claude ones
+  assert.equal(verdictOf('claude', 429, new Headers({ ...used('primary', 100, sec + 300) }), t), null);
+  assert.equal(verdictOf('codex', 429, new Headers({ 'anthropic-ratelimit-unified-status': 'rejected' }), t)?.kind, 'limit', '429 is a switch for Codex whatever the headers say');
+});
+
+test('codex 401: the account rests 10 minutes and the request goes to the next account', async () => {
+  const a = await codex(CX.A, ACCOUNT_ID.A);
+  const b = await codex(CX.B, ACCOUNT_ID.B);
+  upstream = (u) => (u.token === CX.A ? json({ error: 'x' }, 401) : ok('B-BODY'));
+  assert.equal((await codexCall()).status, 200);
+  assert.deepEqual(ups.map((u) => u.token), [CX.A, CX.B]);
+  const rep = report();
+  assert.deepEqual(rep.resting, [{ id: a.id, until: iso(NOW + 600_000) }]);
+  assert.deepEqual(rep.events.filter((e) => e.kind === 'switch').map((e) => [e.provider, e.from, e.to, e.status]), [['codex', a.id, b.id, 401]]);
+  assert.equal((await stored()).accounts.find((x) => x.id === a.id)?.needsReauth, undefined);
+});
+
+test('codex all blocked: the last 429 goes to the client as it is; no account is 503 in the OpenAI shape; at most three switches', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  await codex(CX.B, ACCOUNT_ID.B);
+  const reset = Math.floor(NOW / 1000) + 600;
+  upstream = (u) => limited(reset, `${cxName(u.token)}-BODY`);
+  const r = await codexCall();
+  assert.equal(r.status, 429);
+  assert.equal(r.json.error.marker, 'B-BODY', 'the last answer, as it is');
+  assert.deepEqual(ups.map((u) => u.token), [CX.A, CX.B]);
+  // both rest: nothing is asked
+  ups.length = 0;
+  const none = await codexCall();
+  assert.deepEqual([none.status, none.json], [503, { error: { type: 'proxy_error', code: 'no usable account', message: 'no usable account' } }]);
+  assert.equal(ups.length, 0);
+  // five accounts: at most four are asked
+  for (const t of [CX.C, 'TESTTOKENCODEXD', 'TESTTOKENCODEXE']) await codex(t, `id-${t}`);
+  clock = reset * 1000 + 1;
+  ups.length = 0;
+  assert.equal((await codexCall()).status, 429);
+  assert.equal(ups.length, 4);
+});
+
+test('providers are separate: a resting Claude account does not change the Codex pick and the other way round; current moves apart', async () => {
+  const c1 = await claude(TOKEN.A);
+  const c2 = await claude(TOKEN.B);
+  const x1 = await codex(CX.A, ACCOUNT_ID.A);
+  const x2 = await codex(CX.B, ACCOUNT_ID.B);
+  const reset = Math.floor(NOW / 1000) + 3600;
+  upstream = (u) => (u.token === TOKEN.A ? rejected('A', reset) : u.token === CX.A ? limited(reset, 'XA') : ok(nameOf(u.token) + cxName(u.token)));
+  // Claude A rests: the Codex request still starts with Codex A
+  assert.equal((await call()).status, 200);
+  assert.deepEqual(proxy.report().current, { claude: c2.id, codex: null });
+  ups.length = 0;
+  const first = await codexCall();
+  assert.equal(first.status, 200);
+  assert.deepEqual(ups.map((u) => u.token), [CX.A, CX.B], 'Codex A is asked first, whatever Claude A did, and then rests itself');
+  assert.deepEqual(proxy.report().current, { claude: c2.id, codex: x2.id });
+  // both A accounts rest; each provider picks its own B
+  ups.length = 0;
+  await call();
+  await codexCall();
+  assert.deepEqual(ups.map((u) => u.token), [TOKEN.B, CX.B]);
+  assert.deepEqual(proxy.report().resting.map((x) => x.id).sort(), [c1.id, x1.id].sort());
+  // a Codex account is never a Claude candidate, and a Claude account is never a Codex candidate
+  rmSync(FILE);
+  await codex(CX.C, ACCOUNT_ID.C);
+  ups.length = 0;
+  assert.equal((await call()).status, 503);
+  rmSync(FILE);
+  await claude(TOKEN.C);
+  assert.equal((await codexCall()).status, 503);
+  assert.equal(ups.length, 0);
+});
+
+test('no usable account is noted once a minute for each provider', async () => {
+  assert.equal((await call()).status, 503);
+  assert.equal((await codexCall()).status, 503);
+  assert.equal((await call()).status, 503);
+  assert.equal((await codexCall()).status, 503);
+  assert.deepEqual(report().events.filter((e) => e.kind === 'no usable account').map((e) => e.provider).sort(), ['claude', 'codex']);
+  clock = NOW + 61_000;
+  await codexCall();
+  assert.deepEqual(report().events.filter((e) => e.kind === 'no usable account').map((e) => e.provider).sort(), ['claude', 'codex', 'codex']);
+});
+
+test('codex tokens: a folder account is never refreshed; no exp claim is used; one that ends within 60 s is left out with an event; an account with no account id is left out', async () => {
+  const folder = await codex(CX.A, ACCOUNT_ID.A);
+  const plain = await codex(CX.B, ACCOUNT_ID.B);
+  await useAccount(folder.id, homesOpts());
+  // a token with no exp claim (not a JWT): used
+  rewriteCodexFolder(folder.id, (t) => (t.access_token = CX_FOLDER));
+  assert.equal((await codexCall()).status, 200);
+  assert.deepEqual(ups.map((u) => u.token), [CX_FOLDER]);
+  // an exp claim 30 s ahead: inside the margin, left out; the next account serves; nothing is refreshed
+  ups.length = 0;
+  const soon = jwt(NOW + 30_000, 'TESTTOKENCODEXSOON');
+  rewriteCodexFolder(folder.id, (t) => (t.access_token = soon));
+  assert.equal((await codexCall()).status, 200);
+  assert.deepEqual(ups.map((u) => u.token), [CX.B]);
+  assert.ok(ups.every((u) => !u.url.includes('/oauth/')), 'no refresh request');
+  assert.deepEqual(report().events.find((e) => e.kind === 'token expired'), { at: iso(NOW), provider: 'codex', kind: 'token expired', from: null, to: folder.id, status: null, restUntil: null });
+  // an exp claim far ahead: used
+  ups.length = 0;
+  rewriteCodexFolder(folder.id, (t) => (t.access_token = jwt(NOW + 3600_000, 'TESTTOKENCODEXLATER')));
+  proxy.pool.current.codex = null;
+  await codexCall();
+  assert.equal(ups[0].token, jwt(NOW + 3600_000, 'TESTTOKENCODEXLATER'));
+  // no account id: a folder file without account_id, and a record whose identity is empty
+  ups.length = 0;
+  rewriteCodexFolder(folder.id, (t) => delete t.account_id);
+  proxy.pool.current.codex = null;
+  await codexCall();
+  assert.deepEqual(ups.map((u) => u.token), [CX.B], 'the folder account has no id');
+  await updateAccount(plain.id, (x) => ({ ...x, identity: '' }), { path: FILE });
+  ups.length = 0;
+  assert.equal((await codexCall()).status, 503);
+  assert.equal(ups.length, 0);
+  assert.equal(report().events.filter((e) => e.kind === 'token expired').length, 1, 'no id is not a "token expired" line');
+});
+
+test('codex tokens: an account without a folder that ends within 60 s is refreshed once and the new token is used', async () => {
+  const soon = await codex(CX.A, ACCOUNT_ID.A, {}, { expiresAt: iso(NOW + 30_000) });
+  const refreshUrl = LOGIN_REQUESTS.codex.tokenUrl;
+  const refreshes: string[] = [];
+  upstream = (u) => {
+    if (u.url === refreshUrl) {
+      refreshes.push(u.url);
+      return json({ access_token: CX_NEW, refresh_token: REFRESH, expires_in: 3600 });
+    }
+    return ok('X');
+  };
+  assert.equal((await codexCall()).status, 200);
+  assert.equal(refreshes.length, 1);
+  const sent = ups.filter((u) => u.url !== refreshUrl);
+  assert.deepEqual(sent.map((u) => [u.token, u.headers['chatgpt-account-id']]), [[CX_NEW, ACCOUNT_ID.A]]);
+  assert.equal((await stored()).accounts.find((x) => x.id === soon.id)?.tokens.access, CX_NEW);
+  // a needsReauth Codex account and a Copilot account are never used
+  rmSync(FILE);
+  await codex(CX.B, ACCOUNT_ID.B, { needsReauth: true });
+  await upsertAccount({ provider: 'copilot', alias: null, identity: '42', email: null, plan: null, tokens: { access: 'gho_TESTTOKENCOPILOT', refresh: null, idToken: null, expiresAt: null } }, { path: FILE, now });
+  ups.length = 0;
+  assert.equal((await codexCall()).status, 503);
+  assert.equal(ups.length, 0);
+});
+
+test('codex errors: 401 (no key), 403, 413, 502 and 503 are the OpenAI shape with the closed words; the Claude paths keep their shape', async () => {
+  const shape = (m: string) => ({ error: { type: 'proxy_error', code: m, message: m } });
+  const no = await codexCall({ auth: 'none' });
+  assert.deepEqual([no.status, no.json], [401, shape('proxy key required')]);
+  const wrong = await codexCall({ key: 'pbp-00000000000000000000000000000000' });
+  assert.deepEqual([wrong.status, wrong.json], [401, shape('proxy key required')]);
+  const origin = await codexCall({ headers: { origin: 'https://example.com' } });
+  assert.deepEqual([origin.status, origin.json], [403, shape('not allowed')]);
+  const empty = await codexCall();
+  assert.deepEqual([empty.status, empty.json], [503, shape('no usable account')]);
+  await codex(CX.A, ACCOUNT_ID.A);
+  upstream = () => {
+    throw new TypeError('fetch failed SECRETDETAIL');
+  };
+  const down = await codexCall();
+  assert.deepEqual([down.status, down.json], [502, shape('upstream request failed')]);
+  assert.ok(!down.text.includes('SECRETDETAIL'));
+  const small = proxyOf({ maxBodyBytes: 1024 });
+  await small.sync({ enabled: true, port: 0 });
+  const big = await call({ path: '/codex/responses', key: await small.key(), body: Buffer.alloc(4096, 97) }, small.report().port);
+  assert.deepEqual([big.status, big.json], [413, shape('request too large')]);
+  await small.close();
+  // the Claude paths are as they were
+  const claudeNo = await call({ auth: 'none' });
+  assert.deepEqual([claudeNo.status, claudeNo.json], [401, { type: 'error', error: { type: 'authentication_error', message: 'proxy key required' } }]);
+  const claudeEmpty = await call();
+  assert.deepEqual([claudeEmpty.status, claudeEmpty.json], [503, { type: 'error', error: { type: 'api_error', message: 'no usable account' } }]);
+});
+
+test('codex secrets: the report, list_accounts, the events and the console hold no token, no key and no account id; the afterEach check covers the answers', async () => {
+  const a = await codex(CX.A, ACCOUNT_ID.A);
+  await codex(CX.B, ACCOUNT_ID.B);
+  upstream = (u) => (u.token === CX.A ? limited(Math.floor(NOW / 1000) + 600, 'A-BODY') : ok('B'));
+  for (let i = 0; i < 3; i++) await codexCall();
+  await codexCall({ method: 'GET', path: '/codex/responses?x=TESTTOKENQUERY' });
+  outputs.push(JSON.stringify(await accountsReport({ ...homesOpts(), proxy })));
+  const listed = (await callTool('list_accounts', {}, {} as Core)).content[0].text;
+  outputs.push(listed);
+  const rep = report();
+  assert.deepEqual(Object.keys(rep.current).sort(), ['claude', 'codex']);
+  assert.ok(JSON.stringify(rep).includes(a.id));
+  for (const o of [JSON.stringify(rep), listed, ...logged, auditText()]) for (const id of Object.values(ACCOUNT_ID)) assert.ok(!o.includes(id), 'no ChatGPT account id');
+  assert.ok(!JSON.stringify(rep).includes('TESTTOKENQUERY'));
+});
+
+test('the page: both copy buttons build their manual command from `$(cat` and keyFile and never hold the key; the Codex version is written once (source check)', () => {
+  const src = readFileSync(new URL('../public/features/accounts.js', import.meta.url), 'utf8');
+  const block = src.slice(src.indexOf('function proxyBlock'));
+  assert.match(block, /copyButton\(t\('accounts\.proxy\.copy'\), false\)/);
+  assert.match(block, /copyButton\(t\('accounts\.proxy\.copyCodex'\), true\)/);
+  const hand = [...block.matchAll(/byHand: ([^\n]*)/g)].map((m) => m[1]);
+  assert.equal(hand.length, 2, 'one manual command for Claude and one for Codex');
+  for (const line of hand) {
+    assert.match(line, /\$\(cat \$\{shellQuote\(keyFile\)\}\)/);
+    assert.doesNotMatch(line, /\$\{key\}/);
+  }
+  assert.match(block, /PORTBOARD_PROXY_KEY=\$\{key\} \$\{tail\}/, 'the clipboard command holds the key');
+  assert.match(block, /model_provider="portboard"/);
+  assert.match(block, /base_url="\$\{p\.url\}\/codex"/);
+  assert.match(block, /env_key="PORTBOARD_PROXY_KEY",wire_api="responses",http_headers=\{version="\$\{CODEX_VERSION\}"\}/);
+  assert.match(block, /showManual\(got\.byHand\)/);
+  assert.match(src, /const CODEX_VERSION = '0\.159\.3';/);
+  assert.equal(src.match(/CODEX_VERSION = /g)?.length, 1);
+  assert.doesNotMatch(readFileSync(new URL('../src/core/accounts/proxy.ts', import.meta.url), 'utf8'), /0\.159\.3/, 'the version is only on the page');
+  // the account row marks the Codex account in use too, and an event line names its provider
+  assert.match(src, /proxy\?\.current\?\.claude === a\.id \|\| proxy\?\.current\?\.codex === a\.id/);
+  assert.match(block, /PROVIDER_SHORT\[e\.provider\]/);
 });
