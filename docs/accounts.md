@@ -134,7 +134,7 @@ Turn it on in `portboard.json` and restart Portboard ([config.md](config.md)). B
   ANTHROPIC_BASE_URL=http://127.0.0.1:8795 ANTHROPIC_AUTH_TOKEN=<key> claude
   ```
 
-  In a session started this way, Claude Code does not load your claude.ai connectors (your organization's MCP servers). At start it says that `ANTHROPIC_API_KEY` or another auth source is set and takes precedence over the claude.ai login. `ANTHROPIC_AUTH_TOKEN` is that other source. Start Claude Code without the proxy when you need those connectors.
+  In a session started this way, Claude Code does not load your claude.ai connectors (your organization's MCP servers). At start it says that `ANTHROPIC_API_KEY` or another auth source is set and takes precedence over the claude.ai login. The copied command sets only `ANTHROPIC_AUTH_TOKEN`, so with that command it is the other source. Start Claude Code without the proxy when you need those connectors.
 - **Start Codex through it.** **Copy Codex command** puts this on the clipboard (with your key and your port). It sets a `portboard` model provider with `-c`, so it does not change `~/.codex/config.toml`:
 
   ```sh
@@ -155,7 +155,7 @@ Error answers of the Codex path are `{"error":{"type":"proxy_error","code":"<tex
 
 The URLs, the beta flag and the version header are in one block, `PROXY_REQUESTS`, in `src/core/accounts/proxy.ts`. Their shape follows [opencodex](https://github.com/lidge-jun/opencodex) commit 9e0e298e (MIT); no code is copied. The Codex side follows the source of Codex `rust-v0.159.3`, read on 2026-11-23.
 
-Checked once with the real services on 2026-11-23: a Claude Code session started with **Copy Claude command** got its answer through the proxy with one added Claude account. `proxy.unproxied` stayed empty. With `ANTHROPIC_AUTH_TOKEN` and a `~/.claude` login both present, Claude Code used the token and turned the claude.ai connectors off (see above). Not checked yet: that a rejected limit sends the headers above and that the proxy then switches. That needs two added Claude accounts and a real used-up limit.
+Checked once with the real services on 2026-11-23: a Claude Code session started with **Copy Claude command** got its answer through the proxy with one added Claude account. `proxy.unproxied` stayed empty. The machine also had a `~/.claude` login (the list showed `claude-local` as `ok`). Claude Code sent the proxy key, because the proxy counts a request only after the key check. It printed the connectors warning (see above). Not checked yet: that a rejected limit sends the headers above and that the proxy then switches. That needs two added Claude accounts and a real used-up limit.
 
 Not checked for Codex (the tests use a fake upstream and a fake client; the real `codex` was not run): that `codex exec` works through the command above; that chatgpt.com accepts the request of a user provider (it has the `version` header from the command, and no `OpenAI-Beta`) and the body; whether Codex calls another path (for example `/codex/memories/trace_summarize`; any such call is counted in `proxy.unproxied`); and that a real limit answers `429` with `x-codex-*-used-percent: 100`.
 
