@@ -259,6 +259,12 @@ function proxyBlock(report) {
       byHand: `ANTHROPIC_BASE_URL=${p.url} ANTHROPIC_AUTH_TOKEN="$(cat ${shellQuote(keyFile)})" claude`,
     };
   };
+  /** Only the button whose command is on the clipboard says "copied": the other one shows its normal label */
+  const markCopied = (btn) => {
+    copy.textContent = t('accounts.proxy.copy');
+    copyCodex.textContent = t('accounts.proxy.copyCodex');
+    btn.textContent = t('accounts.add.copied');
+  };
   /** The key request failed, or both clipboard ways did: say it, or show the by-hand command */
   const fallback = async (pending, copy) => {
     let got;
@@ -269,7 +275,7 @@ function proxyBlock(report) {
     }
     try {
       await navigator.clipboard.writeText(got.command);
-      copy.textContent = t('accounts.add.copied');
+      markCopied(copy);
     } catch {
       showManual(got.byHand);
     }
@@ -285,7 +291,7 @@ function proxyBlock(report) {
       if (window.ClipboardItem && navigator.clipboard?.write) {
         const blob = pending.then((c) => new Blob([c.command], { type: 'text/plain' }));
         navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]).then(
-          () => { copy.textContent = t('accounts.add.copied'); },
+          () => markCopied(copy),
           () => fallback(pending, copy),
         );
         return;

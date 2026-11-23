@@ -1267,9 +1267,8 @@ test('codex headers: the account token and id, no key, cookie or Claude header; 
   assert.ok(u.body.equals(bytes), 'the body bytes are the same');
   assert.equal(u.redirect, 'manual');
   assert.equal(u.url, CODEX_URL);
-  // a client's Claude headers go on untouched: the Codex path adds and removes none of them
-  assert.equal(u.headers['anthropic-beta'], 'x');
-  assert.equal(u.headers['anthropic-version'], '2023-06-01');
+  // the client's Claude headers do not go to chatgpt.com
+  assert.ok(!('anthropic-beta' in u.headers) && !('anthropic-version' in u.headers));
   // an account without a folder: the id of its record
   rmSync(FILE);
   rmSync(HOMES, { recursive: true, force: true });

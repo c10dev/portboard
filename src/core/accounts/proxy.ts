@@ -129,6 +129,8 @@ function upstreamHeaders(from: IncomingMessage['headers'], provider: ProxyProvid
   if (provider === 'codex') {
     // the client's own headers (originator, session-id, x-codex-*, user-agent) go on; nothing else is made up
     delete out['chatgpt-account-id'];
+    delete out['anthropic-beta'];
+    delete out['anthropic-version'];
     if (accountId) out['chatgpt-account-id'] = accountId;
     return out;
   }
