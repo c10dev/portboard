@@ -68,7 +68,7 @@ async function translate(bytes: Buffer, size = 0, model = 'claude-opus-5-5') {
 // ---- settings ----
 
 test('accountsConfig: proxy.gpt is off unless enabled is true; models keep valid entries, at most 32', () => {
-  assert.deepEqual(SITE_DEFAULTS.accounts, { enabled: false, proxy: { enabled: false, port: 8795, gpt: { enabled: false, models: {} } } });
+  assert.deepEqual(SITE_DEFAULTS.accounts, { enabled: false, proxy: { enabled: false, port: 8795, gpt: { enabled: false, models: {} }, desktop: { enabled: false } } });
   assert.deepEqual(accountsConfig(undefined).proxy.gpt, { enabled: false, models: {} });
   for (const gpt of [null, 'on', 5, [], true]) assert.deepEqual(accountsConfig({ proxy: { gpt } }).proxy.gpt, { enabled: false, models: {} }, JSON.stringify(gpt));
   assert.equal(accountsConfig({ proxy: { gpt: { enabled: 'true' } } }).proxy.gpt.enabled, false);

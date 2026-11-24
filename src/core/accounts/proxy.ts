@@ -14,6 +14,9 @@
 //     byte of an answer reaches the caller (pool.ts decides which answers move on). The one exception is the GPT lane
 //     (docs/accounts.md#gpt-lane, gpt.ts): a /v1/messages request whose model the owner listed in `accounts.proxy.gpt` is
 //     converted to a Responses request and sent to the Codex address with a Codex account, and its answer is converted back.
+//   - With `accounts.proxy.desktop.enabled` the listener also takes HTTP CONNECT (intercept.ts, docs/accounts.md#desktop-route): only
+//     the Anthropic API host is decrypted (a /v1/messages request for a GPT lane model goes to the lane, everything else is relayed
+//     to Anthropic unchanged with the session's own login), and every other host is a plain tunnel. Proxy key required.
 //   - The dashboard process opens the listener from the `accounts-proxy` job (src/features/accounts.ts); the stdio MCP server never does.
 //
 // No token, key, header value, body or query string is written to a log, an event or an answer.
@@ -22,6 +25,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { request as httpsRequest } from 'node:https';
+import type { Socket } from 'node:net';
 import { StringDecoder } from 'node:string_decoder';
 import { Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -30,6 +34,7 @@ import { PATHS } from '../paths.ts';
 import { SITE, SITE_DEFAULTS } from '../site.ts';
 import { clipText, ConvertError, fromResponse, ResponsesToMessages, routeModel, sessionIdOf, toolNames, toResponsesRequest, type GptConfig, type ToolNames } from './gpt.ts';
 import type { HomesOptions } from './homes.ts';
+import { DesktopRoute, INTERCEPT_HOST, loadOrMakeCert, type RouteDeps } from './intercept.ts';
 import { Pool, verdictOf, type ProxyEvent, type ProxyProvider } from './pool.ts';
 import { appendUsage, MODEL_CLIP, num as count, type UsageLine } from './usage.ts';
 
@@ -54,6 +59,8 @@ export const PROXY_REQUESTS = {
 /** The one address the listener binds */
 export const PROXY_HOST = '127.0.0.1';
 const MAX_CONNECTIONS = 32;
+/** The desktop route: CONNECT sockets open at once (every HTTPS connection of a session and its tool commands is one) */
+const MAX_TUNNELS = 512;
 const HEADERS_TIMEOUT_MS = 10_000;
 const MAX_BODY_BYTES = 32 * 1024 * 1024;
 const UPSTREAM_HEADERS_MS = 60_000;
@@ -79,6 +86,8 @@ export type ProxyState = 'off' | 'listening' | 'port in use' | 'error' | 'unknow
 export interface ProxyConfig {
   enabled: boolean;
   port: number;
+  /** the desktop route (accounts.proxy.desktop.enabled); absent is off */
+  desktop?: boolean;
 }
 
 export interface ProxyReport {
@@ -111,6 +120,13 @@ export interface ProxyOptions extends HomesOptions {
   gpt?: () => GptConfig;
   /** tests: a shorter wait for the body of an upstream error on the GPT lane (default 10 seconds) */
   errorBodyMs?: number;
+  /** tests: the desktop route's certificate and key files; default PATHS.accountsProxyCert and PATHS.accountsProxyCertKey */
+  certPath?: string;
+  certKeyPath?: string;
+  /** tests: fewer CONNECT sockets at once (default 512) */
+  maxTunnels?: number;
+  /** tests: where the relay of decrypted Anthropic requests goes (default: the Anthropic API host, port 443); `ca` is the certificate it must show */
+  interceptUpstream?: { host: string; port: number; ca?: string };
 }
 
 /** The token counts one answer carried; null where it carried none */
@@ -467,6 +483,11 @@ export class AccountsProxy {
   private chain: Promise<unknown> = Promise.resolve();
   /** the requests being handled and the usage writes started, which `close` waits for (2 seconds at most) */
   private readonly busy = new Set<Promise<unknown>>();
+  /** the desktop route of the open listener, and the pair it answers with (null while the route is off) */
+  private route: DesktopRoute | null = null;
+  private certs: { cert: string; key: string } | null = null;
+  /** non-CONNECT requests open now (counted only while the route is on) */
+  private plain = 0;
 
   private readonly o: ProxyOptions;
 
@@ -522,6 +543,14 @@ export class AccountsProxy {
           await this.stop();
           this.keyHash = null;
           this.setState('error', 'the key file cannot be used');
+          return;
+        }
+        // the same for the route's certificate: one that went loose, odd or out of date closes the listener
+        try {
+          await this.applyRoute();
+        } catch {
+          await this.stop();
+          this.setState('error', 'the desktop route certificate cannot be used');
         }
         return;
       }
@@ -556,6 +585,10 @@ export class AccountsProxy {
   private async stop(): Promise<void> {
     const s = this.server;
     this.server = null;
+    this.route?.closeAll();
+    this.route = null;
+    this.certs = null;
+    this.plain = 0;
     if (!s) return;
     await new Promise<void>((resolve) => {
       s.close(() => resolve());
@@ -574,7 +607,18 @@ export class AccountsProxy {
     } catch {
       return this.setState('error', 'the key file cannot be used');
     }
+    try {
+      this.certs = this.cfg.desktop ? await this.loadCert() : null;
+    } catch {
+      return this.setState('error', 'the desktop route certificate cannot be used');
+    }
     const server = createServer((req, res) => {
+      if (this.route) {
+        // with the route on, a session's tunnels fill the connection limit: ordinary requests have a limit of their own
+        if (this.plain >= MAX_CONNECTIONS) return sendJson(res, 503, { type: 'error', error: { type: 'api_error', message: 'too many requests' } });
+        this.plain++;
+        res.once('close', () => void this.plain--);
+      }
       this.track(
         this.handle(req, res).catch(() => {
           if (!res.headersSent) sendJson(res, 502, errorBody(providerOfPath(req) ?? 'claude', 'upstream'));
@@ -585,6 +629,14 @@ export class AccountsProxy {
     server.maxConnections = MAX_CONNECTIONS;
     server.headersTimeout = HEADERS_TIMEOUT_MS;
     server.requestTimeout = 0;
+    // registered always, so a CONNECT is answered (403 while the route is off) and not left open
+    server.on('connect', (req, socket, head) => {
+      if (this.server === server && this.route) this.route.connect(req, socket as Socket, head);
+      else {
+        socket.on('error', () => {});
+        socket.end('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n');
+      }
+    });
     const failed = await new Promise<NodeJS.ErrnoException | null>((resolve) => {
       server.once('error', resolve);
       server.listen(port, PROXY_HOST, () => {
@@ -608,6 +660,47 @@ export class AccountsProxy {
     this.openedFor = port;
     this.bound = (server.address() as { port: number }).port;
     this.state = 'listening';
+    this.applyRouteSync(server);
+  }
+
+  /** Read or make the route's certificate and key (throws `certificate unusable`) */
+  private loadCert(): Promise<{ cert: string; key: string }> {
+    return loadOrMakeCert({ certPath: this.o.certPath ?? PATHS.accountsProxyCert, keyPath: this.o.certKeyPath ?? PATHS.accountsProxyCertKey, now: () => this.pool.now() });
+  }
+
+  /** Make the listener match the route setting: build or drop the route, the certificate and the connection limit */
+  private async applyRoute(): Promise<void> {
+    const server = this.server;
+    if (!server) return;
+    if (!this.cfg.desktop) {
+      this.route?.closeAll();
+      this.route = null;
+      this.certs = null;
+      server.maxConnections = MAX_CONNECTIONS;
+      return;
+    }
+    this.certs = await this.loadCert();
+    if (this.server === server) this.applyRouteSync(server);
+  }
+
+  private applyRouteSync(server: Server): void {
+    if (!this.cfg.desktop || !this.certs) return;
+    if (!this.route) {
+      const deps: RouteDeps = {
+        enabled: () => this.server === server && this.cfg.desktop === true && this.certs !== null,
+        boundPort: () => this.bound,
+        keyOk: (secret) => this.keyHash !== null && timingSafeEqual(digest(secret), this.keyHash),
+        counted: () => void this.requests++,
+        cert: () => this.certs,
+        maxTunnels: this.o.maxTunnels ?? MAX_TUNNELS,
+        upstream: this.o.interceptUpstream ?? { host: INTERCEPT_HOST, port: 443 },
+        headersTimeoutMs: HEADERS_TIMEOUT_MS,
+        lane: (req, res) => this.innerLane(req, res),
+        track: (p) => this.track(p),
+      };
+      this.route = new DesktopRoute(deps);
+    }
+    server.maxConnections = MAX_CONNECTIONS + (this.o.maxTunnels ?? MAX_TUNNELS);
   }
 
   // ---- the key ----
@@ -698,6 +791,41 @@ export class AccountsProxy {
     const upstreamModel = lane ? routeModel(asked, this.gptConfig()) : null;
     if (upstreamModel) return this.forwardGpt(req.headers, parsed, upstreamModel, countOnly, body, res, abort, seen);
     await this.forward(target.provider, req.headers, target.url, body, res, abort, seen);
+  }
+
+  /**
+   * A decrypted request of the desktop route (intercept.ts asks): the lane takes a `POST /v1/messages*` for a model it lists, and
+   * the body is read for that. Anything else is not the lane's: with the lane off nothing is read and the request streams on.
+   */
+  private async innerLane(req: IncomingMessage, res: ServerResponse): Promise<{ taken: true } | { taken: false; body: Buffer | null }> {
+    const url = req.url ?? '';
+    const path = url.indexOf('?') < 0 ? url : url.slice(0, url.indexOf('?'));
+    const cfg = this.gptConfig();
+    if (req.method !== 'POST' || !PROXY_REQUESTS.claude.paths.includes(path) || !cfg.enabled) return { taken: false, body: null };
+    const body = await readBody(req, this.o.maxBodyBytes ?? MAX_BODY_BYTES);
+    if (body === null) return { taken: true };
+    if (body === 'too large') {
+      sendJson(res, 413, errorBody('claude', 'tooLarge'), { connection: 'close' });
+      req.resume();
+      return { taken: true };
+    }
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(body.toString('utf8'));
+    } catch {
+      // not JSON: not routed
+    }
+    const asked = objectOf(parsed)?.model;
+    const upstreamModel = routeModel(asked, cfg);
+    if (!upstreamModel) return { taken: false, body };
+    const abort = new AbortController();
+    res.on('close', () => {
+      if (!res.writableFinished) abort.abort();
+    });
+    const countOnly = path.endsWith('/count_tokens');
+    const seen: Seen = { provider: 'claude', model: typeof asked === 'string' ? asked.slice(0, MODEL_CLIP) : null, countOnly, started: this.pool.now() };
+    await this.forwardGpt(req.headers, parsed, upstreamModel, countOnly, body, res, abort, seen);
+    return { taken: true };
   }
 
   /** The GPT lane's settings: the test hook, or portboard.json (the lane is open only while the proxy itself is) */
@@ -935,7 +1063,7 @@ async function readErrorText(body: Readable, waitMs: number): Promise<string | n
 export const accountsProxy = new AccountsProxy();
 
 /** The two flags and the port, without the preview rule: a preview's expose_port still must not touch the production proxy port */
-const flags = (): ProxyConfig => ({ enabled: SITE.accounts.enabled && SITE.accounts.proxy.enabled, port: SITE.accounts.proxy.port });
+const flags = (): ProxyConfig => ({ enabled: SITE.accounts.enabled && SITE.accounts.proxy.enabled, port: SITE.accounts.proxy.port, desktop: SITE.accounts.proxy.desktop.enabled });
 const settings = (): ProxyConfig => ({ ...flags(), enabled: flags().enabled && PATHS.profile !== 'preview' });
 let configFn: (() => ProxyConfig) | null = null;
 

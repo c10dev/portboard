@@ -105,8 +105,9 @@ export const SITE_DEFAULTS = {
    * AI subscription accounts view (docs/accounts.md): reads the local Claude Code and Codex logins; off until enabled.
    * `proxy`: the loopback account pool proxy (docs/accounts.md#proxy), off until both flags are true.
    * `proxy.gpt`: the GPT lane (docs/accounts.md#gpt-lane): Claude Code requests for the listed model names go to a GPT model
+   * `proxy.desktop`: the desktop route (docs/accounts.md#desktop-route): the listener also takes HTTP CONNECT, decrypts api.anthropic.com only
    */
-  accounts: { enabled: false, proxy: { enabled: false, port: 8795, gpt: { enabled: false, models: {} as Record<string, string> } } },
+  accounts: { enabled: false, proxy: { enabled: false, port: 8795, gpt: { enabled: false, models: {} as Record<string, string> }, desktop: { enabled: false } } },
   /** where_to_run's score weights over recommend.ts DEFAULT_WEIGHTS (only numbers between -1 and 1 are taken) */
   recommend: { weights: {} as Record<string, number> },
 };
@@ -194,12 +195,13 @@ function gptConfig(raw: unknown): typeof SITE_DEFAULTS.accounts.proxy.gpt {
   return { enabled: g.enabled === true, models };
 }
 
-/** portboard.json `accounts`: on only for `enabled: true`; `proxy.enabled` likewise, `proxy.port` a whole number from 1024 to 65535 (else 8795); `proxy.gpt` as gptConfig */
+/** portboard.json `accounts`: on only for `enabled: true`; `proxy.enabled` likewise, `proxy.port` a whole number from 1024 to 65535 (else 8795); `proxy.gpt` as gptConfig; `proxy.desktop.enabled` likewise only `true` */
 export function accountsConfig(raw: Record<string, unknown> | undefined): typeof SITE_DEFAULTS.accounts {
   const D = SITE_DEFAULTS.accounts.proxy;
   const p = raw?.proxy && typeof raw.proxy === 'object' && !Array.isArray(raw.proxy) ? (raw.proxy as Record<string, unknown>) : {};
   const port = typeof p.port === 'number' && Number.isInteger(p.port) && p.port >= 1024 && p.port <= 65535 ? p.port : D.port;
-  return { enabled: raw?.enabled === true, proxy: { enabled: p.enabled === true, port, gpt: gptConfig(p.gpt) } };
+  const d = p.desktop && typeof p.desktop === 'object' && !Array.isArray(p.desktop) ? (p.desktop as Record<string, unknown>) : {};
+  return { enabled: raw?.enabled === true, proxy: { enabled: p.enabled === true, port, gpt: gptConfig(p.gpt), desktop: { enabled: d.enabled === true } } };
 }
 
 /** portboard.json `recommend`: weights between -1 and 1 by name (recommend.ts says which names it knows) */
