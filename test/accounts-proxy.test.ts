@@ -240,12 +240,12 @@ const report = () => {
 
 test('off: no listener and state off when accounts.proxy.enabled is missing, accounts.enabled is off, or this is a preview', async () => {
   // the settings: both flags, and a port from 1024 to 65535
-  assert.deepEqual(accountsConfig(undefined), { enabled: false, proxy: { enabled: false, port: 8795, gpt: { enabled: false, models: {} } } });
-  assert.deepEqual(accountsConfig({ enabled: true }).proxy, { enabled: false, port: 8795, gpt: { enabled: false, models: {} } });
-  assert.deepEqual(accountsConfig({ enabled: true, proxy: { enabled: 'true' } }).proxy, { enabled: false, port: 8795, gpt: { enabled: false, models: {} } }, 'only true turns it on');
-  assert.deepEqual(accountsConfig({ proxy: { enabled: true, port: 8801 } }), { enabled: false, proxy: { enabled: true, port: 8801, gpt: { enabled: false, models: {} } } });
+  assert.deepEqual(accountsConfig(undefined), { enabled: false, proxy: { enabled: false, port: 8795, gpt: { enabled: false, models: {} }, desktop: { enabled: false } } });
+  assert.deepEqual(accountsConfig({ enabled: true }).proxy, { enabled: false, port: 8795, gpt: { enabled: false, models: {} }, desktop: { enabled: false } });
+  assert.deepEqual(accountsConfig({ enabled: true, proxy: { enabled: 'true' } }).proxy, { enabled: false, port: 8795, gpt: { enabled: false, models: {} }, desktop: { enabled: false } }, 'only true turns it on');
+  assert.deepEqual(accountsConfig({ proxy: { enabled: true, port: 8801 } }), { enabled: false, proxy: { enabled: true, port: 8801, gpt: { enabled: false, models: {} }, desktop: { enabled: false } } });
   for (const port of [1023, 65536, 8801.5, '8801', null, 0, -1]) assert.equal(accountsConfig({ proxy: { port } }).proxy.port, 8795, String(port));
-  assert.deepEqual(SITE_DEFAULTS.accounts, { enabled: false, proxy: { enabled: false, port: 8795, gpt: { enabled: false, models: {} } } });
+  assert.deepEqual(SITE_DEFAULTS.accounts, { enabled: false, proxy: { enabled: false, port: 8795, gpt: { enabled: false, models: {} }, desktop: { enabled: false } } });
 
   const job = (accountsFeature.jobs ?? []).find((j) => j.name === 'accounts-proxy');
   assert.ok(job && job.runAtStart === true && job.everyMs === 60_000);

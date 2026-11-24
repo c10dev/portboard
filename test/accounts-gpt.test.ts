@@ -26,7 +26,7 @@ process.env.PORTBOARD_ACCOUNT_HOMES = HOMES;
 process.env.PORTBOARD_ACCOUNTS_PROXY_KEY = KEY_FILE;
 
 const { AccountsProxy, PROXY_HOST, PROXY_REQUESTS } = await import('../src/core/accounts/proxy.ts');
-const { clipText, ConvertError, fromResponse, MODEL_ID, ResponsesToMessages, routeModel, sessionIdOf, toolNames, toResponsesRequest } = await import('../src/core/accounts/gpt.ts');
+const { clipText, ConvertError, fromResponse, MODEL_ID, ResponsesToMessages, routeModel, sessionIdOf, ThreadStore, toolNames, toResponsesRequest } = await import('../src/core/accounts/gpt.ts');
 const { resetRefreshForTest } = await import('../src/core/accounts/refresh.ts');
 const { upsertAccount } = await import('../src/core/accounts/store.ts');
 const { clearQuotaCache } = await import('../src/core/accounts/quota.ts');
@@ -68,7 +68,7 @@ async function translate(bytes: Buffer, size = 0, model = 'claude-opus-5-5') {
 // ---- settings ----
 
 test('accountsConfig: proxy.gpt is off unless enabled is true; models keep valid entries, at most 32', () => {
-  assert.deepEqual(SITE_DEFAULTS.accounts, { enabled: false, proxy: { enabled: false, port: 8795, gpt: { enabled: false, models: {} } } });
+  assert.deepEqual(SITE_DEFAULTS.accounts, { enabled: false, proxy: { enabled: false, port: 8795, gpt: { enabled: false, models: {} }, desktop: { enabled: false } } });
   assert.deepEqual(accountsConfig(undefined).proxy.gpt, { enabled: false, models: {} });
   for (const gpt of [null, 'on', 5, [], true]) assert.deepEqual(accountsConfig({ proxy: { gpt } }).proxy.gpt, { enabled: false, models: {} }, JSON.stringify(gpt));
   assert.equal(accountsConfig({ proxy: { gpt: { enabled: 'true' } } }).proxy.gpt.enabled, false);
@@ -739,4 +739,279 @@ test('gpt lane: the body is parsed once for the lane (the model name of the line
     JSON.parse = real;
   }
   assert.equal(parses, 1);
+});
+
+// ---- threads ----
+
+test('ThreadStore: get and put, expiry by time, least recently touched goes first, a size budget, and an oversized thread is not kept', () => {
+  let t = 1000;
+  const mk = (n: number) => ({ system: 's', tools: null, messages: ['x'.repeat(n)], parent: null });
+  const store = new ThreadStore({ maxThreads: 3, maxBytes: 1000, ttlMs: 100, now: () => t });
+  assert.equal(store.get('a'), null);
+  store.put('a', { system: 'sys', tools: [{ name: 'T' }], messages: [{ role: 'user', content: 'hi' }], parent: null });
+  const got = store.get('a');
+  assert.deepEqual([got?.system, got?.tools, got?.messages], ['sys', [{ name: 'T' }], [{ role: 'user', content: 'hi' }]]);
+  assert.ok((got?.bytes ?? 0) > 0);
+  // a hit refreshes the time
+  t += 90;
+  assert.ok(store.get('a'));
+  t += 90;
+  assert.ok(store.get('a'), 'touched 90 ms ago');
+  t += 101;
+  assert.equal(store.get('a'), null, 'expired');
+  assert.equal(store.get('a'), null);
+  // by count: the least recently touched goes
+  t = 5000;
+  for (const id of ['a', 'b', 'c']) store.put(id, mk(10));
+  store.get('a');
+  store.put('d', mk(10));
+  assert.deepEqual(['a', 'b', 'c', 'd'].map((id) => store.get(id) !== null), [true, false, true, true]);
+  // by bytes
+  const small = new ThreadStore({ maxThreads: 10, maxBytes: 300, ttlMs: 1e9, now: () => t });
+  small.put('a', mk(100));
+  small.put('b', mk(100));
+  small.put('c', mk(100));
+  assert.equal(small.get('a'), null, 'the oldest went to make room');
+  assert.ok(small.get('b') && small.get('c'));
+  small.put('big', mk(400));
+  assert.equal(small.get('big'), null, 'larger than the whole budget: not kept');
+  assert.ok(small.get('b') && small.get('c'), 'and nothing else was dropped for it');
+  // a put under a known id replaces it
+  small.put('b', mk(20));
+  assert.deepEqual(small.get('b')?.messages, ['x'.repeat(20)]);
+});
+
+const threadTools = [{ name: 'get_time', description: 'The time.', input_schema: { type: 'object', properties: { tz: { type: 'string' } } } }];
+const turnOne = (extra: Record<string, unknown> = {}) => ({ ...claudeBody('claude-opus-5-5'), tools: threadTools, thread: { type: 'create' }, diagnostics: { previous_message_id: null }, data_flow: { x: 1 }, ...extra });
+const messageIdOf = (r: Got): string => (r.json ? String(r.json.id) : (frames(r.text)[0][1] as { message: { id: string } }).message.id);
+const CALL_ID = 'call_b51e9239ae4f409c9a6e083f2b27decb';
+const turnTwo = (previous: string, extra: Record<string, unknown> = {}) => {
+  const { tools: _t, messages: _m, system: _s, ...rest } = claudeBody('claude-opus-5-5');
+  return {
+    ...rest,
+    system: [{ type: 'text', text: 'Turn two system.' }],
+    messages: [{ role: 'user', content: [{ type: 'tool_result', tool_use_id: CALL_ID, content: '12:00 UTC' }] }],
+    thread: { type: 'continue', previous_message_id: previous },
+    ...extra,
+  };
+};
+/** The upstream body of turn 2 holds the whole conversation, with the turn-1 tools and the turn-2 system */
+function checkRebuilt(sent: any): void {
+  const types = sent.input.map((i: { type: string; role?: string }) => i.type + (i.role ? `:${i.role}` : ''));
+  assert.ok(types.includes('message:user'), 'the turn-1 user message');
+  const call = sent.input.find((i: { type: string }) => i.type === 'function_call');
+  const out = sent.input.find((i: { type: string }) => i.type === 'function_call_output');
+  assert.equal(call?.call_id, CALL_ID);
+  assert.equal(out?.call_id, CALL_ID, 'the output answers the same call');
+  assert.ok(types.indexOf('function_call') < types.indexOf('function_call_output'));
+  assert.equal(sent.input[0].content[0].text, 'hello', 'the history comes first');
+  assert.deepEqual(sent.tools.map((t: { name: string }) => t.name), ['get_time'], 'the turn-1 tools');
+  assert.equal(sent.instructions, 'Turn two system.');
+  for (const k of ['thread', 'diagnostics', 'data_flow']) assert.ok(!(k in sent), `${k} stays here`);
+}
+
+test('threads: a continue turn gets the stored history, tools and the new system (stream)', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  upstream = () => sseResponse('stream-tool-captured.sse');
+  const first = await call(turnOne());
+  assert.equal(first.status, 200);
+  const id = messageIdOf(first);
+  assert.match(id, /^msg_/);
+  const second = await call(turnTwo(id));
+  assert.equal(second.status, 200);
+  assert.equal(ups.length, 2);
+  checkRebuilt(JSON.parse(ups[1].body.toString('utf8')));
+  assert.ok(!('thread' in JSON.parse(ups[0].body.toString('utf8'))));
+  // a third turn continues from the answer to the second
+  const id2 = messageIdOf(second);
+  assert.notEqual(id2, '');
+  const third = await call(turnTwo(id2));
+  assert.equal(third.status, 200);
+  assert.ok(JSON.parse(ups[2].body.toString('utf8')).input.length > JSON.parse(ups[1].body.toString('utf8')).input.length);
+});
+
+test('threads: the same for a client that asked for no stream; the id is the one of the JSON Message', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  upstream = () => sseResponse('stream-tool-captured.sse');
+  const first = await call(turnOne({ stream: false }));
+  assert.equal(first.status, 200);
+  assert.equal(first.json.type, 'message');
+  const second = await call(turnTwo(first.json.id, { stream: false }));
+  assert.equal(second.status, 200);
+  checkRebuilt(JSON.parse(ups[1].body.toString('utf8')));
+});
+
+test('threads: continue with an unknown id is 400 and nothing goes upstream or into the usage log', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  const r = await call(turnTwo('msg_unknown'));
+  assert.equal(r.status, 400);
+  assert.deepEqual(r.json, { type: 'error', error: { type: 'invalid_request_error', message: 'thread not found: the proxy keeps GPT lane threads in memory only; start a new conversation' } });
+  assert.equal(ups.length, 0);
+  assert.equal(usage.length, 0);
+  const noId = await call(turnTwo('x', { thread: { type: 'continue' } }));
+  assert.equal(noId.status, 400);
+  assert.equal(ups.length, 0);
+});
+
+test('threads: a failed or cut turn stores nothing, and a body without thread stores nothing', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  upstream = () => sseResponse('stream-failed.sse');
+  const failed = await call(turnOne());
+  const failedId = (failed.text.match(/"id":"(msg_[^"]*)"/) ?? [])[1];
+  assert.equal((await call(turnTwo(failedId ?? 'msg_failed'))).status, 400, 'continue on a failed turn');
+  upstream = () => sseResponse('stream-cut.sse');
+  const cut = await call(turnOne());
+  const cutId = (cut.text.match(/"id":"(msg_[^"]*)"/) ?? [])[1];
+  assert.equal((await call(turnTwo(cutId ?? 'msg_cut'))).status, 400, 'continue on a cut turn');
+  upstream = () => sseResponse('stream-tool-captured.sse');
+  const plain = await call(claudeBody('claude-opus-5-5', { tools: threadTools }));
+  assert.equal(plain.status, 200);
+  assert.equal((await call(turnTwo(messageIdOf(plain)))).status, 400, 'a request without thread is not kept');
+});
+
+// ---- threads: one entry per conversation, sweep, clear, early store ----
+
+test('ThreadStore: delete, sweep and clear', () => {
+  let t = 0;
+  const store = new ThreadStore({ ttlMs: 100, now: () => t });
+  const entry = { system: null, tools: null, messages: ['m'], parent: null };
+  store.put('a', entry);
+  t = 60;
+  store.put('b', entry);
+  assert.equal(store.size, 2);
+  store.delete('a');
+  assert.equal(store.size, 1);
+  assert.equal(store.get('a'), null);
+  t = 120;
+  store.put('c', entry);
+  t = 170;
+  store.sweep();
+  assert.equal(store.size, 1, 'b is past its time, c is not');
+  assert.ok(store.get('c'));
+  store.clear();
+  assert.equal(store.size, 0);
+  assert.equal(store.get('c'), null);
+});
+
+const heldThreads = (): number => (proxy as unknown as { threads: { size: number } }).threads.size;
+
+test('threads: a conversation is one entry however long; two sessions interleaved keep working; an id that moved on is 400', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  // every answer gets a Response id of its own, as the real service gives
+  let n = 0;
+  upstream = () => new Response(readFileSync(join(FIX, 'stream-tool-captured.sse'), 'utf8').replaceAll('resp_0d345680552ec14a016b0536b9087887d094f725f7e693b9d9', `resp_unique${n++}`), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  const first = await call(turnOne({ stream: false }));
+  let a = first.json.id as string;
+  const old = a;
+  for (let i = 0; i < 79; i++) {
+    const r = await call(turnTwo(a, { stream: false }));
+    assert.equal(r.status, 200, `turn ${i + 2}`);
+    a = r.json.id;
+  }
+  assert.ok(heldThreads() <= 2, '80 turns, at most two entries');
+  assert.equal((await call(turnTwo(old, { stream: false }))).status, 400, 'an id that moved on');
+  // two sessions, interleaved
+  let b = (await call(turnOne({ stream: false }))).json.id as string;
+  assert.ok(heldThreads() <= 3);
+  for (let i = 0; i < 50; i++) {
+    const ra = await call(turnTwo(a, { stream: false }));
+    const rb = await call(turnTwo(b, { stream: false }));
+    assert.equal(ra.status, 200);
+    assert.equal(rb.status, 200);
+    a = ra.json.id;
+    b = rb.json.id;
+  }
+  assert.ok(heldThreads() <= 4, 'two conversations, at most two entries each');
+});
+
+test('threads: the thread is kept when the client has message_stop, not when the upstream body ends', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  const bytes = readFileSync(join(FIX, 'stream-tool-captured.sse'));
+  let release: () => void = () => {};
+  const open = new Promise<void>((resolve) => (release = resolve));
+  // the upstream sends the whole answer and keeps the body open until the test is done
+  upstream = () =>
+    new Response(
+      new ReadableStream({
+        async start(c) {
+          c.enqueue(new Uint8Array(bytes));
+          await open;
+          c.close();
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
+  const body = JSON.stringify(turnOne());
+  const stopped = await new Promise<string>((resolve, reject) => {
+    const req = httpRequest({ host: PROXY_HOST, port: portOf(), path: '/v1/messages', method: 'POST', agent: false, headers: { authorization: `Bearer ${key}` } });
+    let seen = '';
+    req.on('response', (res) => {
+      res.on('data', (d: Buffer) => {
+        seen += d.toString();
+        if (seen.includes('event: message_stop')) {
+          resolve((frames(seen)[0][1] as { message: { id: string } }).message.id);
+        }
+      });
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+  upstream = () => sseResponse('stream-tool-captured.sse');
+  const second = await call(turnTwo(stopped));
+  release();
+  assert.equal(second.status, 200, 'a continue sent right after message_stop');
+});
+
+// ---- threads: the latest entry and the one before it ----
+
+const withStore = (o: ConstructorParameters<typeof ThreadStore>[0]) => ((proxy as unknown as { threads: unknown }).threads = new ThreadStore(o));
+let uniq = 0;
+const uniqueUpstream = () => {
+  upstream = () => new Response(readFileSync(join(FIX, 'stream-tool-captured.sse'), 'utf8').replaceAll('resp_0d345680552ec14a016b0536b9087887d094f725f7e693b9d9', `resp_e2_${uniq++}`), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+};
+
+test('threads: a conversation that goes on does not push another one out; a retry on the same id works', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  uniqueUpstream();
+  // room for one conversation of two entries and one more thread
+  const store = withStore({ maxThreads: 3 });
+  const a1 = (await call(turnOne({ stream: false }))).json.id as string;
+  const b1 = (await call(turnOne({ stream: false }))).json.id as string;
+  let a = a1;
+  for (let i = 0; i < 5; i++) a = (await call(turnTwo(a, { stream: false }))).json.id;
+  assert.ok(store.size <= 3);
+  assert.equal((await call(turnTwo(b1, { stream: false }))).status, 200, 'B still continues');
+  // the same continue twice on one id: both answer
+  const x = (await call(turnTwo(a, { stream: false }))).json.id as string;
+  assert.equal((await call(turnTwo(x, { stream: false }))).status, 200);
+  assert.equal((await call(turnTwo(x, { stream: false }))).status, 200, 'a retry on the same id');
+  void a1;
+});
+
+test('threads: with a byte budget, a conversation of two entries and another thread survive a turn', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  uniqueUpstream();
+  const big = (text: string) => ({ messages: [{ role: 'user', content: [{ type: 'text', text }] }] });
+  const probe = withStore({});
+  const first = await call(turnOne({ stream: false, ...big('p'.repeat(20_000)) }));
+  const size = (): number => [...(probe as unknown as { map: Map<string, { bytes: number }> }).map.values()][0].bytes;
+  const one = size();
+  // room for three entries of about this size, with a little to grow
+  withStore({ maxBytes: Math.ceil(one * 3.4) });
+  const a1 = (await call(turnOne({ stream: false, ...big('a'.repeat(20_000)) }))).json.id as string;
+  const b1 = (await call(turnOne({ stream: false, ...big('b'.repeat(20_000)) }))).json.id as string;
+  const a2 = (await call(turnTwo(a1, { stream: false }))).json.id as string;
+  const a3 = (await call(turnTwo(a2, { stream: false }))).json.id as string;
+  assert.equal((await call(turnTwo(b1, { stream: false }))).status, 200, 'B survived two turns of A');
+  assert.equal((await call(turnTwo(a3, { stream: false }))).status, 200);
+  void first;
+});
+
+test('threads: an 80-turn conversation holds at most two entries', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  uniqueUpstream();
+  let id = (await call(turnOne({ stream: false }))).json.id as string;
+  for (let i = 0; i < 79; i++) id = (await call(turnTwo(id, { stream: false }))).json.id;
+  assert.ok(heldThreads() <= 2);
+  assert.equal((await call(turnTwo(id, { stream: false }))).status, 200);
 });
