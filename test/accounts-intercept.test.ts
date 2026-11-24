@@ -22,10 +22,10 @@ globalThis.fetch = (() => {
   throw new Error('test reached the real fetch: inject one');
 }) as typeof fetch;
 // A name lookup means a socket is about to leave this machine (the relay's real target is api.anthropic.com): refuse every host
-// name but localhost (IP literals need no lookup), so a slip in a test fails here instead of reaching a real host.
+// name but localhost (IP literals need no lookup; a numeric form such as 127.1 is resolved by the system without the network), so a slip in a test fails here instead of reaching a real host.
 const realLookup = dns.lookup;
 (dns as { lookup: unknown }).lookup = ((host: string, ...rest: unknown[]) => {
-  if (host !== 'localhost' && isIP(host) === 0) throw new Error(`test reached a DNS lookup for ${host}: use 127.0.0.1 and interceptUpstream`);
+  if (host !== 'localhost' && isIP(host) === 0 && !/^[0-9.]+$/.test(host)) throw new Error(`test reached a DNS lookup for ${host}: use 127.0.0.1 and interceptUpstream`);
   return (realLookup as (...a: unknown[]) => unknown)(host, ...rest);
 }) as typeof dns.lookup;
 process.env.HOME = FAKE_HOME;
@@ -303,12 +303,6 @@ test('loadOrMakeCert: makes both files (0600) when missing, reads them back, and
   writeFileSync(keyPath, made.key, { mode: 0o600 });
   await assert.rejects(loadOrMakeCert({ certPath, keyPath }), /certificate unusable/, 'an odd file');
 
-  // a certificate for another name (made with the openssl tool, in the test only)
-  execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-keyout', keyPath, '-out', certPath, '-subj', '/CN=example.com', '-addext', 'subjectAltName=DNS:example.com', '-days', '30'], { stdio: 'ignore', env: { PATH: process.env.PATH ?? '' } });
-  chmodSync(certPath, 0o600);
-  chmodSync(keyPath, 0o600);
-  await assert.rejects(loadOrMakeCert({ certPath, keyPath }), /certificate unusable/, 'another name');
-
   // expired
   const old = makeSelfSignedCert(Date.now() - 1000 * DAY);
   writeFileSync(certPath, old.cert, { mode: 0o600 });
@@ -482,7 +476,7 @@ test('intercept: POST /v1/messages with a mapped model goes to the Codex address
   assert.equal(codexCalls[0].headers['session-id'], sessionId, 'the inner request headers give the session id');
   assert.ok(!JSON.stringify(codexCalls[0].headers).includes('CLIENTSECRET'));
   assert.equal(JSON.parse(codexCalls[0].body.toString('utf8')).model, 'gpt-6-astra');
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  await until(() => usage.length >= 1);
   assert.equal(usage.length, 1);
   assert.equal(usage[0].provider, 'codex');
   assert.equal(usage[0].model, 'gpt-6-astra');
@@ -504,14 +498,17 @@ test('intercept: a WebSocket-style upgrade is piped to the relay target', async 
     tls.once('error', reject);
   });
   let buf = '';
+  let opened: () => void = () => {};
+  const upgraded = new Promise<void>((resolve) => (opened = resolve));
   const open = new Promise<void>((resolve) =>
     tls.on('data', (d: Buffer) => {
       buf += d.toString();
+      if (buf.includes('\r\n\r\n')) opened();
       if (buf.includes('echo:ping')) resolve();
     }),
   );
   tls.write(`GET /ws HTTP/1.1\r\nHost: api.anthropic.com\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nAuthorization: ${CLIENT_AUTH}\r\nProxy-Foo: x\r\n\r\n`);
-  await new Promise((resolve) => setTimeout(resolve, 150));
+  await upgraded;
   tls.write('ping');
   await open;
   assert.match(buf, /^HTTP\/1\.1 101 Switching Protocols/);
@@ -566,8 +563,7 @@ test('connect: more than 32 tunnels work at once; the CONNECT beyond the tunnel 
   assert.ok(held.every((t) => t.status === 200));
   assert.equal((await connectVia(`127.0.0.1:${echo.port}`)).status, 503, 'one more than the limit');
   held[0].socket.destroy();
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  assert.equal((await connectVia(`127.0.0.1:${echo.port}`)).status, 200, 'a closed tunnel frees its place');
+  await until(async () => (await connectVia(`127.0.0.1:${echo.port}`)).status === 200);
 });
 
 test('nothing secret is in the output: no proxy key, account token or client login in the console, usage lines or error bodies', async () => {
@@ -579,7 +575,7 @@ test('nothing secret is in the output: no proxy key, account token or client log
   await viaIntercept('GET', '/api/oauth/profile', null);
   assert.equal((await connectVia('127.0.0.1:1', { 'proxy-authorization': basic('wrong') })).status, 407);
   assert.equal((await connectVia('bad target')).status, 400);
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  await until(() => usage.length >= 1);
   // the afterEach hook searches the outputs, the console and the usage lines
   assert.ok(outputs.length > 0);
   const probe = JSON.stringify(proxy!.report());
@@ -602,4 +598,213 @@ test('a bad certificate file closes the route: the state is error', async () => 
   chmodSync(CERT_KEY_FILE, 0o644);
   await proxy!.sync({ enabled: true, port: 0, desktop: true });
   assert.equal(proxy!.report().state, 'error', 'the sync checks the pair again');
+});
+
+// ---- certificates the tool refuses (made with the openssl tool, in the test only) ----
+
+const hasOpenssl = (() => {
+  try {
+    execFileSync('openssl', ['version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+test('loadOrMakeCert: a certificate for another name, a CA, or one with extra names is refused', { skip: !hasOpenssl && 'openssl not installed' }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pb-cert-bad-'));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const certPath = join(dir, 'c.pem');
+  const keyPath = join(dir, 'c.key');
+  const build = (...addext: string[]) => {
+    const args = ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-keyout', keyPath, '-out', certPath, '-subj', '/CN=api.anthropic.com', '-days', '30'];
+    for (const a of addext) args.push('-addext', a);
+    execFileSync('openssl', args, { stdio: 'ignore', env: { PATH: process.env.PATH ?? '' } });
+    chmodSync(certPath, 0o600);
+    chmodSync(keyPath, 0o600);
+  };
+  build('subjectAltName=DNS:example.com');
+  await assert.rejects(loadOrMakeCert({ certPath, keyPath }), /certificate unusable/, 'another name');
+  build('subjectAltName=DNS:api.anthropic.com,DNS:example.com');
+  await assert.rejects(loadOrMakeCert({ certPath, keyPath }), /certificate unusable/, 'an extra name');
+  build('subjectAltName=DNS:api.anthropic.com', 'basicConstraints=critical,CA:TRUE');
+  await assert.rejects(loadOrMakeCert({ certPath, keyPath }), /certificate unusable/, 'a CA');
+  build('subjectAltName=DNS:api.anthropic.com', 'basicConstraints=critical,CA:FALSE');
+  assert.ok((await loadOrMakeCert({ certPath, keyPath })).cert, 'the same shape without those is read');
+});
+
+// ---- the key, refused sockets, time limits, limits ----
+
+/** Wait for a condition (polled every 10 ms, 4 seconds at most) */
+async function until(cond: () => boolean | Promise<boolean>, what = 'the condition'): Promise<void> {
+  const end = Date.now() + 4000;
+  while (!(await cond())) {
+    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+const closedOf = (s: Socket): Promise<void> => (s.destroyed ? Promise.resolve() : new Promise<void>((resolve) => s.once('close', () => resolve())));
+const within = <T>(p: Promise<T>, what: string): Promise<T> => Promise.race([p, new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`timed out: ${what}`)), 4000))]);
+
+/** An intercepted connection that stays open: CONNECT, then TLS with the proxy's certificate */
+async function openIntercept(): Promise<{ tunnel: Tunnel; tls: TLSSocket }> {
+  const tunnel = await connectVia(`${INTERCEPT_HOST}:443`);
+  assert.equal(tunnel.status, 200);
+  tunnel.socket.resume();
+  const tls = tlsConnect({ socket: tunnel.socket, ca: readFileSync(CERT_FILE, 'utf8'), servername: INTERCEPT_HOST });
+  tls.on('error', () => {});
+  await new Promise<void>((resolve, reject) => {
+    tls.once('secureConnect', resolve);
+    tls.once('error', reject);
+  });
+  return { tunnel, tls };
+}
+
+test('a key change closes what the old key opened: intercepted connections, tunnels; the old key gets 407', async () => {
+  const relay = await startRelay();
+  await start({ interceptUpstream: { host: '127.0.0.1', port: relay.port, ca: relay.ca } });
+  const echo = await startEcho();
+  const oldKey = key;
+  const inner = await openIntercept();
+  const idle = await connectVia(`127.0.0.1:${echo.port}`);
+  idle.socket.resume();
+  await proxy!.key(true);
+  await within(Promise.all([closedOf(inner.tls), closedOf(inner.tunnel.socket), closedOf(idle.socket)]), 'the old connections close');
+  // a request on the old connection fails
+  const agent = new HttpsAgent();
+  (agent as unknown as { createConnection: () => Socket }).createConnection = () => inner.tls as unknown as Socket;
+  const req = httpsRequest({ host: INTERCEPT_HOST, path: '/api/oauth/profile', method: 'GET', agent });
+  const outcome = await Promise.race([
+    new Promise<string>((resolve) => {
+      req.on('response', () => resolve('answered'));
+      req.on('error', () => resolve('failed'));
+      req.end();
+    }),
+    new Promise<string>((resolve) => setTimeout(() => resolve('no answer'), 500)),
+  ]);
+  assert.notEqual(outcome, 'answered', 'a request on the old connection gets no answer');
+  assert.equal(relay.seen.length, 0);
+  // the old key opens nothing new, the new one does
+  key = await proxy!.key();
+  assert.notEqual(key, oldKey);
+  assert.equal((await connectVia(`127.0.0.1:${echo.port}`, { 'proxy-authorization': basic(oldKey) })).status, 407);
+  assert.equal((await connectVia(`127.0.0.1:${echo.port}`)).status, 200);
+  const fresh = await openIntercept();
+  fresh.tls.destroy();
+  // an edited key file closes them within the next sync, too
+  const second = await connectVia(`127.0.0.1:${echo.port}`);
+  second.socket.resume();
+  writeFileSync(KEY_FILE, `pbp-${'ab'.repeat(16)}\n`, { mode: 0o600 });
+  await proxy!.sync({ enabled: true, port: 0, desktop: true });
+  await within(closedOf(second.socket), 'a connection of the key before the edit closes');
+  key = `pbp-${'ab'.repeat(16)}`;
+  assert.equal((await connectVia(`127.0.0.1:${echo.port}`)).status, 200);
+  // turning the route off closes every connection
+  const third = await connectVia(`127.0.0.1:${echo.port}`);
+  third.socket.resume();
+  await proxy!.sync({ enabled: true, port: 0, desktop: false });
+  await within(closedOf(third.socket), 'the route off closes the connections');
+});
+
+test('refused CONNECT sockets are closed by the proxy, whether the sender closes or not', async () => {
+  for (const [desktop, extra] of [[false, {}], [true, { maxTunnels: 3 }]] as const) {
+    await start(extra, desktop);
+    const refused: Tunnel[] = [];
+    for (let i = 0; i < 40; i++) refused.push(await connectVia('127.0.0.1:9', desktop ? {} : { 'proxy-authorization': basic(key) }));
+    assert.ok(refused.every((t) => t.status === (desktop ? 407 : 403)));
+    await within(Promise.all(refused.map((t) => closedOf(t.socket))), 'the refused sockets close');
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = httpRequest({ host: '127.0.0.1', port: portOf(), path: '/nope', method: 'GET', agent: false, headers: { authorization: `Bearer ${key}` } }, (res) => {
+        res.resume();
+        resolve(res.statusCode ?? 0);
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    assert.equal(status, 404, `an ordinary request still answers (route ${desktop ? 'on' : 'off'})`);
+    await proxy!.close();
+  }
+});
+
+test('a tunnel to the proxy itself by another name or form is 403: 0.0.0.0, 127.1, an IPv4-mapped address', async () => {
+  await start();
+  const port = portOf();
+  for (const host of ['0.0.0.0', '127.1', '[::ffff:127.0.0.1]']) assert.equal((await connectVia(`${host}:${port}`)).status, 403, host);
+  assert.equal((await connectVia(`127.0.0.1:${port}`)).status, 403);
+});
+
+test('a decrypted connection that sends half a request is closed; an idle one is closed after its wait; a request in progress has no limit', async () => {
+  const relay = await startRelay();
+  await start({ interceptHeadersMs: 150, interceptIdleMs: 200, interceptUpstream: { host: '127.0.0.1', port: relay.port, ca: relay.ca } });
+  const half = await openIntercept();
+  half.tls.write('GET /api/oauth/pro');
+  await within(closedOf(half.tls), 'half a request line is cut off');
+  const none = await openIntercept();
+  await within(closedOf(none.tls), 'no request at all is cut off');
+  // one whole request, then silence: kept for the idle wait, then closed
+  const kept = await openIntercept();
+  let seen = '';
+  kept.tls.on('data', (d: Buffer) => (seen += d.toString()));
+  kept.tls.write('GET /api/oauth/profile HTTP/1.1\r\nHost: api.anthropic.com\r\n\r\n');
+  await until(() => seen.includes('part-two'), 'the answer');
+  assert.equal(kept.tls.destroyed, false);
+  await within(closedOf(kept.tls), 'an idle connection closes');
+});
+
+test('decrypted lane requests share the limit of plain requests; relayed requests do not', async () => {
+  const relay = await startRelay();
+  codexAccount();
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const slow = (async (url: string | URL | Request, init?: RequestInit) => {
+    await held;
+    return codexFetch(url, init);
+  }) as typeof fetch;
+  cleanups.push(() => release());
+  await start({ fetch: slow, maxPlainRequests: 1, interceptUpstream: { host: '127.0.0.1', port: relay.port, ca: relay.ca } });
+  const request = JSON.stringify({ ...JSON.parse(readFileSync(join(FIX, 'request-text.json'), 'utf8')), model: 'claude-haiku-5-5' });
+  const first = viaIntercept('POST', '/v1/messages', request, { 'content-type': 'application/json' });
+  first.catch(() => {});
+  await until(() => (proxy as unknown as { plain: Set<unknown> }).plain.size === 1, 'the first lane request is open');
+  const second = await viaIntercept('POST', '/v1/messages', request, { 'content-type': 'application/json' });
+  assert.equal(second.status, 503);
+  assert.deepEqual(JSON.parse(second.text), { type: 'error', error: { type: 'api_error', message: 'too many requests' } });
+  assert.equal((await viaIntercept('GET', '/api/oauth/profile', null)).status, 200, 'a relayed request is not counted');
+  release();
+  assert.equal((await first).status, 200);
+  await until(() => (proxy as unknown as { plain: Set<unknown> }).plain.size === 0, 'the slot is free');
+  assert.equal((await viaIntercept('POST', '/v1/messages', request, { 'content-type': 'application/json' })).status, 200);
+});
+
+test('the open plain requests are a set: a stop while one hangs does not lower the limit of the next listener', async () => {
+  await start({ maxPlainRequests: 2 });
+  const open = (): ReturnType<typeof httpRequest> => {
+    const req = httpRequest({ host: '127.0.0.1', port: portOf(), path: '/v1/messages', method: 'POST', agent: false, headers: { authorization: `Bearer ${key}`, 'content-length': '100' } });
+    req.on('error', () => {});
+    req.write('x');
+    cleanups.push(() => void req.destroy());
+    return req;
+  };
+  const size = () => (proxy as unknown as { plain: Set<unknown> }).plain.size;
+  open();
+  open();
+  await until(() => size() === 2, 'two requests open');
+  await proxy!.sync({ enabled: false, port: 0 });
+  await proxy!.sync({ enabled: true, port: 0, desktop: true });
+  assert.equal(size(), 0);
+  open();
+  open();
+  await until(() => size() === 2, 'two requests open again');
+  const status = await within(
+    new Promise<number>((resolve, reject) => {
+      const req = httpRequest({ host: '127.0.0.1', port: portOf(), path: '/nope', method: 'GET', agent: false, headers: { authorization: `Bearer ${key}` } }, (res) => {
+        res.resume();
+        resolve(res.statusCode ?? 0);
+      });
+      req.on('error', reject);
+      req.end();
+    }),
+    'the third request is answered',
+  );
+  assert.equal(status, 503);
 });

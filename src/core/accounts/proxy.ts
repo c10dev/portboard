@@ -34,7 +34,7 @@ import { PATHS } from '../paths.ts';
 import { SITE, SITE_DEFAULTS } from '../site.ts';
 import { clipText, ConvertError, fromResponse, mergeThread, ResponsesToMessages, routeModel, sessionIdOf, ThreadStore, toolNames, toResponsesRequest, type GptConfig, type ToolNames } from './gpt.ts';
 import type { HomesOptions } from './homes.ts';
-import { DesktopRoute, INTERCEPT_HOST, loadOrMakeCert, type RouteDeps } from './intercept.ts';
+import { DesktopRoute, INTERCEPT_HOST, loadOrMakeCert, refuseSocket, type RouteDeps } from './intercept.ts';
 import { Pool, verdictOf, type ProxyEvent, type ProxyProvider } from './pool.ts';
 import { appendUsage, MODEL_CLIP, num as count, type UsageLine } from './usage.ts';
 
@@ -62,6 +62,8 @@ const MAX_CONNECTIONS = 32;
 /** The desktop route: CONNECT sockets open at once (every HTTPS connection of a session and its tool commands is one) */
 const MAX_TUNNELS = 512;
 const HEADERS_TIMEOUT_MS = 10_000;
+/** A decrypted keep-alive connection that sends nothing is closed after this long */
+const INNER_IDLE_MS = 5 * 60_000;
 const MAX_BODY_BYTES = 32 * 1024 * 1024;
 const UPSTREAM_HEADERS_MS = 60_000;
 /** Claude Code, the account's token and the retries: at most this many accounts serve one request (three switches) */
@@ -123,6 +125,11 @@ export interface ProxyOptions extends HomesOptions {
   /** tests: the desktop route's certificate and key files; default PATHS.accountsProxyCert and PATHS.accountsProxyCertKey */
   certPath?: string;
   certKeyPath?: string;
+  /** tests: a shorter wait for the request headers of a decrypted connection, and a shorter idle wait between its requests */
+  interceptHeadersMs?: number;
+  interceptIdleMs?: number;
+  /** tests: fewer plain requests (and decrypted lane requests) at once (default 32) */
+  maxPlainRequests?: number;
   /** tests: fewer CONNECT sockets at once (default 512) */
   maxTunnels?: number;
   /** tests: where the relay of decrypted Anthropic requests goes (default: the Anthropic API host, port 443); `ca` is the certificate it must show */
@@ -487,7 +494,7 @@ export class AccountsProxy {
   private route: DesktopRoute | null = null;
   private certs: { cert: string; key: string } | null = null;
   /** non-CONNECT requests open now (counted only while the route is on) */
-  private plain = 0;
+  private readonly plain = new Set<ServerResponse>();
   /** the GPT lane's threads (docs/accounts.md#gpt-lane): memory only, one store for this proxy */
   private readonly threads = new ThreadStore();
 
@@ -532,6 +539,8 @@ export class AccountsProxy {
     return this.enqueue(async () => {
       this.cfg = cfg;
       this.synced = true;
+      // the job runs this every minute: threads past their time go
+      this.threads.sweep();
       if (!cfg.enabled) {
         await this.stop();
         this.state = 'off';
@@ -543,7 +552,7 @@ export class AccountsProxy {
           await this.readKey(false);
         } catch {
           await this.stop();
-          this.keyHash = null;
+          this.setKeyHash(null);
           this.setState('error', 'the key file cannot be used');
           return;
         }
@@ -565,6 +574,7 @@ export class AccountsProxy {
   close(): Promise<void> {
     return this.enqueue(async () => {
       await this.stop();
+      this.threads.clear();
       this.state = 'off';
       // the streams that `stop` cut write their line when their handler ends: wait for those and for the writes, 2 seconds at most
       let timer: NodeJS.Timeout | undefined;
@@ -590,7 +600,7 @@ export class AccountsProxy {
     this.route?.closeAll();
     this.route = null;
     this.certs = null;
-    this.plain = 0;
+    this.plain.clear();
     if (!s) return;
     await new Promise<void>((resolve) => {
       s.close(() => resolve());
@@ -617,9 +627,7 @@ export class AccountsProxy {
     const server = createServer((req, res) => {
       if (this.route) {
         // with the route on, a session's tunnels fill the connection limit: ordinary requests have a limit of their own
-        if (this.plain >= MAX_CONNECTIONS) return sendJson(res, 503, { type: 'error', error: { type: 'api_error', message: 'too many requests' } });
-        this.plain++;
-        res.once('close', () => void this.plain--);
+        if (!this.admit(res)) return;
       }
       this.track(
         this.handle(req, res).catch(() => {
@@ -636,7 +644,7 @@ export class AccountsProxy {
       if (this.server === server && this.route) this.route.connect(req, socket as Socket, head);
       else {
         socket.on('error', () => {});
-        socket.end('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n');
+        refuseSocket(socket as Socket, '403 Forbidden');
       }
     });
     const failed = await new Promise<NodeJS.ErrnoException | null>((resolve) => {
@@ -691,12 +699,13 @@ export class AccountsProxy {
       const deps: RouteDeps = {
         enabled: () => this.server === server && this.cfg.desktop === true && this.certs !== null,
         boundPort: () => this.bound,
-        keyOk: (secret) => this.keyHash !== null && timingSafeEqual(digest(secret), this.keyHash),
+        authorize: (secret) => (this.keyHash !== null && timingSafeEqual(digest(secret), this.keyHash) ? this.keyHash : null),
         counted: () => void this.requests++,
         cert: () => this.certs,
         maxTunnels: this.o.maxTunnels ?? MAX_TUNNELS,
         upstream: this.o.interceptUpstream ?? { host: INTERCEPT_HOST, port: 443 },
-        headersTimeoutMs: HEADERS_TIMEOUT_MS,
+        headersTimeoutMs: this.o.interceptHeadersMs ?? HEADERS_TIMEOUT_MS,
+        idleMs: this.o.interceptIdleMs ?? INNER_IDLE_MS,
         lane: (req, res) => this.innerLane(req, res),
         track: (p) => this.track(p),
       };
@@ -720,15 +729,33 @@ export class AccountsProxy {
     if (!st.isFile() || (st.mode & 0o077) !== 0) throw new Error('proxy key unusable');
     const key = (await readFile(path, 'utf8')).trim();
     if (!KEY_SHAPE.test(key)) throw new Error('proxy key unusable');
-    this.keyHash = digest(key);
+    this.setKeyHash(digest(key));
     return key;
   }
 
   private async writeKey(path: string): Promise<string> {
     const key = `pbp-${randomBytes(16).toString('hex')}`;
     await writePrivate(path, `${key}\n`);
-    this.keyHash = digest(key);
+    this.setKeyHash(digest(key));
     return key;
+  }
+
+  /** The key hash in use. A new one closes every CONNECT socket that was accepted with the old one. */
+  private setKeyHash(hash: Buffer | null): void {
+    const changed = this.keyHash === null || hash === null || !this.keyHash.equals(hash);
+    this.keyHash = hash;
+    if (changed) this.route?.revoke(hash);
+  }
+
+  /** Room for one more plain request (or decrypted lane request)? The open ones are in a set. False after answering 503. */
+  private admit(res: ServerResponse): boolean {
+    if (this.plain.size >= (this.o.maxPlainRequests ?? MAX_CONNECTIONS)) {
+      sendJson(res, 503, { type: 'error', error: { type: 'api_error', message: 'too many requests' } });
+      return false;
+    }
+    this.plain.add(res);
+    res.once('close', () => void this.plain.delete(res));
+    return true;
   }
 
   /** The absolute path of the key file */
@@ -820,6 +847,7 @@ export class AccountsProxy {
     const asked = objectOf(parsed)?.model;
     const upstreamModel = routeModel(asked, cfg);
     if (!upstreamModel) return { taken: false, body };
+    if (!this.admit(res)) return { taken: true };
     const abort = new AbortController();
     res.on('close', () => {
       if (!res.writableFinished) abort.abort();
@@ -865,14 +893,18 @@ export class AccountsProxy {
     const requestedModel = String(objectOf(parsed)?.model ?? '').slice(0, MODEL_CLIP);
     // after a whole answer: the history up to and including it is kept under the id the client received
     const sent = objectOf(effective);
+    // a continued thread moves to its new id: the entry of the id it continued is removed, so a conversation counts once
+    const previous = thread?.type === 'continue' ? String(thread.previous_message_id) : null;
     const keep =
       body && thread && sent
-        ? (id: string, content: unknown) =>
+        ? (id: string, content: unknown) => {
             this.threads.put(id, {
               system: sent.system,
               tools: Array.isArray(sent.tools) ? sent.tools : null,
               messages: [...(Array.isArray(sent.messages) ? sent.messages : []), { role: 'assistant', content }],
-            })
+            });
+            if (previous !== null && previous !== id) this.threads.delete(previous);
+          }
         : null;
     const lane: Lane = {
       headers: (pick) => ({
@@ -1011,17 +1043,26 @@ export class AccountsProxy {
       if (wantStream) {
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
         res.flushHeaders();
+        // the thread is kept the moment the client has the whole answer (its `message_stop`), not when the upstream body ends.
+        // The id is the one `message_start` carried; a failed answer has no `message_stop`.
+        let kept = false;
+        const tap = new Transform({
+          transform(chunk: Buffer, _enc, cb) {
+            if (!kept && keep && chunk.toString('utf8', 0, 20) === 'event: message_stop\n') {
+              kept = true;
+              const done = translator.finalResponse();
+              const id = translator.messageId();
+              if (done !== null && id !== null && translator.failure() === null) keep(id, fromResponse(done, requestedModel, names, id).content);
+            }
+            cb(null, chunk);
+          },
+        });
         try {
-          await pipeline(source(), observer, translator, res);
+          await pipeline(source(), observer, translator, tap, res);
         } catch {
           // upstream broke off or the caller left: the connection is closed, nothing more to say
           res.destroy();
-          return;
         }
-        // a whole answer only: the final Response is known and no error came. The id is the one `message_start` carried.
-        const done = translator.finalResponse();
-        const id = translator.messageId();
-        if (keep && done !== null && id !== null && translator.failure() === null) keep(id, fromResponse(done, requestedModel, names, id).content);
         return;
       }
       let size = 0;

@@ -617,6 +617,28 @@ export class ThreadStore {
     this.map.delete(id);
   }
 
+  /** Threads held now */
+  get size(): number {
+    return this.map.size;
+  }
+
+  /** Remove one thread (its conversation moved on to a new id) */
+  delete(messageId: string): void {
+    this.drop(messageId);
+  }
+
+  /** Remove the threads past their time */
+  sweep(): void {
+    const now = this.now();
+    for (const [id, t] of [...this.map]) if (now - t.touched > this.ttlMs) this.drop(id);
+  }
+
+  /** Forget every thread */
+  clear(): void {
+    this.map.clear();
+    this.total = 0;
+  }
+
   /** null when unknown or expired; a hit refreshes `touched` */
   get(messageId: string): StoredThread | null {
     const t = this.map.get(messageId);

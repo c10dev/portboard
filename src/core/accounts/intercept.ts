@@ -109,7 +109,8 @@ export async function loadOrMakeCert(o: { certPath: string; keyPath: string; now
   try {
     const x = new X509Certificate(cert);
     const ends = Date.parse(x.validTo);
-    if (!x.subjectAltName?.split(',').some((n) => n.trim() === `DNS:${INTERCEPT_HOST}`) || !x.verify(x.publicKey) || !x.checkPrivateKey(createPrivateKey(key)) || !(ends > now())) {
+    const names = x.subjectAltName?.split(',').map((n) => n.trim()) ?? [];
+    if (x.ca || names.length === 0 || !names.every((n) => n === `DNS:${INTERCEPT_HOST}`) || !x.verify(x.publicKey) || !x.checkPrivateKey(createPrivateKey(key)) || !(ends > now())) {
       throw new Error('certificate unusable');
     }
     if (ends - now() <= WARN_DAYS * DAY_MS && !warned.has(x.fingerprint256)) {
@@ -130,8 +131,8 @@ export interface RouteDeps {
   enabled(): boolean;
   /** the port the listener is bound to */
   boundPort(): number;
-  /** the secret is the proxy key */
-  keyOk(secret: string): boolean;
+  /** the key hash in use when the secret is the proxy key, else null: a socket is tied to the hash it was accepted with */
+  authorize(secret: string): Buffer | null;
   /** an authorized CONNECT arrived */
   counted(): void;
   /** the certificate and key, or null before they are loaded */
@@ -140,7 +141,10 @@ export interface RouteDeps {
   maxTunnels: number;
   /** the relay target (tests: a local server) */
   upstream: { host: string; port: number; ca?: string };
+  /** a decrypted connection has this long to send complete request headers */
   headersTimeoutMs: number;
+  /** an idle keep-alive decrypted connection is closed after this long */
+  idleMs: number;
   /**
    * The GPT lane for a decrypted request. `taken: true`: it answered (or the caller left). `taken: false`: not for the lane;
    * `body` is the body when it was read (a POST /v1/messages* with the lane on), else null and the request streams on.
@@ -148,6 +152,18 @@ export interface RouteDeps {
   lane(req: IncomingMessage, res: ServerResponse): Promise<{ taken: true } | { taken: false; body: Buffer | null }>;
   /** the proxy waits for this work when it closes */
   track(p: Promise<unknown>): void;
+}
+
+const LOOPBACK = /^(127\.\d+\.\d+\.\d+|::1|::|0\.0\.0\.0)$/;
+/** a loopback or unspecified address, in any of the forms a socket reports (IPv4-mapped ones too) */
+const isLoopback = (addr: string | undefined): boolean => LOOPBACK.test((addr ?? '').toLowerCase().replace(/^::ffff:/, ''));
+
+/** Answer a refused CONNECT and close its socket: the answer is written, then the socket is destroyed once it has flushed (or after a second) */
+export function refuseSocket(socket: Socket, status: string, extra = ''): void {
+  const timer = setTimeout(() => socket.destroy(), 1000);
+  timer.unref();
+  socket.once('close', () => clearTimeout(timer));
+  socket.end(`HTTP/1.1 ${status}\r\n${extra}Content-Length: 0\r\n\r\n`, () => socket.destroy());
 }
 
 const HOP = new Set(['connection', 'keep-alive', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
@@ -177,6 +193,10 @@ export class DesktopRoute {
   /** every CONNECT socket that was accepted, and the sockets made for them */
   private readonly tunnels = new Set<Socket>();
   private readonly sockets = new Set<Socket>();
+  /** every socket made for an accepted CONNECT, with the key hash the CONNECT was authorized with */
+  private readonly owned = new Map<Socket, Buffer>();
+  /** the timers of a decrypted connection */
+  private readonly timers = new Map<Socket, { header?: NodeJS.Timeout; idle?: NodeJS.Timeout; busy: boolean }>();
   private readonly inner: Server;
   private readonly agent: HttpsAgent;
   private context: { cert: string; ctx: SecureContext } | null = null;
@@ -187,6 +207,7 @@ export class DesktopRoute {
     this.agent = new HttpsAgent({ keepAlive: true, ...(upstream.ca ? { ca: upstream.ca } : {}) });
     // one http server for every decrypted connection: it never listens, the route hands it the TLS sockets
     this.inner = createServer((req, res) => {
+      this.began(req.socket as Socket, res);
       deps.track(
         this.serve(req, res).catch(() => {
           if (!res.headersSent) sendJson(res, 502, UPSTREAM);
@@ -196,7 +217,10 @@ export class DesktopRoute {
     });
     this.inner.headersTimeout = deps.headersTimeoutMs;
     this.inner.requestTimeout = 0;
-    this.inner.on('upgrade', (req, socket, head) => this.upgrade(req, socket as Socket, head));
+    this.inner.on('upgrade', (req, socket, head) => {
+      this.clearTimers(socket as Socket);
+      this.upgrade(req, socket as Socket, head);
+    });
   }
 
   /** CONNECT sockets open now */
@@ -204,30 +228,81 @@ export class DesktopRoute {
     return this.tunnels.size;
   }
 
+  /** Close every socket that was accepted with another key hash than `hash` (all of them for null): a key change ends what the old key opened */
+  revoke(hash: Buffer | null): void {
+    for (const [s, h] of [...this.owned]) if (hash === null || !h.equals(hash)) s.destroy();
+  }
+
+  private own(s: Socket, hash: Buffer): void {
+    this.owned.set(s, hash);
+    s.once('close', () => this.owned.delete(s));
+  }
+
+  private clearTimers(s: Socket): void {
+    const t = this.timers.get(s);
+    if (!t) return;
+    clearTimeout(t.header);
+    clearTimeout(t.idle);
+    this.timers.delete(s);
+  }
+
+  /** The time limits of a decrypted connection: headers within `headersTimeoutMs` of the handshake or of the first byte of a request, 5 minutes idle between requests, none while a request or its answer is in progress */
+  private watch(tls: Socket): void {
+    const { headersTimeoutMs } = this.deps;
+    const t: { header?: NodeJS.Timeout; idle?: NodeJS.Timeout; busy: boolean } = { busy: false };
+    this.timers.set(tls, t);
+    const stop = () => tls.destroy();
+    t.header = setTimeout(stop, headersTimeoutMs);
+    tls.once('close', () => this.clearTimers(tls));
+    tls.on('data', () => {
+      // the first byte of a request that follows an idle wait starts the header clock
+      if (!t.busy && t.header === undefined) t.header = setTimeout(stop, headersTimeoutMs);
+    });
+  }
+
+  /** A request began on a decrypted connection: no clock runs until its answer is done */
+  private began(tls: Socket, res: ServerResponse): void {
+    const t = this.timers.get(tls);
+    if (!t) return;
+    clearTimeout(t.header);
+    clearTimeout(t.idle);
+    t.header = undefined;
+    t.idle = undefined;
+    t.busy = true;
+    res.once('close', () => {
+      if (tls.destroyed || this.timers.get(tls) !== t) return;
+      t.busy = false;
+      t.idle = setTimeout(() => tls.destroy(), this.deps.idleMs);
+    });
+  }
+
   /** End every tunnel and every decrypted connection */
   closeAll(): void {
-    for (const s of [...this.tunnels, ...this.sockets]) s.destroy();
+    for (const s of [...this.tunnels, ...this.sockets, ...this.owned.keys()]) s.destroy();
     this.tunnels.clear();
     this.sockets.clear();
+    this.owned.clear();
+    for (const s of [...this.timers.keys()]) this.clearTimers(s);
     this.inner.closeAllConnections();
     this.agent.destroy();
   }
 
   private refuse(socket: Socket, status: string, extra = ''): void {
-    socket.end(`HTTP/1.1 ${status}\r\n${extra}Content-Length: 0\r\n\r\n`);
+    refuseSocket(socket, status, extra);
   }
 
-  private authorized(req: IncomingMessage): boolean {
+  /** The key hash the CONNECT was authorized with, or null */
+  private authorized(req: IncomingMessage): Buffer | null {
     const auth = req.headers['proxy-authorization'];
-    if (typeof auth !== 'string') return false;
+    if (typeof auth !== 'string') return null;
     const basic = /^basic +(\S+)$/i.exec(auth.trim());
     if (basic) {
       const text = Buffer.from(basic[1], 'base64').toString('utf8');
       const i = text.indexOf(':');
-      return i >= 0 && this.deps.keyOk(text.slice(i + 1));
+      return i >= 0 ? this.deps.authorize(text.slice(i + 1)) : null;
     }
     const bearer = /^bearer +(\S+)$/i.exec(auth.trim());
-    return bearer !== null && this.deps.keyOk(bearer[1]);
+    return bearer ? this.deps.authorize(bearer[1]) : null;
   }
 
   /** The `connect` event of the listener */
@@ -235,7 +310,8 @@ export class DesktopRoute {
     socket.on('error', () => {});
     const d = this.deps;
     if (!d.enabled() || req.headers.origin !== undefined) return this.refuse(socket, '403 Forbidden');
-    if (!this.authorized(req)) return this.refuse(socket, '407 Proxy Authentication Required', 'Proxy-Authenticate: Basic realm="portboard"\r\n');
+    const hash = this.authorized(req);
+    if (!hash) return this.refuse(socket, '407 Proxy Authentication Required', 'Proxy-Authenticate: Basic realm="portboard"\r\n');
     d.counted();
     if (this.tunnels.size >= d.maxTunnels) return this.refuse(socket, '503 Service Unavailable');
     const target = parseTarget(req.url);
@@ -244,19 +320,22 @@ export class DesktopRoute {
     if (target.port === own && (target.host.toLowerCase() === '127.0.0.1' || target.host.toLowerCase() === 'localhost')) return this.refuse(socket, '403 Forbidden');
     this.tunnels.add(socket);
     socket.once('close', () => this.tunnels.delete(socket));
-    if (target.host.toLowerCase() === INTERCEPT_HOST && target.port === 443) return this.intercept(socket, head);
-    this.tunnel(socket, head, target);
+    this.own(socket, hash);
+    if (target.host.toLowerCase() === INTERCEPT_HOST && target.port === 443) return this.intercept(socket, head, hash);
+    this.tunnel(socket, head, target, hash);
   }
 
-  private tunnel(socket: Socket, head: Buffer, target: { host: string; port: number }): void {
+  private tunnel(socket: Socket, head: Buffer, target: { host: string; port: number }, hash: Buffer): void {
     const up = netConnect({ host: target.host, port: target.port });
     this.sockets.add(up);
+    this.own(up, hash);
+    let answered = false;
     up.on('close', () => {
       this.sockets.delete(up);
-      socket.destroy();
+      // before the answer, the refusal closes the client's socket itself
+      if (answered) socket.destroy();
     });
     socket.once('close', () => up.destroy());
-    let answered = false;
     const timer = setTimeout(() => up.destroy(new Error('timeout')), CONNECT_TIMEOUT_MS);
     up.on('error', () => {
       clearTimeout(timer);
@@ -266,6 +345,11 @@ export class DesktopRoute {
     });
     up.once('connect', () => {
       clearTimeout(timer);
+      // the address the socket reached, not the name that was asked for, tells whether the target is the proxy itself
+      if (up.remotePort === this.deps.boundPort() && isLoopback(up.remoteAddress)) {
+        up.destroy();
+        return this.refuse(socket, '403 Forbidden');
+      }
       answered = true;
       socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
       if (head.length) up.write(head);
@@ -274,7 +358,7 @@ export class DesktopRoute {
     });
   }
 
-  private intercept(socket: Socket, head: Buffer): void {
+  private intercept(socket: Socket, head: Buffer, hash: Buffer): void {
     const pair = this.deps.cert();
     if (!pair) return this.refuse(socket, '502 Bad Gateway');
     try {
@@ -286,6 +370,8 @@ export class DesktopRoute {
       tls.on('error', () => tls.destroy());
       this.sockets.add(tls);
       tls.once('close', () => this.sockets.delete(tls));
+      this.own(tls, hash);
+      this.watch(tls);
       this.inner.emit('connection', tls);
     } catch {
       socket.destroy();
@@ -342,6 +428,8 @@ export class DesktopRoute {
     const { upstream } = this.deps;
     const up = tlsConnect({ host: upstream.host, port: upstream.port, servername: INTERCEPT_HOST, ...(upstream.ca ? { ca: upstream.ca } : {}) });
     this.sockets.add(up);
+    const hash = this.owned.get(socket);
+    if (hash) this.own(up, hash);
     up.on('error', () => socket.destroy());
     up.on('close', () => {
       this.sockets.delete(up);

@@ -868,3 +868,96 @@ test('threads: a failed or cut turn stores nothing, and a body without thread st
   assert.equal(plain.status, 200);
   assert.equal((await call(turnTwo(messageIdOf(plain)))).status, 400, 'a request without thread is not kept');
 });
+
+// ---- threads: one entry per conversation, sweep, clear, early store ----
+
+test('ThreadStore: delete, sweep and clear', () => {
+  let t = 0;
+  const store = new ThreadStore({ ttlMs: 100, now: () => t });
+  const entry = { system: null, tools: null, messages: ['m'] };
+  store.put('a', entry);
+  t = 60;
+  store.put('b', entry);
+  assert.equal(store.size, 2);
+  store.delete('a');
+  assert.equal(store.size, 1);
+  assert.equal(store.get('a'), null);
+  t = 120;
+  store.put('c', entry);
+  t = 170;
+  store.sweep();
+  assert.equal(store.size, 1, 'b is past its time, c is not');
+  assert.ok(store.get('c'));
+  store.clear();
+  assert.equal(store.size, 0);
+  assert.equal(store.get('c'), null);
+});
+
+const heldThreads = (): number => (proxy as unknown as { threads: { size: number } }).threads.size;
+
+test('threads: a conversation is one entry however long; two sessions interleaved keep working; an id that moved on is 400', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  // every answer gets a Response id of its own, as the real service gives
+  let n = 0;
+  upstream = () => new Response(readFileSync(join(FIX, 'stream-tool-captured.sse'), 'utf8').replaceAll('resp_0d345680552ec14a016b0536b9087887d094f725f7e693b9d9', `resp_unique${n++}`), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  const first = await call(turnOne({ stream: false }));
+  let a = first.json.id as string;
+  const old = a;
+  for (let i = 0; i < 79; i++) {
+    const r = await call(turnTwo(a, { stream: false }));
+    assert.equal(r.status, 200, `turn ${i + 2}`);
+    a = r.json.id;
+  }
+  assert.equal(heldThreads(), 1, '80 turns, one entry');
+  assert.equal((await call(turnTwo(old, { stream: false }))).status, 400, 'an id that moved on');
+  // two sessions, interleaved
+  let b = (await call(turnOne({ stream: false }))).json.id as string;
+  assert.equal(heldThreads(), 2);
+  for (let i = 0; i < 50; i++) {
+    const ra = await call(turnTwo(a, { stream: false }));
+    const rb = await call(turnTwo(b, { stream: false }));
+    assert.equal(ra.status, 200);
+    assert.equal(rb.status, 200);
+    a = ra.json.id;
+    b = rb.json.id;
+  }
+  assert.equal(heldThreads(), 2);
+});
+
+test('threads: the thread is kept when the client has message_stop, not when the upstream body ends', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  const bytes = readFileSync(join(FIX, 'stream-tool-captured.sse'));
+  let release: () => void = () => {};
+  const open = new Promise<void>((resolve) => (release = resolve));
+  // the upstream sends the whole answer and keeps the body open until the test is done
+  upstream = () =>
+    new Response(
+      new ReadableStream({
+        async start(c) {
+          c.enqueue(new Uint8Array(bytes));
+          await open;
+          c.close();
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
+  const body = JSON.stringify(turnOne());
+  const stopped = await new Promise<string>((resolve, reject) => {
+    const req = httpRequest({ host: PROXY_HOST, port: portOf(), path: '/v1/messages', method: 'POST', agent: false, headers: { authorization: `Bearer ${key}` } });
+    let seen = '';
+    req.on('response', (res) => {
+      res.on('data', (d: Buffer) => {
+        seen += d.toString();
+        if (seen.includes('event: message_stop')) {
+          resolve((frames(seen)[0][1] as { message: { id: string } }).message.id);
+        }
+      });
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+  upstream = () => sseResponse('stream-tool-captured.sse');
+  const second = await call(turnTwo(stopped));
+  release();
+  assert.equal(second.status, 200, 'a continue sent right after message_stop');
+});
