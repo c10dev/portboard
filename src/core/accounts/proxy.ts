@@ -14,6 +14,8 @@
 //     byte of an answer reaches the caller (pool.ts decides which answers move on). The one exception is the GPT lane
 //     (docs/accounts.md#gpt-lane, gpt.ts): a /v1/messages request whose model the owner listed in `accounts.proxy.gpt` is
 //     converted to a Responses request and sent to the Codex address with a Codex account, and its answer is converted back.
+//   - The GPT lane's and the desktop route's settings come from the lanes file (lanes.ts, set in Settings) where it has them, else
+//     from portboard.json. The `accounts-proxy` job reads them every minute and passes them to `sync`; the lanes route does the same at once.
 //   - With `accounts.proxy.desktop.enabled` the listener also takes HTTP CONNECT (intercept.ts, docs/accounts.md#desktop-route): only
 //     the Anthropic API host is decrypted (a /v1/messages request for a GPT lane model goes to the lane, everything else is relayed
 //     to Anthropic unchanged with the session's own login), and every other host is a plain tunnel. Proxy key required.
@@ -34,6 +36,7 @@ import { PATHS } from '../paths.ts';
 import { SITE, SITE_DEFAULTS } from '../site.ts';
 import { clipText, ConvertError, fromResponse, mergeThread, ResponsesToMessages, routeModel, sessionIdOf, ThreadStore, toolNames, toResponsesRequest, type GptConfig, type StoredThread, type ToolNames } from './gpt.ts';
 import type { HomesOptions } from './homes.ts';
+import type { LaneSource } from './lanes.ts';
 import { DesktopRoute, INTERCEPT_HOST, loadOrMakeCert, refuseSocket, type RouteDeps } from './intercept.ts';
 import { Pool, verdictOf, type ProxyEvent, type ProxyProvider } from './pool.ts';
 import { appendUsage, MODEL_CLIP, num as count, type UsageLine } from './usage.ts';
@@ -88,8 +91,13 @@ export type ProxyState = 'off' | 'listening' | 'port in use' | 'error' | 'unknow
 export interface ProxyConfig {
   enabled: boolean;
   port: number;
-  /** the desktop route (accounts.proxy.desktop.enabled); absent is off */
+  /** the desktop route (accounts.proxy.desktop.enabled, or the lanes file's); absent is off */
   desktop?: boolean;
+  /** the GPT lane's settings (the lanes file's, else portboard.json's); absent is portboard.json's */
+  gpt?: GptConfig;
+  /** which file each lane setting came from, and whether the lanes file could not be used (lanes.ts); absent is portboard.json, readable */
+  source?: LaneSource;
+  unreadable?: boolean;
 }
 
 export interface ProxyReport {
@@ -105,6 +113,10 @@ export interface ProxyReport {
   events: ProxyEvent[];
   counts: { requests: number; switches: number };
   unproxied: { path: string; count: number }[];
+  /** the GPT lane and the desktop route in effect (docs/accounts.md#settings) and where each setting came from */
+  lanes: { gpt: { enabled: boolean; models: Record<string, string> }; desktop: { enabled: boolean }; source: LaneSource; unreadable: boolean };
+  /** what the two lanes did since start (memory only; no host name, request text, key or token) */
+  activity: { gpt: { requests: number; lastAt: string | null }; desktop: { connects: number; open: number; lastAt: string | null } };
 }
 
 export interface ProxyOptions extends HomesOptions {
@@ -474,6 +486,8 @@ export function upstreamRequest(url: string | URL | Request, init?: RequestInit)
   });
 }
 
+const stamp = (ms: number | null): string | null => (ms === null ? null : new Date(ms).toISOString());
+
 export class AccountsProxy {
   readonly pool: Pool;
   private server: Server | null = null;
@@ -486,6 +500,11 @@ export class AccountsProxy {
   private bound = 0;
   private keyHash: Buffer | null = null;
   private requests = 0;
+  /** the GPT lane's converted requests, the desktop route's authorized CONNECTs, and when each last happened (ms) */
+  private gptRequests = 0;
+  private gptLast: number | null = null;
+  private connects = 0;
+  private connectLast: number | null = null;
   private readonly unproxied = new Map<string, number>();
   private chain: Promise<unknown> = Promise.resolve();
   /** the requests being handled and the usage writes started, which `close` waits for (2 seconds at most) */
@@ -525,7 +544,23 @@ export class AccountsProxy {
       events: this.pool.recent(SHOWN_EVENTS),
       counts: { requests: this.requests, switches: this.pool.switches },
       unproxied: [...this.unproxied].map(([path, count]) => ({ path, count })).sort((a, b) => b.count - a.count),
+      lanes: {
+        gpt: this.gptSetting(cfg),
+        desktop: { enabled: cfg.desktop === true },
+        source: cfg.source ?? { gpt: 'config', desktop: 'config' },
+        unreadable: cfg.unreadable === true,
+      },
+      activity: {
+        gpt: { requests: this.gptRequests, lastAt: stamp(this.gptLast) },
+        desktop: { connects: this.connects, open: this.route?.tunnelCount() ?? 0, lastAt: stamp(this.connectLast) },
+      },
     };
+  }
+
+  /** The GPT lane's own settings (not gated by the proxy flags): the test hook, else the lanes in effect, else portboard.json */
+  private gptSetting(cfg: ProxyConfig): GptConfig {
+    const g = this.o.gpt?.() ?? cfg.gpt ?? SITE.accounts.proxy.gpt;
+    return { enabled: g.enabled, models: { ...g.models } };
   }
 
   private enqueue<T>(run: () => Promise<T>): Promise<T> {
@@ -700,7 +735,11 @@ export class AccountsProxy {
         enabled: () => this.server === server && this.cfg.desktop === true && this.certs !== null,
         boundPort: () => this.bound,
         authorize: (secret) => (this.keyHash !== null && timingSafeEqual(digest(secret), this.keyHash) ? this.keyHash : null),
-        counted: () => void this.requests++,
+        counted: () => {
+          this.requests++;
+          this.connects++;
+          this.connectLast = this.pool.now();
+        },
         cert: () => this.certs,
         maxTunnels: this.o.maxTunnels ?? MAX_TUNNELS,
         upstream: this.o.interceptUpstream ?? { host: INTERCEPT_HOST, port: 443 },
@@ -756,6 +795,11 @@ export class AccountsProxy {
     this.plain.add(res);
     res.once('close', () => void this.plain.delete(res));
     return true;
+  }
+
+  /** The absolute path of the desktop route's certificate (it may not exist yet) */
+  certFile(): string {
+    return this.o.certPath ?? PATHS.accountsProxyCert;
   }
 
   /** The absolute path of the key file */
@@ -858,16 +902,21 @@ export class AccountsProxy {
     return { taken: true };
   }
 
-  /** The GPT lane's settings: the test hook, or portboard.json (the lane is open only while the proxy itself is) */
+  /** The GPT lane's settings: the test hook, or the lanes in effect (the lanes file, else portboard.json); the lane is open only while the proxy itself is */
   private gptConfig(): GptConfig {
     if (this.o.gpt) return this.o.gpt();
     const a = SITE.accounts;
-    return { enabled: a.enabled && a.proxy.enabled && a.proxy.gpt.enabled, models: a.proxy.gpt.models };
+    const g = this.cfg.gpt ?? a.proxy.gpt;
+    // once synced, the proxy's own settings say whether it is on; before that, portboard.json does
+    const on = this.synced ? this.cfg.enabled : a.enabled && a.proxy.enabled;
+    return { enabled: on && g.enabled, models: g.models };
   }
 
   /** The GPT lane: convert, ask a Codex account (the same switching as `forward`), convert the answer back */
   private async forwardGpt(from: IncomingMessage['headers'], parsed: unknown, upstreamModel: string, countOnly: boolean, raw: Buffer, res: ServerResponse, abort: AbortController, seen: Seen): Promise<void> {
     if (countOnly) return sendJson(res, 200, { input_tokens: Math.ceil(raw.length / 4) });
+    this.gptRequests++;
+    this.gptLast = this.pool.now();
     // a request with `thread` (through the desktop route) may carry only the new turn: the stored history is put back in front of it
     let effective = parsed;
     const body = objectOf(parsed);

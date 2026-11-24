@@ -47,6 +47,8 @@ export interface Paths {
   accountHomes: string;
   /** accounts-proxy.key: the key a client sends to the accounts proxy (0600; src/core/accounts/proxy.ts, docs/accounts.md#proxy) */
   accountsProxyKey: string;
+  /** accounts-lanes.json: the GPT lane and the desktop route as the owner set them in Settings (0600; src/core/accounts/lanes.ts, docs/accounts.md#settings) */
+  accountsLanes: string;
   /** accounts-proxy-cert.pem: the certificate of the desktop route, valid only for api.anthropic.com (0600; src/core/accounts/intercept.ts, docs/accounts.md#desktop-route) */
   accountsProxyCert: string;
   /** accounts-proxy-cert.key: the private key of that certificate (0600) */
@@ -121,6 +123,7 @@ export function resolvePaths(env: Env = process.env, home = homedir()): Paths {
     accounts: env.PORTBOARD_ACCOUNTS ?? join(configDir, 'accounts.json'),
     accountHomes: env.PORTBOARD_ACCOUNT_HOMES ?? join(configDir, 'account-homes'),
     accountsProxyKey: env.PORTBOARD_ACCOUNTS_PROXY_KEY ?? join(configDir, 'accounts-proxy.key'),
+    accountsLanes: env.PORTBOARD_ACCOUNTS_LANES ?? join(configDir, 'accounts-lanes.json'),
     accountsProxyCert: env.PORTBOARD_ACCOUNTS_PROXY_CERT ?? join(configDir, 'accounts-proxy-cert.pem'),
     accountsProxyCertKey: env.PORTBOARD_ACCOUNTS_PROXY_CERT_KEY ?? join(configDir, 'accounts-proxy-cert.key'),
     accountsUsage: env.PORTBOARD_ACCOUNTS_USAGE ?? join(configDir, 'accounts-usage.jsonl'),

@@ -344,7 +344,7 @@ test('list_accounts is not on the remote server', () => {
   const def = REGISTRY.tools.find((t) => t.def.name === 'list_accounts')?.def;
   assert.deepEqual(def?.annotations, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true });
   assert.equal(accountsFeature.order, 2575);
-  // two reads, the four login writes, the two writes of an added account and the proxy key (each `write: true`, so the router checks the owner and the header first)
+  // two reads, the four login writes, the two writes of an added account, the proxy key and the lanes (each `write: true`, so the router checks the owner and the header first)
   assert.deepEqual((accountsFeature.routes ?? []).map((r) => `${r.method} ${r.path}`), [
     'GET /api/accounts',
     'GET /api/accounts/usage',
@@ -355,6 +355,7 @@ test('list_accounts is not on the remote server', () => {
     'POST /api/accounts/use',
     'POST /api/accounts/remove',
     'POST /api/accounts/proxy/key',
+    'POST /api/accounts/proxy/lanes',
   ]);
   assert.ok((accountsFeature.routes ?? []).filter((r) => r.method !== 'GET').every((r) => r.write === true));
 });

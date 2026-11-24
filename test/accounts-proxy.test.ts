@@ -794,7 +794,7 @@ test('secrets: the report, list_accounts, the events, the console and the audit 
   outputs.push(JSON.stringify(await accountsReport({ ...homesOpts(), proxy })));
   outputs.push((await callTool('list_accounts', {}, {} as Core)).content[0].text);
   const rep = report();
-  assert.deepEqual(Object.keys(rep).sort(), ['counts', 'current', 'enabled', 'events', 'port', 'resting', 'state', 'unproxied', 'url']);
+  assert.deepEqual(Object.keys(rep).sort(), ['activity', 'counts', 'current', 'enabled', 'events', 'lanes', 'port', 'resting', 'state', 'unproxied', 'url']);
   assert.ok(JSON.stringify(rep).includes(a.id), 'account ids are the only account text');
   // the key file
   assert.match(key, /^pbp-[0-9a-f]{32}$/);
@@ -857,8 +857,9 @@ test('key route: not the owner is 403, off is 404, the owner gets the key, rotat
   // the owner
   const r = await keyRoute({});
   assert.equal(r.status, 200);
-  assert.deepEqual(Object.keys(r.body as object), ['key', 'keyFile']);
+  assert.deepEqual(Object.keys(r.body as object), ['key', 'keyFile', 'certFile']);
   assert.equal((r.body as { keyFile: string }).keyFile, KEY_FILE);
+  assert.equal((r.body as { certFile: string }).certFile, PATHS.accountsProxyCert);
   assert.equal((r.body as { key: string }).key, key);
   assert.equal((await keyRoute(undefined)).status, 200, 'no body at all');
   assert.equal(((await keyRoute({ rotate: 'true' })).body as { key: string }).key, key, 'only true rotates');

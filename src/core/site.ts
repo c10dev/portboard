@@ -175,11 +175,11 @@ export function machinesConfig(raw: Record<string, unknown> | undefined): typeof
   };
 }
 
-const GPT_NAME = /^[\x21-\x7e]{1,128}$/;
-const GPT_MAX_MODELS = 32;
+export const GPT_NAME = /^[\x21-\x7e]{1,128}$/;
+export const GPT_MAX_MODELS = 32;
 
 /** portboard.json `accounts.proxy.gpt`: on only for `enabled: true`; `models` keeps the first 32 entries (in key order) that have a printable name and a valid model id */
-function gptConfig(raw: unknown): typeof SITE_DEFAULTS.accounts.proxy.gpt {
+export function parseGptConfig(raw: unknown): typeof SITE_DEFAULTS.accounts.proxy.gpt {
   const g = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   const models: Record<string, string> = {};
   if (g.models && typeof g.models === 'object' && !Array.isArray(g.models)) {
@@ -195,13 +195,18 @@ function gptConfig(raw: unknown): typeof SITE_DEFAULTS.accounts.proxy.gpt {
   return { enabled: g.enabled === true, models };
 }
 
-/** portboard.json `accounts`: on only for `enabled: true`; `proxy.enabled` likewise, `proxy.port` a whole number from 1024 to 65535 (else 8795); `proxy.gpt` as gptConfig; `proxy.desktop.enabled` likewise only `true` */
+/** `accounts.proxy.desktop` (portboard.json or the lanes file): on only for `enabled: true` */
+export function parseDesktopConfig(raw: unknown): { enabled: boolean } {
+  const d = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  return { enabled: d.enabled === true };
+}
+
+/** portboard.json `accounts`: on only for `enabled: true`; `proxy.enabled` likewise, `proxy.port` a whole number from 1024 to 65535 (else 8795); `proxy.gpt` as parseGptConfig; `proxy.desktop.enabled` likewise only `true` */
 export function accountsConfig(raw: Record<string, unknown> | undefined): typeof SITE_DEFAULTS.accounts {
   const D = SITE_DEFAULTS.accounts.proxy;
   const p = raw?.proxy && typeof raw.proxy === 'object' && !Array.isArray(raw.proxy) ? (raw.proxy as Record<string, unknown>) : {};
   const port = typeof p.port === 'number' && Number.isInteger(p.port) && p.port >= 1024 && p.port <= 65535 ? p.port : D.port;
-  const d = p.desktop && typeof p.desktop === 'object' && !Array.isArray(p.desktop) ? (p.desktop as Record<string, unknown>) : {};
-  return { enabled: raw?.enabled === true, proxy: { enabled: p.enabled === true, port, gpt: gptConfig(p.gpt), desktop: { enabled: d.enabled === true } } };
+  return { enabled: raw?.enabled === true, proxy: { enabled: p.enabled === true, port, gpt: parseGptConfig(p.gpt), desktop: parseDesktopConfig(p.desktop) } };
 }
 
 /** portboard.json `recommend`: weights between -1 and 1 by name (recommend.ts says which names it knows) */
