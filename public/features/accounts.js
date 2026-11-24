@@ -13,9 +13,11 @@
 // Below the list, the account pool proxy (report.proxy): its state and port, "copy Claude command" (asks POST
 // /api/accounts/proxy/key and puts ANTHROPIC_BASE_URL=… ANTHROPIC_AUTH_TOKEN=<key> claude on the clipboard: the key is
 // never drawn on the page), "copy Codex command" (the same, for `codex` with a `portboard` model provider), "change key"
-// (asks first), the accounts that rest, and the last switches.
+// (asks first), the GPT lane and desktop route switches, the model mapping and "copy desktop settings" (POST
+// /api/accounts/proxy/lanes and /proxy/key: the key is never drawn), the accounts that rest, and the last switches.
 
 import { getInit, post, postOrThrow } from '../lib/api.js';
+import { toggle } from '../lib/controls.js';
 import { modal } from '../lib/dialog.js';
 import { $, button, el, extLink, h } from '../lib/dom.js';
 import { locale, t } from '../lib/i18n.js';
@@ -70,6 +72,10 @@ const ERRORS = [
   [/^local login cannot be used here$/, () => t('accounts.error.localUse')],
   [/^accounts proxy disabled$/, () => t('accounts.proxy.error.disabled')],
   [/^proxy key unusable$/, () => t('accounts.proxy.error.key')],
+  [/^invalid lanes$/, () => t('accounts.lanes.invalid')],
+  [/^lanes not written$/, () => t('accounts.lanes.error.notWritten')],
+  [/^desktop route certificate unusable$/, () => t('accounts.lanes.error.cert')],
+  [/^invalid JSON body$/, () => t('accounts.lanes.error.body')],
 ];
 
 function errorText(s) {
@@ -211,6 +217,157 @@ const KIND = {
   'no usable account': t('accounts.proxy.kind.noAccount'),
 };
 
+const LANE_NAME = /^[\x21-\x7e]{1,128}$/;
+const LANE_MODEL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const LANE_MAX = 32;
+/** The mapping editor's rows and whether they hold changes the server has not seen (kept across redraws of the block) */
+const draft = { dirty: false, rows: [] };
+
+/**
+ * The GPT lane and desktop route controls of the proxy block (p.lanes, p.activity; POST api/accounts/proxy/lanes): two switches, the
+ * model mapping, "copy desktop settings" (the key is asked inside the click and never drawn), the activity line and, when the lanes
+ * file could not be read, a warning. `manual` is the proxy block's read-only field for when the clipboard cannot be used.
+ */
+function lanesNodes(p, listening, { showManual, hideManual, group, markCopied, resetCopied }) {
+  const lanes = p.lanes;
+  if (!lanes) return null;
+  const failed = h('span', { class: 'set-state warn acc-line', role: 'alert' });
+  const say = (text) => { failed.textContent = text; };
+  const invalid = h('span', { class: 'set-state warn', role: 'alert' });
+
+  /** One switch: it posts at once, goes back on an error, and the block is drawn again from the server on success */
+  const lane = (key, label, text, link) => {
+    const sw = toggle({
+      checked: lanes[key].enabled,
+      label,
+      write: true,
+      onChange: async (on) => {
+        say('');
+        sw.input.disabled = true;
+        try {
+          await postOrThrow('api/accounts/proxy/lanes', { [key]: { enabled: on } });
+        } catch (err) {
+          sw.input.checked = !on;
+          sw.input.disabled = false;
+          return say(errorText(reason(err)));
+        }
+        refresh();
+      },
+    });
+    return [h('div', { class: 'set-row acc-line' }, h('span', null, label), sw), h('p', { class: 'set-note' }, text, link ? ' ' : null, link)];
+  };
+
+  // the mapping: one row per entry; the save button posts the non-empty rows
+  // the rows live in `draft` (module state), so a redraw of the block keeps what was typed and not yet saved
+  if (!draft.dirty) draft.rows = Object.entries(lanes.gpt.models).map(([from, to]) => ({ from, to }));
+  const unsaved = h('span', { class: 'set-note', hidden: !draft.dirty }, t('accounts.lanes.unsaved'));
+  const touch = () => { draft.dirty = true; unsaved.hidden = false; };
+  const rows = h('div');
+  const mapRow = (entry) => {
+    const input = (label, placeholder, key) => {
+      const i = h('input', { type: 'text', class: 'ctl-text', 'aria-label': label, placeholder, maxlength: 128, autocomplete: 'off', spellcheck: 'false' });
+      i.value = entry[key];
+      i.addEventListener('input', () => { entry[key] = i.value; touch(); });
+      return i;
+    };
+    const r = h('div', { class: 'set-row acc-line', dataset: { lane: 'model' } }, input(t('accounts.lanes.claudeName'), 'claude-haiku-5-5', 'from'), input(t('accounts.lanes.gptModel'), 'gpt-6-astra', 'to'));
+    r.append(button(t('accounts.lanes.remove'), () => {
+      invalid.textContent = '';
+      draft.rows.splice(draft.rows.indexOf(entry), 1);
+      touch();
+      r.remove();
+    }, { write: true }));
+    return r;
+  };
+  for (const entry of draft.rows) rows.append(mapRow(entry));
+  const save = button(t('accounts.lanes.save'), async () => {
+    say('');
+    invalid.textContent = '';
+    const models = {};
+    let n = 0;
+    for (const r of rows.children) {
+      const [name, model] = [...r.querySelectorAll('input')].map((i) => i.value.trim());
+      if (!name && !model) continue;
+      if (!LANE_NAME.test(name) || name === '__proto__' || !LANE_MODEL.test(model) || ++n > LANE_MAX) return void (invalid.textContent = t('accounts.lanes.invalid'));
+      models[name] = model;
+    }
+    save.disabled = true;
+    try {
+      await postOrThrow('api/accounts/proxy/lanes', { gpt: { models } });
+    } catch (err) {
+      save.disabled = false;
+      return say(errorText(reason(err)));
+    }
+    // the server's models take the place of the draft
+    draft.dirty = false;
+    unsaved.hidden = true;
+    refresh();
+  }, { write: true });
+  const add = button(t('accounts.lanes.add'), () => {
+    const entry = { from: '', to: '' };
+    draft.rows.push(entry);
+    touch();
+    rows.append(mapRow(entry));
+    rows.lastElementChild?.querySelector('input')?.focus();
+  }, { write: true });
+
+  // "copy desktop settings": the same ClipboardItem promise as the copy buttons; the key is in the clipboard text only
+  const settingsOf = async () => {
+    const { key, keyFile, certFile } = await postOrThrow('api/accounts/proxy/key', {});
+    const block = (k) => ({ env: { HTTPS_PROXY: `http://pb:${k}@127.0.0.1:${p.port}`, NODE_EXTRA_CA_CERTS: certFile } });
+    // a text field holds one line: the by-hand block is the same JSON with KEY in the key's place
+    return { command: JSON.stringify(block(key), null, 2), byHand: JSON.stringify(block('KEY')), keyFile };
+  };
+  const copyDesktopLabel = t('accounts.lanes.copyDesktop');
+  const fallback = async (pending) => {
+    let got;
+    try {
+      got = await pending;
+    } catch (err) {
+      return say(errorText(reason(err)));
+    }
+    try {
+      await navigator.clipboard.writeText(got.command);
+      markCopied(copyDesktop);
+    } catch {
+      showManual(got.byHand, t('accounts.lanes.manual', { file: got.keyFile }), copyDesktopLabel);
+    }
+  };
+  const copyDesktop = button(copyDesktopLabel, () => {
+    say('');
+    hideManual();
+    resetCopied();
+    const pending = settingsOf();
+    pending.catch(() => {});
+    if (window.ClipboardItem && navigator.clipboard?.write) {
+      const blob = pending.then((c) => new Blob([c.command], { type: 'text/plain' }));
+      navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]).then(
+        () => markCopied(copyDesktop),
+        () => fallback(pending),
+      );
+      return;
+    }
+    fallback(pending);
+  }, { write: true, disabled: !listening || !lanes.desktop.enabled });
+  group.push([copyDesktop, copyDesktopLabel]);
+
+  const a = p.activity;
+  const last = a ? [a.gpt.lastAt, a.desktop.lastAt].filter(Boolean).sort().at(-1) : null;
+  return [
+    ...lane('gpt', t('accounts.lanes.gpt'), t('accounts.lanes.gptNote')),
+    ...lane('desktop', t('accounts.lanes.desktop'), t('accounts.lanes.desktopNote'), extLink(t('accounts.docs'), `${DOCS}#desktop-route`)),
+    h('strong', null, t('accounts.lanes.models')),
+    rows,
+    h('div', { class: 'set-row acc-line' }, add, save, invalid, unsaved),
+    h('p', { class: 'set-note' }, t('accounts.lanes.modelsNote')),
+    h('div', { class: 'set-row acc-line' }, copyDesktop),
+    h('p', { class: 'set-note' }, t('accounts.lanes.copyDesktopNote')),
+    failed,
+    a ? h('p', { class: 'set-note' }, t('accounts.lanes.status', { requests: a.gpt.requests, connects: a.desktop.connects, open: a.desktop.open, when: when(last) ?? '–' })) : null,
+    lanes.unreadable ? h('p', { class: 'set-state warn', role: 'alert' }, t('accounts.lanes.unreadable')) : null,
+  ];
+}
+
 /** The proxy block under the list: state, the two buttons, and the last switches. `say` shows an error next to the buttons. */
 function proxyBlock(report) {
   const p = report.proxy;
@@ -231,9 +388,10 @@ function proxyBlock(report) {
   const say = (text) => { note.textContent = text; };
   // when the clipboard is not usable the page draws a command that reads the key from the key file: the key itself is never drawn
   const manual = h('div', { class: 'set-row acc-line', hidden: true });
-  const showManual = (command) => {
-    const input = h('input', { type: 'text', class: 'ctl-text', readonly: true, value: command, 'aria-label': t('accounts.proxy.copy'), spellcheck: 'false' });
-    manual.replaceChildren(h('span', { class: 'set-note' }, t('accounts.proxy.manual')), input);
+  const showManual = (command, text = t('accounts.proxy.manual'), label = t('accounts.proxy.copy')) => {
+    const input = h('input', { type: 'text', class: 'ctl-text', readonly: true, value: command, 'aria-label': label, spellcheck: 'false' });
+    input.value = command;
+    manual.replaceChildren(h('span', { class: 'set-note' }, text), input);
     manual.hidden = false;
     input.focus();
     input.select();
@@ -259,10 +417,11 @@ function proxyBlock(report) {
       byHand: `ANTHROPIC_BASE_URL=${p.url} ANTHROPIC_AUTH_TOKEN="$(cat ${shellQuote(keyFile)})" claude`,
     };
   };
-  /** Only the button whose command is on the clipboard says "copied": the other one shows its normal label */
+  /** The copy buttons of this block (button, normal label); only the one whose text is on the clipboard says "copied" */
+  const group = [];
+  const resetCopied = () => { for (const [b, label] of group) b.textContent = label; };
   const markCopied = (btn) => {
-    copy.textContent = t('accounts.proxy.copy');
-    copyCodex.textContent = t('accounts.proxy.copyCodex');
+    resetCopied();
     btn.textContent = t('accounts.add.copied');
   };
   /** The key request failed, or both clipboard ways did: say it, or show the by-hand command */
@@ -298,6 +457,7 @@ function proxyBlock(report) {
       }
       fallback(pending, copy);
     }, { write: true, disabled: !listening });
+    group.push([copy, label]);
     return copy;
   };
   const copy = copyButton(t('accounts.proxy.copy'), false);
@@ -307,8 +467,7 @@ function proxyBlock(report) {
     if (!(await confirmRemove(t('accounts.proxy.rotate.confirm'), t('accounts.proxy.rotate.yes')))) return;
     try {
       await postOrThrow('api/accounts/proxy/key', { rotate: true });
-      copy.textContent = t('accounts.proxy.copy');
-      copyCodex.textContent = t('accounts.proxy.copyCodex');
+      resetCopied();
       say(t('accounts.proxy.rotated'));
     } catch (err) {
       say(errorText(reason(err)));
@@ -327,6 +486,7 @@ function proxyBlock(report) {
     h('div', { class: 'set-row acc-line' }, copy, copyCodex, rotate),
     note,
     manual,
+    lanesNodes(p, listening, { showManual, hideManual, group, markCopied, resetCopied }),
     h('p', { class: 'set-note' }, t('accounts.proxy.events')),
     lines.length ? lines : h('p', { class: 'set-note' }, t('accounts.proxy.noEvents')),
   );

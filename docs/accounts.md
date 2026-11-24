@@ -2,7 +2,7 @@
 
 A view of the Claude Code and Codex logins on the machine Portboard runs on, and of the accounts you add in Portboard: plan, email (Codex), when the access token expires, and the remaining limits (the 5-hour window and the weekly window). It is off by default, it is for the owner only, and no token leaves the Portboard process.
 
-It never changes a CLI login: it does not touch `~/.claude` or `~/.codex`, never refreshes the token of a CLI login, and never signs a CLI in or out. It writes only Portboard's own `accounts.json`, the folders under `account-homes/` and, when the [proxy](#proxy) is on, `accounts-proxy.key` and `accounts-usage.jsonl` (the [usage log](#usage-log)). It writes the first three only when the owner adds, uses, removes or (for an added account without a folder) refreshes an account, or turns the proxy on, and the usage log each time the proxy sends a request on ([Add an account](#add-an-account), [Use an account](#use-an-account), [Remove an account](#remove-an-account), [Refresh](#refresh), [Proxy](#proxy)).
+It never changes a CLI login: it does not touch `~/.claude` or `~/.codex`, never refreshes the token of a CLI login, and never signs a CLI in or out. It writes only Portboard's own `accounts.json`, the folders under `account-homes/` and, when the [proxy](#proxy) is on, `accounts-proxy.key`, `accounts-lanes.json` (the [Settings](#settings) of the two lanes) and `accounts-usage.jsonl` (the [usage log](#usage-log)). It writes the first three only when the owner adds, uses, removes or (for an added account without a folder) refreshes an account, or turns the proxy on, the lanes file only when the owner changes a switch or the model mapping in Settings, and the usage log each time the proxy sends a request on ([Add an account](#add-an-account), [Use an account](#use-an-account), [Remove an account](#remove-an-account), [Refresh](#refresh), [Proxy](#proxy)).
 
 ## Turn it on or off
 
@@ -159,9 +159,27 @@ Checked once with the real services on 2026-11-23: a Claude Code session started
 
 Checked once for Codex with the real services on 2026-11-23: a Codex session started with **Copy Codex command** got its answer through the proxy. It used one added ChatGPT/Codex account, which was marked active, so **Use this account** had made its folder. The proxy counted the request and set `current.codex` to that account. It sets `current` only when the answer status is below 400, and Codex showed the answer. So chatgpt.com accepted the request of the user provider. By the code above, that request had the `version` header from the command, no `OpenAI-Beta`, the account's `chatgpt-account-id`, and the client's body. `proxy.unproxied` stayed empty for that request. Before any Codex account was added, the proxy answered `503 no usable account`, and Codex retried it (`Reconnecting... 1/5`). The session was interactive. Not checked yet: that `codex exec` works through the command, and that a real limit answers `429` with `x-codex-*-used-percent: 100` and that the proxy then switches. That needs two added Codex accounts and a real used-up limit. Other paths, for example `/codex/memories/trace_summarize`, may still appear in longer sessions, and `proxy.unproxied` counts them.
 
+### Settings
+
+Settings › Accounts › Proxy has the controls of the two lanes, so you do not edit `portboard.json` or restart Portboard for them. They show only while the proxy is on and its state is known (the proxy itself, `accounts.enabled`, `accounts.proxy.enabled` and `accounts.proxy.port`, stays in `portboard.json` and needs a restart).
+
+- **GPT lane** and **Desktop route** are switches. A change is written and applied at once. If it fails, the switch goes back and the page shows why.
+- **Model mapping** lists the Claude names the GPT lane takes and the GPT model each one runs on, one row each (**Add**, **Remove**, **Save**). Save sends the non-empty rows and replaces the whole map. The page checks both patterns before it sends (a printable name of 1 to 128 characters, a model id as in [GPT lane](#gpt-lane)), and at most 32 rows. Claude Code takes a mapped name for a Claude model. The desktop model picker has no GPT entry, so map one Claude name there and pick it.
+- **Copy desktop settings** puts the `env` block of the [desktop route](#desktop-route) on the clipboard, with your key and the path of the certificate (the same promise-of-text way as the other copy buttons). It is available while the proxy listens and the route is on. When the clipboard cannot be used, the page shows the same block with `KEY` in the key's place and names the key file. The key is never drawn. Put the block in `.claude/settings.local.json` in the working folder and reopen the session. The file holds the key: keep it readable by you only and do not commit it. Portboard writes no Claude settings file.
+- **Unsaved rows.** The mapping rows you typed stay when the block is drawn again (after a switch or a refresh) until you press **Save**; the page says `Unsaved changes.` next to the buttons.
+- **Activity** is one line: the requests the GPT lane converted, the authorized `CONNECT`s of the desktop route and how many connections are are open now, and the time of the last one. It is memory only and starts at zero when Portboard starts.
+
+The settings are in `accounts-lanes.json` in the config folder (mode `0600`; `PORTBOARD_ACCOUNTS_LANES` moves it), written with the same private write as the other files:
+
+```json
+{"gpt":{"enabled":true,"models":{"claude-haiku-5-5":"gpt-6-astra"}},"desktop":{"enabled":false}}
+```
+
+Each top key is optional. A key in the file wins over `accounts.proxy.gpt` or `accounts.proxy.desktop` in `portboard.json`; a key the file lacks falls back to `portboard.json`. The values follow the same rules as in `portboard.json`. A file that group or others can read or write, that is not a regular file, or that is not JSON is not used: both keys fall back to `portboard.json`, and Settings shows a warning. The `accounts-proxy` job reads the file every minute, so an edit applies within a minute. The report's `proxy.lanes` says which file each value came from.
+
 ### GPT lane
 
-The GPT lane lets Claude Code run on a GPT model. The proxy converts a Claude Code request (Anthropic Messages) to a Responses request, sends it to chatgpt.com with one added ChatGPT/Codex account, and converts the answer back. It is **off by default** and is part of the proxy: it needs `accounts.enabled` and `accounts.proxy.enabled` too.
+The GPT lane lets Claude Code run on a GPT model. The proxy converts a Claude Code request (Anthropic Messages) to a Responses request, sends it to chatgpt.com with one added ChatGPT/Codex account, and converts the answer back. It is **off by default** and is part of the proxy: it needs `accounts.enabled` and `accounts.proxy.enabled` too. The switch and the model list are in Settings (see [Settings](#settings)); the example below is the `portboard.json` form, which Settings overrides.
 
 ```json
 { "accounts": { "enabled": true, "proxy": { "enabled": true, "port": 8795,
@@ -199,7 +217,7 @@ Before the lane was written, a few hand-made requests went through the Codex lan
 
 ### Desktop route
 
-The desktop route lets a Claude Code session that you cannot start with `ANTHROPIC_BASE_URL` use the proxy. The desktop app's Code tab forces its own `ANTHROPIC_BASE_URL`, so the base-URL way of the [GPT lane](#gpt-lane) does not reach it. The route uses `HTTPS_PROXY` instead. With the route on, the proxy listener also works as an HTTP `CONNECT` proxy. Portboard decrypts `api.anthropic.com` only. A `/v1/messages` request for a model the GPT lane takes goes to the lane, and every other request goes to the real `api.anthropic.com` unchanged, with the session's own login. Every other host is a plain tunnel. The route is **off by default** and is part of the proxy: it needs `accounts.enabled` and `accounts.proxy.enabled` too.
+The desktop route lets a Claude Code session that you cannot start with `ANTHROPIC_BASE_URL` use the proxy. The desktop app's Code tab forces its own `ANTHROPIC_BASE_URL`, so the base-URL way of the [GPT lane](#gpt-lane) does not reach it. The route uses `HTTPS_PROXY` instead. With the route on, the proxy listener also works as an HTTP `CONNECT` proxy. Portboard decrypts `api.anthropic.com` only. A `/v1/messages` request for a model the GPT lane takes goes to the lane, and every other request goes to the real `api.anthropic.com` unchanged, with the session's own login. Every other host is a plain tunnel. The route is **off by default** and is part of the proxy: it needs `accounts.enabled` and `accounts.proxy.enabled` too. The switch and **Copy desktop settings** are in Settings (see [Settings](#settings)); `accounts.proxy.desktop.enabled` in `portboard.json` is the value Settings overrides.
 
 Verified on 2026-11-24 with Claude Code 2.1.330:
 
@@ -293,10 +311,10 @@ An error is one of these fixed sentences. None holds a response body, a header, 
 
 ## Who can see it, and what leaves the process
 
-- **Owner only.** `GET /api/accounts` uses the same owner check as the audit log: anyone else gets `403 {error: "owner only", reason}` before any file is read. The seven write routes (the four sign-in routes, `use`, `remove` and the proxy key route) are `write: true`: the router refuses a caller who is not the owner, and a request without `X-Portboard: 1`, before the route's code runs.
+- **Owner only.** `GET /api/accounts` uses the same owner check as the audit log: anyone else gets `403 {error: "owner only", reason}` before any file is read. The eight write routes (the four sign-in routes, `use`, `remove`, the proxy key route and the lanes route) are `write: true`: the router refuses a caller who is not the owner, and a request without `X-Portboard: 1`, before the route's code runs.
 - **No remote MCP.** `list_accounts` is a local stdio tool. It is not in the remote server's tool list or in `RemoteCore`. No MCP tool adds, uses or removes an account.
 - **Allowlisted answer.** The answer holds `id`, `provider`, `source`, `alias`, `email`, `plan`, `tier`, `status`, `expiresAt`, `needsReauth`, `active`, `command`, `quota` and `error`, each copied by name. It has no token, no account id and no id token. The sign-in routes answer with the same view, never with the stored record.
-- **No logs.** Tokens are not written to a log, the audit log or an error text. An error is one short fixed sentence (for example `quota request failed (HTTP 500)`). The audit line of a sign-in, use or remove request holds the names of the body keys (`flowId`, `code`, `provider`, `alias`, `id`, `rotate`) and none of their values, so a pasted code and an account id are never recorded.
+- **No logs.** Tokens are not written to a log, the audit log or an error text. An error is one short fixed sentence (for example `quota request failed (HTTP 500)`). The audit line of a sign-in, use or remove request holds the names of the body keys (`flowId`, `code`, `provider`, `alias`, `id`, `rotate`, `gpt`, `desktop`) and none of their values, so a pasted code and an account id are never recorded.
 
 See [security.md](security.md#accounts).
 
@@ -328,10 +346,20 @@ See [security.md](security.md#accounts).
       { "at": "2026-11-20T09:00:00.000Z", "provider": "claude", "kind": "switch", "from": "acc-ba9876543210", "to": "acc-0123456789ab", "status": 429, "restUntil": null }
     ],
     "counts": { "requests": 12, "switches": 1 },
-    "unproxied": [{ "path": "/v1/models", "count": 2 }]
+    "unproxied": [{ "path": "/v1/models", "count": 2 }],
+    "lanes": {
+      "gpt": { "enabled": true, "models": { "claude-haiku-5-5": "gpt-6-astra" } }, "desktop": { "enabled": false },
+      "source": { "gpt": "file", "desktop": "config" }, "unreadable": false
+    },
+    "activity": {
+      "gpt": { "requests": 4, "lastAt": "2026-11-20T09:00:00.000Z" },
+      "desktop": { "connects": 0, "open": 0, "lastAt": null }
+    }
   }
 }
 ```
+
+`proxy.lanes` is the GPT lane and the desktop route in effect (a process that never opened the proxy, such as the stdio MCP server, reads them from the lanes file, then `portboard.json`), `source` says per lane whether the value came from `accounts-lanes.json` (`file`) or `portboard.json` (`config`), and `unreadable` is true when the lanes file could not be used. `proxy.activity` counts, since Portboard started: `gpt.requests` (requests the GPT lane converted), `desktop.connects` (authorized `CONNECT`s), `desktop.open` (tunnels and decrypted connections open now) and the time of the last one of each (`lastAt`, ISO, or `null`). No host name, request text, key or token is in either.
 
 `source` is `local-cli` (a CLI login) or `added` (added in Portboard; `id` is `acc-` and 12 hex digits, `alias` is its name). `provider` is `claude`, `codex` or `copilot`. `status` is `ok`, `expired` (the token is past its expiry, or the vendor answered 401 or 403), `none` or `unreadable`. `needsReauth` is true when the refresh token has expired too, or the vendor refused it. `active` is true for the added account chosen with "use this account" for its provider (always false for a CLI login). `command` is the shell command that starts the CLI as an added account that has a folder, else `null`. `usedPct` is 0 to 100; the remaining share is 100 minus it. `usedPct` or `resetsAt` is `null` for a window when the vendor sends no usable value.
 
@@ -359,4 +387,8 @@ Both are `POST`, owner only, need `X-Portboard: 1`, and answer `404 {error: "acc
 
 ### Proxy key route
 
-`POST /api/accounts/proxy/key`: `write: true` (owner only, needs `X-Portboard: 1`), body JSON of at most 4 KiB, `{rotate?: boolean}`. It answers `{key, keyFile}` (the proxy key, made on first use, and the absolute path of the key file), and with `rotate: true` it first writes a new key, so the old one is `401` from then on and the `CONNECT` connections of the [desktop route](#desktop-route) that were opened with it are closed. It answers `404 {error: "accounts proxy disabled"}` while the proxy is off, and `500 {error: "proxy key unusable"}` when the key file cannot be used. The audit line holds the key name `rotate` and no key.
+`POST /api/accounts/proxy/key`: `write: true` (owner only, needs `X-Portboard: 1`), body JSON of at most 4 KiB, `{rotate?: boolean}`. It answers `{key, keyFile, certFile}` (the proxy key, made on first use, the absolute path of the key file, and the absolute path of the [desktop route](#desktop-route) certificate, whether or not the file exists yet), and with `rotate: true` it first writes a new key, so the old one is `401` from then on and the `CONNECT` connections of the [desktop route](#desktop-route) that were opened with it are closed. It answers `404 {error: "accounts proxy disabled"}` while the proxy is off, and `500 {error: "proxy key unusable"}` when the key file cannot be used. The audit line holds the key name `rotate` and no key.
+
+### Lanes route
+
+`POST /api/accounts/proxy/lanes`: `write: true` (owner only, needs `X-Portboard: 1`), body JSON of at most 16 KiB, `{gpt?: {enabled?: boolean, models?: {<name>: <model id>}}, desktop?: {enabled?: boolean}}`. It merges the body over the lanes in effect (a field that is not sent keeps its value; `models` sent replaces the whole map), writes `accounts-lanes.json` with both keys, applies the result to the running proxy at once and answers `{lanes, source}`. It answers `404 {error: "accounts disabled"}` while accounts are off, `404 {error: "accounts proxy disabled"}` while the proxy is off, and `400 {error: "invalid lanes"}` for an unknown top-level or nested key, an `enabled` that is not a boolean, `models` that is not an object, more than 32 entries, a name that is not 1 to 128 printable ASCII characters, or a model id that does not match the GPT lane's rule (the input is not echoed), and `500 {error: "lanes not written"}` when the write fails. Requests run one at a time, so two at once both apply. When the request turns the desktop route on and the proxy cannot start it (its certificate cannot be used: see [the certificate](#desktop-route)), the previous lanes are written back, the proxy opens again without the route and the answer is `500 {error: "desktop route certificate unusable"}`. A lanes file that could not be read is replaced by a good one made from the values in effect. The audit line holds the key names `gpt` and `desktop` and no value.

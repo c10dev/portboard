@@ -11,23 +11,26 @@
 //   POST /api/accounts/login/cancel {flowId}           → {ok: true}
 //   POST /api/accounts/use          {id} → {account, command}: the account's own CLI folder and the command that starts the CLI as it
 //   POST /api/accounts/remove       {id} → {ok: true}: the record and the folder Portboard made for it
-//   POST /api/accounts/proxy/key    {rotate?} → {key, keyFile}: the proxy key (404 "accounts proxy disabled" when the proxy is off)
+//   POST /api/accounts/proxy/key    {rotate?} → {key, keyFile, certFile}: the proxy key and the desktop route's certificate path (404 "accounts proxy disabled" when the proxy is off)
+//   POST /api/accounts/proxy/lanes  {gpt?: {enabled?, models?}, desktop?: {enabled?}} → {lanes, source}: the GPT lane and the desktop route,
+//                                   written to accounts-lanes.json and applied at once (404 as the key route, 400 "invalid lanes", 500 "lanes not written")
 //   MCP list_accounts               the same report, local stdio server only: no `remote`, so the remote server never
 //                                   offers it. There is no MCP tool that adds an account.
 //
 // Job accounts-proxy (dashboard process only, preview never): every minute it makes the loopback account pool proxy match
-// the settings (accounts.enabled and accounts.proxy.enabled, src/core/accounts/proxy.ts) and closes it on shutdown. The proxy
+// the settings (accounts.enabled and accounts.proxy.enabled, src/core/accounts/proxy.ts, and the lanes file, lanes.ts) and closes it on shutdown. The proxy
 // sends Claude Code's POST /v1/messages (and /count_tokens) to Anthropic and Codex's POST /codex/responses to chatgpt.com, each
 // with the token of one added account of that provider.
 //
-// The seven POST routes are `write: true`: the router checks X-Portboard and the owner, and writes the audit line, before
-// a handler runs. Their body keys (flowId, code, provider, alias, id, rotate) are not in the audit log's ID_KEYS, so the line holds
+// The eight POST routes are `write: true`: the router checks X-Portboard and the owner, and writes the audit line, before
+// a handler runs. Their body keys (flowId, code, provider, alias, id, rotate, gpt, desktop) are not in the audit log's ID_KEYS, so the line holds
 // the key names and never the pasted code. The tokens stay inside src/core/accounts/. An answer holds only the
 // allowlisted fields (view.ts), never a StoredAccount.
 
 import { classify } from '../core/access.ts';
 import { cancelLogin, finishLogin, LoginError, pollLogin, startLogin, type Provider } from '../core/accounts/flows.ts';
 import { AccountError, removeAccountById, useAccount } from '../core/accounts/homes.ts';
+import { applyLanesPatch, parseLanesPatch, readLanes, writeLanes, type LanesRead } from '../core/accounts/lanes.ts';
 import { accountsProxy, proxyConfig, type ProxyConfig } from '../core/accounts/proxy.ts';
 import { summarize } from '../core/accounts/usage.ts';
 import { accountsReport, addedView, homeView } from '../core/accounts/view.ts';
@@ -67,8 +70,59 @@ function loginOptions() {
 /** The proxy this process drives: the one the report options name (tests), else the process's own */
 const proxyOf = () => optionsFn().proxy ?? accountsProxy;
 
-/** The proxy's settings, and nothing while accounts are off */
-const proxySettings = (): ProxyConfig => (enabledFn() ? proxyConfig() : { ...proxyConfig(), enabled: false });
+/** The report; a proxy that never synced in this process (the stdio MCP server) says what the lanes file and portboard.json say */
+async function reportOf(o: ReportOptions) {
+  const r = await accountsReport(o);
+  if (r.proxy.state === 'unknown') {
+    const l = await lanesNow();
+    r.proxy.lanes = { gpt: l.gpt, desktop: l.desktop, source: l.source, unreadable: l.unreadable === true };
+  }
+  return r;
+}
+
+/** accounts.enabled and the proxy's own flag (the lanes file never turns the proxy on) */
+const proxyOn = (): boolean => enabledFn() && proxyConfig().enabled;
+
+/** The lanes in effect: the lanes file where it has a value, else portboard.json's (or the test hook's) */
+async function lanesNow(): Promise<LanesRead> {
+  const base = proxyConfig();
+  const a = SITE.accounts;
+  return readLanes({ site: { accounts: { ...a, proxy: { ...a.proxy, desktop: { enabled: base.desktop === true } } } } });
+}
+
+let lanesChain: Promise<void> = Promise.resolve();
+
+/** Merge `patch` over the lanes in effect, write the file and apply it; the desktop route turned on with a certificate that cannot be used is undone */
+async function applyLanes(patch: NonNullable<ReturnType<typeof parseLanesPatch>>): Promise<Reply> {
+  const before = await lanesNow();
+  const next = applyLanesPatch(before, patch);
+  try {
+    await writeLanes(next);
+  } catch {
+    return reply(500, { error: 'lanes not written' });
+  }
+  // applied at once: the same sync as the job's
+  await proxyOf().sync(await proxySettings());
+  if (next.desktop.enabled && !before.desktop.enabled && proxyOf().report().state === 'error') {
+    // the route could not start (its certificate): the proxy would stay closed, so the old lanes go back
+    let restored = true;
+    try {
+      await writeLanes({ gpt: before.gpt, desktop: before.desktop });
+    } catch {
+      restored = false;
+    }
+    await proxyOf().sync(await proxySettings());
+    return reply(500, { error: restored ? 'desktop route certificate unusable' : 'lanes not written' });
+  }
+  return ok({ lanes: next, source: { gpt: 'file', desktop: 'file' } });
+}
+
+/** The proxy's settings with the lanes in effect, and nothing while accounts are off */
+async function proxySettings(): Promise<ProxyConfig> {
+  if (!enabledFn()) return { ...proxyConfig(), enabled: false };
+  const l = await lanesNow();
+  return { ...proxyConfig(), desktop: l.desktop.enabled, gpt: l.gpt, source: l.source, unreadable: l.unreadable === true };
+}
 
 /** What "use" and "remove" get: the whole report options, as they read the account's folder the way the report does */
 const homesOptions = () => optionsFn();
@@ -92,7 +146,7 @@ export const accountsFeature: FeatureModule = {
         // The same owner decision as the audit log's read: plan, email and limits are the owner's business.
         const c = classify(req, await ctx.owner(), await ctx.policy());
         if (!c.owner) return reply(403, { error: 'owner only', reason: c.reason ?? '' });
-        return ok(await accountsReport({ ...optionsFn(), refresh: true }));
+        return ok(await reportOf({ ...optionsFn(), refresh: true }));
       },
     },
     {
@@ -209,17 +263,35 @@ export const accountsFeature: FeatureModule = {
       write: true,
       body: { limit: 4096 },
       async handler({ body }) {
-        if (!enabledFn() || !proxySettings().enabled) return reply(404, { error: 'accounts proxy disabled' });
+        if (!proxyOn()) return reply(404, { error: 'accounts proxy disabled' });
         try {
           const rotate = (body as { rotate?: unknown } | null)?.rotate === true;
           const key = await proxyOf().key(rotate);
           // a proxy stuck in `error` on a bad key file opens at once with the new key
-          if (rotate) await proxyOf().sync(proxySettings());
-          // the path is for the owner's own machine, like `command` of /api/accounts/use: the page shows a command that reads the key from it
-          return ok({ key, keyFile: proxyOf().keyFile() });
+          if (rotate) await proxyOf().sync(await proxySettings());
+          // the paths are for the owner's own machine, like `command` of /api/accounts/use: the page shows a command that reads the key from the file
+          return ok({ key, keyFile: proxyOf().keyFile(), certFile: proxyOf().certFile() });
         } catch {
           return reply(500, { error: 'proxy key unusable' });
         }
+      },
+    },
+    {
+      method: 'POST',
+      path: '/api/accounts/proxy/lanes',
+      write: true,
+      // the largest valid map (32 names and 32 model ids of 128 characters) is about 8.4 KiB
+      body: { limit: 16384 },
+      async handler({ body }) {
+        if (!enabledFn()) return reply(404, { error: 'accounts disabled' });
+        if (!proxyOn()) return reply(404, { error: 'accounts proxy disabled' });
+        // the body is not echoed in an answer, whatever is wrong with it
+        const patch = parseLanesPatch(body);
+        if (!patch) return reply(400, { error: 'invalid lanes' });
+        // one request at a time: read, merge, write and sync of a request never mix with another's
+        const run = lanesChain.then(() => applyLanes(patch));
+        lanesChain = run.then(() => undefined, () => undefined);
+        return run;
       },
     },
   ],
@@ -229,7 +301,7 @@ export const accountsFeature: FeatureModule = {
       everyMs: 60_000,
       runAtStart: true,
       enabled: (paths) => paths.profile !== 'preview',
-      run: () => proxyOf().sync(proxySettings()),
+      run: async () => proxyOf().sync(await proxySettings()),
     },
   ],
   shutdown: () => proxyOf().close(),
@@ -244,7 +316,7 @@ export const accountsFeature: FeatureModule = {
           'remaining limits (used percent and reset time of the 5-hour and weekly windows; none for Copilot). It reads the CLIs\' ' +
           'two login files (~/.claude/.credentials.json, ~/.codex/auth.json) and Portboard\'s own accounts file, and asks each ' +
           'vendor\'s unofficial usage endpoint (api.anthropic.com, chatgpt.com), cached for 5 minutes. It never refreshes a ' +
-          'token (only the dashboard does that, for an added account with no folder) and never returns a token. The answer also has `proxy` (the account pool proxy: enabled, state, port, current account ids (`current.claude`, `current.codex`), resting account ids, last events, counts; never a key; state is `unknown` in this process while the settings are on). Each added account also says whether it is `active` and, once the owner chose "use this account" ' +
+          'token (only the dashboard does that, for an added account with no folder) and never returns a token. The answer also has `proxy` (the account pool proxy: enabled, state, port, current account ids (`current.claude`, `current.codex`), resting account ids, last events, counts, `lanes` (the GPT lane and desktop route in effect, and whether each came from the lanes file or portboard.json), `activity` (what the two lanes did since start); never a key; state is `unknown` in this process while the settings are on). Each added account also says whether it is `active` and, once the owner chose "use this account" ' +
           'in the dashboard, the `command` that starts its CLI in its own folder. Read-only: it cannot add, use or remove an account. When accounts.enabled is off in ' +
           'portboard.json it answers "accounts disabled" and reads nothing.',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },
@@ -252,7 +324,7 @@ export const accountsFeature: FeatureModule = {
       },
       async call() {
         if (!enabledFn()) return text('accounts disabled', true);
-        return text(await accountsReport(optionsFn()));
+        return text(await reportOf(optionsFn()));
       },
     },
   ],
