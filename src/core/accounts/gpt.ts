@@ -61,7 +61,11 @@ const SECRETS: RegExp[] = [
  */
 export function clipText(s: unknown): string {
   if (typeof s !== 'string') return 'upstream error';
-  let t = s.slice(0, SCRUB_CHARS).replace(/[\u0000-\u001f\u007f]/g, '');
+  let head = s.slice(0, SCRUB_CHARS);
+  // a word cut at the edge could leave a fragment of a secret that no rule matches: it is dropped
+  // (a slice that is one single run is kept: the long-run rule redacts it whole)
+  if (s.length > SCRUB_CHARS && /\s/.test(head)) head = head.replace(/\S+$/, '').trimEnd();
+  let t = head.replace(/[\u0000-\u001f\u007f]/g, '');
   for (const re of SECRETS) t = t.replace(re, '[redacted]');
   return t.slice(0, MAX_ERROR_CHARS);
 }

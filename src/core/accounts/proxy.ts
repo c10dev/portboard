@@ -834,7 +834,7 @@ export class AccountsProxy {
    */
   private async passGpt(response: Response, res: ServerResponse, seen: Seen, account: string, wantStream: boolean, requestedModel: string, names: ToolNames): Promise<void> {
     const observer = new UsageObserver(true, false, 'codex');
-    let status = response.status;
+    const status = response.status;
     let counted = true;
     const source = (): Readable => (response.body ? Readable.fromWeb(response.body as unknown as import('node:stream/web').ReadableStream) : Readable.from([]));
     try {
@@ -877,7 +877,7 @@ export class AccountsProxy {
       try {
         await pipeline(source(), limit, observer, translator, new Writable({ write: (_c, _e, cb) => cb() }));
       } catch {
-        status = 0;
+        // the stream broke off or was too large after its headers: the line keeps the upstream status
         if (!res.destroyed && !res.headersSent) sendJson(res, 502, BODIES.upstream);
         return;
       }

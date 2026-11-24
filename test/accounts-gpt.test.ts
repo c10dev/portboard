@@ -129,6 +129,14 @@ test('session id: the client header when it is a UUID (lower-cased), else a UUID
   assert.equal(sessionIdOf(undefined, null), null);
 });
 
+test('upstream text: a word cut at the 4096-character edge is dropped, so no secret survives as a fragment', () => {
+  assert.equal(clipText(`${'Q'.repeat(4080)} alice.longname@corp.example.com`), '[redacted]');
+  const out = clipText(`${'Q'.repeat(4080)} alice.longname@corp.example.com`);
+  assert.ok(!out.includes('alice') && !out.includes('@'));
+  assert.equal(clipText(`${'ab '.repeat(2000)}tail`).length, 500, 'ordinary long text is only cut to 500');
+  assert.equal(clipText('x'.repeat(4096)), '[redacted]', 'a text of exactly 4096 characters is not cut by this rule');
+});
+
 test('upstream text: e-mail, ids, UUIDs and long token runs are redacted; ordinary messages stay; control characters go; 500 characters', () => {
   const dirty = 'x org-EXAMPLE123456 y owner@example.com z 123e4567-e89b-12d3-a456-426614174000 w ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd end\u0007';
   const out = clipText(dirty);
@@ -589,6 +597,13 @@ test('gpt lane: stream false gets one JSON Message built from the final Response
   const cut = await call(claudeBody('claude-opus-5-5', { stream: false }));
   assert.equal(cut.status, 502);
   assert.equal(cut.json.error.message, 'upstream request failed');
+  assert.equal((await lines(2))[1].status, 200, 'a clean end with no final Response keeps the upstream status');
+  // the upstream body breaks off after its headers
+  upstream = () =>
+    new Response(new ReadableStream({ start: (c) => c.enqueue(new TextEncoder().encode('data: {"type":"response.created","response":{"id":"resp_b"}}\n\n')), pull(c) { c.error(new Error('reset')); } }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  const broke = await call(claudeBody('claude-opus-5-5', { stream: false }));
+  assert.deepEqual([broke.status, broke.json.error.message], [502, 'upstream request failed']);
+  assert.equal((await lines(3))[2].status, 200, 'a stream that broke off after its headers keeps the upstream status, not 0');
   upstream = () => new Response('', { status: 200 });
   assert.equal((await call(claudeBody('claude-opus-5-5', { stream: false }))).status, 502);
 });
