@@ -307,10 +307,11 @@ function stopReasonOf(resp: Obj, sawTool: boolean): string {
   return why === 'content_filter' ? 'refusal' : 'end_turn';
 }
 
-const messageId = (resp: Obj): string => `msg_${typeof resp.id === 'string' && resp.id !== '' ? resp.id.replace(/^resp_/, '') : randomBytes(12).toString('hex')}`;
+/** The id of the Anthropic Message made from a Response: `msg_` and the Response id (else random). The one place that makes it. */
+export const messageId = (resp: Obj): string => `msg_${typeof resp.id === 'string' && resp.id !== '' ? resp.id.replace(/^resp_/, '') : randomBytes(12).toString('hex')}`;
 
 /** An OpenAI Response object as an Anthropic Message object */
-export function fromResponse(resp: unknown, requestedModel: string, names: ToolNames): Record<string, unknown> {
+export function fromResponse(resp: unknown, requestedModel: string, names: ToolNames, id?: string): Record<string, unknown> {
   const r = isObj(resp) ? resp : {};
   const content: Obj[] = [];
   let sawTool = false;
@@ -334,7 +335,7 @@ export function fromResponse(resp: unknown, requestedModel: string, names: ToolN
       content.push({ type: 'tool_use', id: item.call_id, name: names.fromUpstream(item.name), input });
     }
   }
-  return { id: messageId(r), type: 'message', role: 'assistant', model: requestedModel, content, stop_reason: stopReasonOf(r, sawTool), stop_sequence: null, usage: usageOf(r) };
+  return { id: id ?? messageId(r), type: 'message', role: 'assistant', model: requestedModel, content, stop_reason: stopReasonOf(r, sawTool), stop_sequence: null, usage: usageOf(r) };
 }
 
 type Open = { kind: 'text'; key: string } | { kind: 'tool'; itemId: string; sentArgs: boolean };
@@ -353,6 +354,8 @@ export class ResponsesToMessages extends Transform {
   private discarding = false;
 
   private started = false;
+  /** the id sent in `message_start` */
+  private id: string | null = null;
   private index = -1;
   private open: Open | null = null;
   private sawTool = false;
@@ -367,6 +370,11 @@ export class ResponsesToMessages extends Transform {
     super();
     this.requestedModel = requestedModel;
     this.names = names;
+  }
+
+  /** The `id` of the `message_start` that was sent, or null before it */
+  messageId(): string | null {
+    return this.id;
   }
 
   /** The `response` of the last `response.completed` / `response.incomplete`, or null */
@@ -469,9 +477,10 @@ export class ResponsesToMessages extends Transform {
   private start(resp: unknown): void {
     if (this.started) return;
     this.started = true;
+    this.id = messageId(isObj(resp) ? resp : {});
     this.emit_('message_start', {
       type: 'message_start',
-      message: { id: messageId(isObj(resp) ? resp : {}), type: 'message', role: 'assistant', model: this.requestedModel, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 0, output_tokens: 0 } },
+      message: { id: this.id, type: 'message', role: 'assistant', model: this.requestedModel, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 0, output_tokens: 0 } },
     });
   }
 
@@ -565,4 +574,111 @@ export class ResponsesToMessages extends Transform {
       // reasoning, in_progress, metadata, content_part.added, function_call_arguments.done: nothing to send
     }
   }
+}
+
+// ---- threads ----
+// Through the desktop route Claude Code believes it talks to api.anthropic.com and uses server-side threads: a request with
+// `thread: {type: "continue", previous_message_id}` carries only the new turn. The lane keeps the history of each answer
+// it gave, in memory, and rebuilds the full conversation from it. Nothing here holds a token or an account id.
+
+export interface StoredThread {
+  /** the request's `system` as received on the last turn that had one */
+  system: unknown;
+  /** the last `tools` array received in this thread */
+  tools: unknown[] | null;
+  /** the full Anthropic history after the last answer, including that answer as an assistant message */
+  messages: unknown[];
+  /** the id this thread continued from (null for a thread that was created); a thread is kept with its parent, and the parent's own parent goes */
+  parent: string | null;
+  /** approximate size (JSON length), for the budget */
+  bytes: number;
+  /** ms */
+  touched: number;
+}
+
+/** Threads by the id of the Message the lane answered with; memory only. Expired and least recently touched threads go first. */
+export class ThreadStore {
+  private readonly map = new Map<string, StoredThread>();
+  private total = 0;
+  private readonly maxThreads: number;
+  private readonly maxBytes: number;
+  private readonly ttlMs: number;
+  private readonly now: () => number;
+
+  constructor(o: { maxThreads?: number; maxBytes?: number; ttlMs?: number; now?: () => number } = {}) {
+    this.maxThreads = o.maxThreads ?? 64;
+    this.maxBytes = o.maxBytes ?? 256 * 1024 * 1024;
+    this.ttlMs = o.ttlMs ?? 6 * 3600_000;
+    this.now = o.now ?? Date.now;
+  }
+
+  private drop(id: string): void {
+    const t = this.map.get(id);
+    if (!t) return;
+    this.total -= t.bytes;
+    this.map.delete(id);
+  }
+
+  /** Threads held now */
+  get size(): number {
+    return this.map.size;
+  }
+
+  /** Remove one thread (its conversation moved on to a new id) */
+  delete(messageId: string): void {
+    this.drop(messageId);
+  }
+
+  /** Remove the threads past their time */
+  sweep(): void {
+    const now = this.now();
+    for (const [id, t] of [...this.map]) if (now - t.touched > this.ttlMs) this.drop(id);
+  }
+
+  /** Forget every thread */
+  clear(): void {
+    this.map.clear();
+    this.total = 0;
+  }
+
+  /** null when unknown or expired; a hit refreshes `touched` */
+  get(messageId: string): StoredThread | null {
+    const t = this.map.get(messageId);
+    if (!t) return null;
+    if (this.now() - t.touched > this.ttlMs) {
+      this.drop(messageId);
+      return null;
+    }
+    t.touched = this.now();
+    // the Map keeps insertion order: a touched thread moves to the end
+    this.map.delete(messageId);
+    this.map.set(messageId, t);
+    return t;
+  }
+
+  /** Keep a thread; expired ones go first, then the least recently touched, until both limits hold. One larger than `maxBytes` is not kept. */
+  put(messageId: string, t: Omit<StoredThread, 'bytes' | 'touched'>): void {
+    this.drop(messageId);
+    const bytes = JSON.stringify({ system: t.system ?? null, tools: t.tools, messages: t.messages }).length;
+    if (bytes > this.maxBytes) return;
+    const now = this.now();
+    for (const [id, old] of [...this.map]) if (now - old.touched > this.ttlMs) this.drop(id);
+    this.map.set(messageId, { ...t, bytes, touched: now });
+    this.total += bytes;
+    while (this.map.size > this.maxThreads || this.total > this.maxBytes) {
+      const oldest = this.map.keys().next().value;
+      if (oldest === undefined || oldest === messageId) break;
+      this.drop(oldest);
+    }
+  }
+}
+
+/** The full request of a `continue` turn: the stored history, then the new messages; the new `system` and `tools` win, else the stored ones. Other fields are the current body's. */
+export function mergeThread(body: Record<string, unknown>, prev: StoredThread): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...body, messages: [...prev.messages, ...(Array.isArray(body.messages) ? body.messages : [])] };
+  const system = body.system ?? prev.system;
+  if (system !== undefined && system !== null) out.system = system;
+  const tools = body.tools ?? prev.tools;
+  if (tools !== undefined && tools !== null) out.tools = tools;
+  return out;
 }
