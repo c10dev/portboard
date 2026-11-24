@@ -32,7 +32,7 @@ import { pipeline } from 'node:stream/promises';
 import { writePrivate } from '../atomic.ts';
 import { PATHS } from '../paths.ts';
 import { SITE, SITE_DEFAULTS } from '../site.ts';
-import { clipText, ConvertError, fromResponse, mergeThread, ResponsesToMessages, routeModel, sessionIdOf, ThreadStore, toolNames, toResponsesRequest, type GptConfig, type ToolNames } from './gpt.ts';
+import { clipText, ConvertError, fromResponse, mergeThread, ResponsesToMessages, routeModel, sessionIdOf, ThreadStore, toolNames, toResponsesRequest, type GptConfig, type StoredThread, type ToolNames } from './gpt.ts';
 import type { HomesOptions } from './homes.ts';
 import { DesktopRoute, INTERCEPT_HOST, loadOrMakeCert, refuseSocket, type RouteDeps } from './intercept.ts';
 import { Pool, verdictOf, type ProxyEvent, type ProxyProvider } from './pool.ts';
@@ -62,8 +62,8 @@ const MAX_CONNECTIONS = 32;
 /** The desktop route: CONNECT sockets open at once (every HTTPS connection of a session and its tool commands is one) */
 const MAX_TUNNELS = 512;
 const HEADERS_TIMEOUT_MS = 10_000;
-/** A decrypted keep-alive connection that sends nothing is closed after this long */
-const INNER_IDLE_MS = 5 * 60_000;
+/** After each answer on a decrypted connection, the next request's complete headers must arrive within this long (idle time included) */
+const INNER_IDLE_MS = 60_000;
 const MAX_BODY_BYTES = 32 * 1024 * 1024;
 const UPSTREAM_HEADERS_MS = 60_000;
 /** Claude Code, the account's token and the retries: at most this many accounts serve one request (three switches) */
@@ -872,9 +872,13 @@ export class AccountsProxy {
     let effective = parsed;
     const body = objectOf(parsed);
     const thread = objectOf(body?.thread);
+    let previous: string | null = null;
+    let before: StoredThread | null = null;
     if (body && thread) {
       if (thread.type === 'continue') {
-        const prev = this.threads.get(String(thread.previous_message_id));
+        previous = String(thread.previous_message_id);
+        const prev = this.threads.get(previous);
+        before = prev;
         if (!prev) return sendJson(res, 400, { type: 'error', error: { type: 'invalid_request_error', message: 'thread not found: the proxy keeps GPT lane threads in memory only; start a new conversation' } });
         effective = mergeThread(body, prev);
       }
@@ -893,17 +897,17 @@ export class AccountsProxy {
     const requestedModel = String(objectOf(parsed)?.model ?? '').slice(0, MODEL_CLIP);
     // after a whole answer: the history up to and including it is kept under the id the client received
     const sent = objectOf(effective);
-    // a continued thread moves to its new id: the entry of the id it continued is removed, so a conversation counts once
-    const previous = thread?.type === 'continue' ? String(thread.previous_message_id) : null;
+    // a conversation keeps its latest entry and the one before it: the entry before that goes first, then the new one is put
     const keep =
       body && thread && sent
         ? (id: string, content: unknown) => {
+            if (before?.parent) this.threads.delete(before.parent);
             this.threads.put(id, {
               system: sent.system,
               tools: Array.isArray(sent.tools) ? sent.tools : null,
               messages: [...(Array.isArray(sent.messages) ? sent.messages : []), { role: 'assistant', content }],
+              parent: previous !== id ? previous : null,
             });
-            if (previous !== null && previous !== id) this.threads.delete(previous);
           }
         : null;
     const lane: Lane = {

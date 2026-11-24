@@ -141,9 +141,9 @@ export interface RouteDeps {
   maxTunnels: number;
   /** the relay target (tests: a local server) */
   upstream: { host: string; port: number; ca?: string };
-  /** a decrypted connection has this long to send complete request headers */
+  /** a decrypted connection has this long, from its handshake, to send the complete headers of its first request */
   headersTimeoutMs: number;
-  /** an idle keep-alive decrypted connection is closed after this long */
+  /** after each answer, the next request's complete headers must arrive within this long (idle time included) */
   idleMs: number;
   /**
    * The GPT lane for a decrypted request. `taken: true`: it answered (or the caller left). `taken: false`: not for the lane;
@@ -215,7 +215,7 @@ export class DesktopRoute {
         }),
       );
     });
-    this.inner.headersTimeout = deps.headersTimeoutMs;
+    // the route's own timers (watch, began) do the header and idle timing: the server never listens, so Node's would not run
     this.inner.requestTimeout = 0;
     this.inner.on('upgrade', (req, socket, head) => {
       this.clearTimers(socket as Socket);
@@ -246,18 +246,12 @@ export class DesktopRoute {
     this.timers.delete(s);
   }
 
-  /** The time limits of a decrypted connection: headers within `headersTimeoutMs` of the handshake or of the first byte of a request, 5 minutes idle between requests, none while a request or its answer is in progress */
+  /** The time limits of a decrypted connection: the first request's headers within `headersTimeoutMs` of the handshake, none while a request or its answer is in progress, and after each answer the next request's complete headers within `idleMs` */
   private watch(tls: Socket): void {
-    const { headersTimeoutMs } = this.deps;
     const t: { header?: NodeJS.Timeout; idle?: NodeJS.Timeout; busy: boolean } = { busy: false };
     this.timers.set(tls, t);
-    const stop = () => tls.destroy();
-    t.header = setTimeout(stop, headersTimeoutMs);
+    t.header = setTimeout(() => tls.destroy(), this.deps.headersTimeoutMs);
     tls.once('close', () => this.clearTimers(tls));
-    tls.on('data', () => {
-      // the first byte of a request that follows an idle wait starts the header clock
-      if (!t.busy && t.header === undefined) t.header = setTimeout(stop, headersTimeoutMs);
-    });
   }
 
   /** A request began on a decrypted connection: no clock runs until its answer is done */

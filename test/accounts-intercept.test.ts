@@ -748,7 +748,10 @@ test('a decrypted connection that sends half a request is closed; an idle one is
   kept.tls.write('GET /api/oauth/profile HTTP/1.1\r\nHost: api.anthropic.com\r\n\r\n');
   await until(() => seen.includes('part-two'), 'the answer');
   assert.equal(kept.tls.destroyed, false);
-  await within(closedOf(kept.tls), 'an idle connection closes');
+  // half a request line after the answer: the next complete headers must arrive within the idle limit, so it closes there
+  kept.tls.write('GET /api/oauth/pro');
+  await within(closedOf(kept.tls), 'the connection closes at the idle limit');
+  assert.equal(relay.seen.length, 1, 'no second request reached the relay');
 });
 
 test('decrypted lane requests share the limit of plain requests; relayed requests do not', async () => {

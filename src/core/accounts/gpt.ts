@@ -588,6 +588,8 @@ export interface StoredThread {
   tools: unknown[] | null;
   /** the full Anthropic history after the last answer, including that answer as an assistant message */
   messages: unknown[];
+  /** the id this thread continued from (null for a thread that was created); a thread is kept with its parent, and the parent's own parent goes */
+  parent: string | null;
   /** approximate size (JSON length), for the budget */
   bytes: number;
   /** ms */
