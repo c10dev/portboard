@@ -827,8 +827,8 @@ export class AccountsProxy {
   }
 
   /**
-   * The GPT lane's answer. An error status is answered in the Anthropic error shape with a closed text (OpenAI's own text of a
-   * 401 or 403 is never passed on). A stream is converted as it comes; the usage counts are read before the conversion, on the
+   * The GPT lane's answer. An error status is answered in the Anthropic error shape: a closed text for 401 and 403 (OpenAI's own
+   * text is never passed on there), else the upstream text after `clipText` scrubbed it. A stream is converted as it comes; the usage counts are read before the conversion, on the
    * OpenAI-shaped stream with the Codex rules. When the client asked for no stream, the whole upstream stream is read and the
    * final Response becomes one Message.
    */

@@ -7,7 +7,7 @@
 // chatgpt.com Codex answers (2026-11-24). No code is copied from other converters.
 //
 // No token, key, account id, header value, body or query string is put into an error text: a ConvertError holds a closed
-// text, and the texts of an upstream error are cut (`clip`) before they are used.
+// text, and the texts of an upstream error are scrubbed and cut (`clipText`) before they are used.
 
 import { createHash, randomBytes } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
@@ -40,6 +40,8 @@ export class ConvertError extends Error {}
 /** One SSE event: `response.completed` repeats the instructions, the tools and the whole output, so it can be large */
 const MAX_EVENT_CHARS = 32 * 1024 * 1024;
 const MAX_ERROR_CHARS = 500;
+/** The patterns run on at most this much of an upstream text, so a long text cannot hold the event loop (the e-mail pattern backtracks) */
+const SCRUB_CHARS = 4096;
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -47,7 +49,7 @@ const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 const sha = (s: string): string => createHash('sha256').update(s).digest('hex');
 
 const SECRETS: RegExp[] = [
-  /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g,
+  /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g,
   /\b(?:org|user|acct|account|proj|sess|req|resp|call|fc|msg)[-_][A-Za-z0-9_-]{6,}/gi,
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
   /[A-Za-z0-9_\-+/=.]{24,}/g,
@@ -59,7 +61,7 @@ const SECRETS: RegExp[] = [
  */
 export function clipText(s: unknown): string {
   if (typeof s !== 'string') return 'upstream error';
-  let t = s.replace(/[\u0000-\u001f\u007f]/g, '');
+  let t = s.slice(0, SCRUB_CHARS).replace(/[\u0000-\u001f\u007f]/g, '');
   for (const re of SECRETS) t = t.replace(re, '[redacted]');
   return t.slice(0, MAX_ERROR_CHARS);
 }
@@ -270,7 +272,7 @@ export function toResponsesRequest(body: unknown, upstreamModel: string, names: 
   if (tc) {
     const listed = (n: string): boolean => (out.tools as Obj[] | undefined)?.some((t) => t.name === names.toUpstream(n)) === true;
     if (tc.type === 'auto') out.tool_choice = 'auto';
-    else if (tc.type === 'any') out.tool_choice = 'required';
+    else if (tc.type === 'any' && out.tools) out.tool_choice = 'required';
     else if (tc.type === 'none') out.tool_choice = 'none';
     else if (tc.type === 'tool' && typeof tc.name === 'string' && listed(tc.name)) out.tool_choice = { type: 'function', name: names.toUpstream(tc.name) };
     if (tc.disable_parallel_tool_use === true) out.parallel_tool_calls = false;

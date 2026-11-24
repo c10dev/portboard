@@ -138,6 +138,11 @@ test('upstream text: e-mail, ids, UUIDs and long token runs are redacted; ordina
   for (const fine of ['The usage limit has been reached', "The 'no-such-model-x' model is not supported when using Codex with a ChatGPT account."]) assert.equal(clipText(fine), fine);
   assert.equal(clipText('a'.repeat(700).replace(/a{20}/g, 'ab cd ef gh ij ')).length, 500);
   assert.equal(clipText(5), 'upstream error');
+  // a long run with no '@' made the e-mail pattern backtrack from every position (about 1 s for 40k characters): it must stay fast
+  const started = performance.now();
+  assert.equal(clipText('a'.repeat(1024 * 1024)), '[redacted]');
+  assert.equal(clipText(`${'a'.repeat(30_000)} owner@example.com`), '[redacted]');
+  assert.ok(performance.now() - started < 200, `scrubbing took ${Math.round(performance.now() - started)} ms`);
 });
 
 test('request conversion: tools, deferred tools, tool results, images, documents, tool_choice and a long tool name', () => {
@@ -161,7 +166,8 @@ test('request conversion: effort map, tool_choice forms, stream and store are fi
   assert.equal(conv({ thinking: { type: 'disabled' } }).reasoning, undefined);
   assert.equal(conv({ output_config: { effort: 'toString' } }).reasoning, undefined);
   assert.equal(conv({ tool_choice: { type: 'auto' } }).tool_choice, 'auto');
-  assert.equal(conv({ tool_choice: { type: 'any' } }).tool_choice, 'required');
+  assert.equal(conv({ tool_choice: { type: 'any' } }).tool_choice, undefined, 'no tool is sent, so none can be required');
+  assert.equal(conv({ tools: [{ name: 'Bash', input_schema: {} }], tool_choice: { type: 'any' } }).tool_choice, 'required');
   assert.equal(conv({ tool_choice: { type: 'none' } }).tool_choice, 'none');
   assert.equal(conv({ tool_choice: { type: 'tool', name: 'Bash' } }).tool_choice, undefined, 'a tool that is not sent cannot be chosen');
   assert.deepEqual(conv({ tools: [{ name: 'Bash', input_schema: {} }], tool_choice: { type: 'tool', name: 'Bash' } }).tool_choice, { type: 'function', name: 'Bash' });
