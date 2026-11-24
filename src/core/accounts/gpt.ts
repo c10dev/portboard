@@ -37,7 +37,8 @@ export function routeModel(model: unknown, cfg: GptConfig): string | null {
 /** A request the converter cannot read. The message is a closed text, never a part of the request. */
 export class ConvertError extends Error {}
 
-const MAX_EVENT_CHARS = 1024 * 1024;
+/** One SSE event: `response.completed` repeats the instructions, the tools and the whole output, so it can be large */
+const MAX_EVENT_CHARS = 32 * 1024 * 1024;
 const MAX_ERROR_CHARS = 500;
 
 type Obj = Record<string, unknown>;
@@ -45,9 +46,22 @@ const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 const sha = (s: string): string => createHash('sha256').update(s).digest('hex');
 
-/** An upstream text for a client message: control characters out, 500 characters at most (clip.ts adds an ellipsis, this does not) */
+const SECRETS: RegExp[] = [
+  /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g,
+  /\b(?:org|user|acct|account|proj|sess|req|resp|call|fc|msg)[-_][A-Za-z0-9_-]{6,}/gi,
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
+  /[A-Za-z0-9_\-+/=.]{24,}/g,
+];
+
+/**
+ * An upstream text for a client message. Control characters out; an e-mail address, an id (org-, user-, ...), a UUID and any
+ * run of 24 or more token characters become `[redacted]`; 500 characters at most (clip.ts adds an ellipsis, this does not).
+ */
 export function clipText(s: unknown): string {
-  return typeof s === 'string' ? s.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, MAX_ERROR_CHARS) : 'upstream error';
+  if (typeof s !== 'string') return 'upstream error';
+  let t = s.replace(/[\u0000-\u001f\u007f]/g, '');
+  for (const re of SECRETS) t = t.replace(re, '[redacted]');
+  return t.slice(0, MAX_ERROR_CHARS);
 }
 
 // ---- tool names ----
@@ -81,11 +95,11 @@ export function toolNames(): ToolNames {
 // ---- request ----
 
 /** The text of a `system` value or of a message's content: a string, or the text blocks joined with `sep` */
-function textOf(v: unknown, sep: string): string {
+function textOf(v: unknown, sep: string, skip?: string): string {
   if (typeof v === 'string') return v;
   if (!Array.isArray(v)) return '';
   return v
-    .filter((b): b is Obj => isObj(b) && b.type === 'text' && typeof b.text === 'string')
+    .filter((b): b is Obj => isObj(b) && b.type === 'text' && typeof b.text === 'string' && !(skip && (b.text as string).startsWith(skip)))
     .map((b) => b.text as string)
     .join(sep);
 }
@@ -144,6 +158,9 @@ function toolOutput(b: Obj): { output: string; images: Obj[] } {
   return { output: b.is_error === true ? `Error: ${output}` : output, images };
 }
 
+/** Claude Code sends this system block first; it is for Anthropic only */
+const BILLING_HEADER = 'x-anthropic-billing-header:';
+
 const EFFORTS: Record<string, string> = { low: 'low', medium: 'medium', high: 'high', minimal: 'minimal', xhigh: 'high', max: 'high' };
 
 function reasoningOf(body: Obj): { effort: string } | undefined {
@@ -154,8 +171,24 @@ function reasoningOf(body: Obj): { effort: string } | undefined {
   return th?.type === 'enabled' || th?.type === 'adaptive' ? { effort: 'medium' } : undefined;
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The session id the lane sends as `session-id` and `prompt_cache_key` (chatgpt.com caches a prompt per session): the client's
+ * `x-claude-code-session-id` when it is a UUID, else a UUID-shaped hash of `metadata.user_id` (the raw value never goes up),
+ * else null.
+ */
+export function sessionIdOf(header: unknown, body: unknown): string | null {
+  const h = Array.isArray(header) ? header[0] : header;
+  if (typeof h === 'string' && UUID.test(h)) return h.toLowerCase();
+  const user = isObj(body) && isObj(body.metadata) ? str(body.metadata.user_id) : null;
+  if (!user) return null;
+  const x = sha(user);
+  return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20, 32)}`;
+}
+
 /** An Anthropic Messages body (parsed JSON) as an OpenAI Responses body. A new object, built from known fields only. */
-export function toResponsesRequest(body: unknown, upstreamModel: string, names: ToolNames): Record<string, unknown> {
+export function toResponsesRequest(body: unknown, upstreamModel: string, names: ToolNames, sessionId?: string | null): Record<string, unknown> {
   if (!isObj(body)) throw new ConvertError('request is not a JSON object');
   if (!Array.isArray(body.messages)) throw new ConvertError('messages must be an array');
   const messages: unknown[] = body.messages;
@@ -218,7 +251,7 @@ export function toResponsesRequest(body: unknown, upstreamModel: string, names: 
   }
 
   const out: Obj = { model: upstreamModel };
-  const instructions = textOf(body.system, '\n\n');
+  const instructions = textOf(body.system, '\n\n', BILLING_HEADER);
   if (instructions !== '') out.instructions = instructions;
   out.input = input;
 
@@ -235,17 +268,17 @@ export function toResponsesRequest(body: unknown, upstreamModel: string, names: 
 
   const tc = isObj(body.tool_choice) ? body.tool_choice : null;
   if (tc) {
+    const listed = (n: string): boolean => (out.tools as Obj[] | undefined)?.some((t) => t.name === names.toUpstream(n)) === true;
     if (tc.type === 'auto') out.tool_choice = 'auto';
     else if (tc.type === 'any') out.tool_choice = 'required';
     else if (tc.type === 'none') out.tool_choice = 'none';
-    else if (tc.type === 'tool' && typeof tc.name === 'string') out.tool_choice = { type: 'function', name: names.toUpstream(tc.name) };
+    else if (tc.type === 'tool' && typeof tc.name === 'string' && listed(tc.name)) out.tool_choice = { type: 'function', name: names.toUpstream(tc.name) };
     if (tc.disable_parallel_tool_use === true) out.parallel_tool_calls = false;
   }
 
   const reasoning = reasoningOf(body);
   if (reasoning) out.reasoning = reasoning;
-  const user = isObj(body.metadata) ? str(body.metadata.user_id) : null;
-  if (user) out.prompt_cache_key = sha(user).slice(0, 32);
+  if (sessionId) out.prompt_cache_key = sessionId;
   out.stream = true;
   out.store = false;
   return out;

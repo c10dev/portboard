@@ -26,7 +26,7 @@ process.env.PORTBOARD_ACCOUNT_HOMES = HOMES;
 process.env.PORTBOARD_ACCOUNTS_PROXY_KEY = KEY_FILE;
 
 const { AccountsProxy, PROXY_HOST, PROXY_REQUESTS } = await import('../src/core/accounts/proxy.ts');
-const { ConvertError, fromResponse, MODEL_ID, ResponsesToMessages, routeModel, toolNames, toResponsesRequest } = await import('../src/core/accounts/gpt.ts');
+const { clipText, ConvertError, fromResponse, MODEL_ID, ResponsesToMessages, routeModel, sessionIdOf, toolNames, toResponsesRequest } = await import('../src/core/accounts/gpt.ts');
 const { resetRefreshForTest } = await import('../src/core/accounts/refresh.ts');
 const { upsertAccount } = await import('../src/core/accounts/store.ts');
 const { clearQuotaCache } = await import('../src/core/accounts/quota.ts');
@@ -110,7 +110,34 @@ test('request conversion: a Claude Code body (system array, system message, adap
   const out = toResponsesRequest(fixture('request-text.json'), 'gpt-6-astra', toolNames());
   assert.deepEqual(out, fixture('request-text.expected.json'));
   assert.ok(!JSON.stringify(out).includes('user_example_session_1'), 'the raw user id never goes up');
-  assert.deepEqual(Object.keys(out).sort(), ['input', 'instructions', 'model', 'prompt_cache_key', 'reasoning', 'store', 'stream']);
+  assert.ok(!JSON.stringify(out).includes('billing-header'), 'the Anthropic billing block is not an instruction');
+  assert.deepEqual(Object.keys(out).sort(), ['input', 'instructions', 'model', 'reasoning', 'store', 'stream'], 'no session id, no prompt_cache_key');
+  const keyed = toResponsesRequest(fixture('request-text.json'), 'gpt-6-astra', toolNames(), '11111111-2222-3333-4444-555555555555');
+  assert.equal(keyed.prompt_cache_key, '11111111-2222-3333-4444-555555555555');
+});
+
+test('session id: the client header when it is a UUID (lower-cased), else a UUID-shaped hash of metadata.user_id, else none', () => {
+  const body = fixture('request-text.json');
+  assert.equal(sessionIdOf('ABCDEF12-3456-7890-ABCD-EF1234567890', body), 'abcdef12-3456-7890-abcd-ef1234567890');
+  assert.equal(sessionIdOf(['abcdef12-3456-7890-abcd-ef1234567890'], null), 'abcdef12-3456-7890-abcd-ef1234567890');
+  const hashed = sessionIdOf(undefined, body);
+  assert.match(String(hashed), /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  assert.equal(sessionIdOf('not-a-uuid', body), hashed, 'a header that is not a UUID is not used');
+  assert.ok(!String(hashed).includes('user_example'));
+  assert.equal(sessionIdOf(undefined, { metadata: { user_id: '' } }), null);
+  assert.equal(sessionIdOf(undefined, { metadata: {} }), null);
+  assert.equal(sessionIdOf(undefined, null), null);
+});
+
+test('upstream text: e-mail, ids, UUIDs and long token runs are redacted; ordinary messages stay; control characters go; 500 characters', () => {
+  const dirty = 'x org-EXAMPLE123456 y owner@example.com z 123e4567-e89b-12d3-a456-426614174000 w ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd end\u0007';
+  const out = clipText(dirty);
+  for (const bad of ['org-EXAMPLE', 'owner@', '@example', '123e4567', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ']) assert.ok(!out.includes(bad), bad);
+  assert.equal(out, 'x [redacted] y [redacted] z [redacted] w [redacted] end');
+  for (const [prefix, id] of [['user', 'user-abc123XYZ'], ['req', 'req_0123456789'], ['resp', 'resp_abcdef'], ['call', 'call-aaaaaa1']]) assert.equal(clipText(`id ${id}`), 'id [redacted]', prefix);
+  for (const fine of ['The usage limit has been reached', "The 'no-such-model-x' model is not supported when using Codex with a ChatGPT account."]) assert.equal(clipText(fine), fine);
+  assert.equal(clipText('a'.repeat(700).replace(/a{20}/g, 'ab cd ef gh ij ')).length, 500);
+  assert.equal(clipText(5), 'upstream error');
 });
 
 test('request conversion: tools, deferred tools, tool results, images, documents, tool_choice and a long tool name', () => {
@@ -136,10 +163,12 @@ test('request conversion: effort map, tool_choice forms, stream and store are fi
   assert.equal(conv({ tool_choice: { type: 'auto' } }).tool_choice, 'auto');
   assert.equal(conv({ tool_choice: { type: 'any' } }).tool_choice, 'required');
   assert.equal(conv({ tool_choice: { type: 'none' } }).tool_choice, 'none');
-  assert.deepEqual(conv({ tool_choice: { type: 'tool', name: 'Bash' } }).tool_choice, { type: 'function', name: 'Bash' });
+  assert.equal(conv({ tool_choice: { type: 'tool', name: 'Bash' } }).tool_choice, undefined, 'a tool that is not sent cannot be chosen');
+  assert.deepEqual(conv({ tools: [{ name: 'Bash', input_schema: {} }], tool_choice: { type: 'tool', name: 'Bash' } }).tool_choice, { type: 'function', name: 'Bash' });
+  assert.equal(conv({ tools: [{ name: 'Bash', input_schema: {}, defer_loading: true }], tool_choice: { type: 'tool', name: 'Bash' } }).tool_choice, undefined, 'nor a deferred one');
   assert.equal(conv({ tool_choice: { type: 'auto', disable_parallel_tool_use: true } }).parallel_tool_calls, false);
   assert.equal(conv({ tool_choice: { type: 'auto', disable_parallel_tool_use: false } }).parallel_tool_calls, undefined);
-  assert.equal(conv({ metadata: { user_id: '' } }).prompt_cache_key, undefined);
+  assert.equal(conv({ metadata: { user_id: 'u' } }).prompt_cache_key, undefined, 'the body alone gives no cache key');
   assert.equal(conv({ system: '' }).instructions, undefined);
   assert.equal(conv({ system: 'plain' }).instructions, 'plain');
   assert.equal(conv({ tools: [{ name: 'a', input_schema: {} }] }).tools?.length, 1);
@@ -222,12 +251,13 @@ test('stream: finalResponse and failure, the model name is the requested one, an
   assert.deepEqual(frames(junk.out), [['error', { type: 'error', error: { type: 'api_error', message: 'codex: xy' } }]]);
   const nonString = await translate(Buffer.from('data: {"type":"error","message":5}\n\n'));
   assert.deepEqual(frames(nonString.out), [['error', { type: 'error', error: { type: 'api_error', message: 'codex: upstream error' } }]]);
-  const long = await translate(Buffer.from(`data: {"type":"error","message":"${'m'.repeat(900)}"}\n\n`));
+  const long = await translate(Buffer.from(`data: {"type":"error","message":"${'ab '.repeat(300)}"}\n\n`));
   assert.equal(((frames(long.out)[0][1] as { error: { message: string } }).error.message).length, 'codex: '.length + 500);
   const empty = await translate(Buffer.alloc(0));
   assert.deepEqual(frames(empty.out), [['error', { type: 'error', error: { type: 'api_error', message: 'codex stream ended early' } }]]);
-  const big = await translate(Buffer.from(`data: {"type":"response.output_text.delta","item_id":"a","content_index":0,"delta":"${'x'.repeat(1024 * 1024)}"}\n\ndata: {"type":"response.completed","response":{"id":"resp_k"}}\n\n`));
-  assert.deepEqual(frames(big.out).map((f) => f[0]), ['message_start', 'message_delta', 'message_stop'], 'an event over 1 Mi characters is dropped');
+  const large = await translate(Buffer.from(`data: {"type":"response.completed","response":{"id":"resp_k","instructions":"${'x'.repeat(3 * 1024 * 1024)}","usage":{"input_tokens":5,"output_tokens":2}}}\n\n`));
+  assert.deepEqual(frames(large.out).map((f) => f[0]), ['message_start', 'message_delta', 'message_stop'], 'a 3 MiB response.completed is not dropped');
+  assert.equal((frames(large.out)[1][1] as { usage: { input_tokens: number } }).usage.input_tokens, 5);
 });
 
 test('stream: a second text block and a tool after text get their own indexes; arguments of the done item are used when no delta came', async () => {
@@ -290,6 +320,8 @@ let proxy: Proxy;
 let key = '';
 let gptCfg = { enabled: true, models: { 'claude-opus-5-5': 'gpt-6-astra' } as Record<string, string> };
 const usage: UsageLine[] = [];
+/** called after each usage line is written; a waiter that is done returns true and is dropped */
+let waiters: (() => boolean)[] = [];
 const logged: string[] = [];
 const outputs: string[] = [];
 const saved = { log: console.log, info: console.info, warn: console.warn, error: console.error, debug: console.debug };
@@ -303,6 +335,7 @@ test.beforeEach(async () => {
   rmSync(join(FAKE_HOME, 'cfg'), { recursive: true, force: true });
   ups.length = 0;
   usage.length = 0;
+  waiters = [];
   logged.length = 0;
   outputs.length = 0;
   clock = NOW;
@@ -316,6 +349,7 @@ test.beforeEach(async () => {
     gpt: () => gptCfg,
     appendUsage: async (line) => {
       usage.push(line);
+      waiters = waiters.filter((w) => !w());
     },
   });
   await proxy.sync({ enabled: true, port: 0 });
@@ -364,15 +398,25 @@ async function call(body: unknown, path = '/v1/messages', headers: Record<string
   return { status: res.statusCode ?? 0, headers: res.headers, text: t, json };
 }
 /** The usage lines are written when the answer ended: wait for them */
-async function lines(n: number): Promise<UsageLine[]> {
-  for (let i = 0; i < 100 && usage.length < n; i++) await new Promise((r) => setTimeout(r, 10));
-  return usage;
+function lines(n: number): Promise<UsageLine[]> {
+  if (usage.length >= n) return Promise.resolve(usage);
+  return new Promise((resolve, reject) => {
+    const guard = setTimeout(() => reject(new Error('no usage line')), 10_000);
+    guard.unref();
+    waiters.push(() => {
+      if (usage.length < n) return false;
+      clearTimeout(guard);
+      resolve(usage);
+      return true;
+    });
+  });
 }
 const claudeBody = (model: string, extra: Record<string, unknown> = {}) => ({ ...fixture('request-text.json'), model, ...extra });
 
-test('gpt lane: a mapped model goes to the Codex address with exactly five headers and the converted body; the client gets Anthropic SSE; the usage line is a codex line', async () => {
+test('gpt lane: a mapped model goes to the Codex address with exactly these headers and the converted body; the client gets Anthropic SSE; the usage line is a codex line', async () => {
   await codex(CX.A, ACCOUNT_ID.A);
   assert.ok(PROXY_REQUESTS.codex.origin === 'https://chatgpt.com' && PROXY_REQUESTS.codex.upstreamPath === '/backend-api/codex/responses');
+  const hashed = sessionIdOf(undefined, claudeBody('claude-opus-5-5')) as string;
   const r = await call(claudeBody('claude-opus-5-5'), '/v1/messages?beta=true');
   assert.equal(r.status, 200);
   assert.equal(r.headers['content-type'], 'text/event-stream');
@@ -386,9 +430,10 @@ test('gpt lane: a mapped model goes to the Codex address with exactly five heade
     'content-type': 'application/json',
     accept: 'text/event-stream',
     'accept-encoding': 'identity',
+    'session-id': hashed,
   });
   const sent = JSON.parse(ups[0].body.toString('utf8'));
-  assert.deepEqual(sent, fixture('request-text.expected.json'), 'the model is the upstream one; stream is true and store is false');
+  assert.deepEqual(sent, { ...fixture('request-text.expected.json'), prompt_cache_key: hashed }, 'the model is the upstream one; stream is true and store is false; the cache key is the session id');
   const l = await lines(1);
   assert.equal(l.length, 1);
   assert.deepEqual({ ...l[0], at: '', ms: 0 }, { at: '', provider: 'codex', account: l[0].account, model: 'gpt-6-astra', status: 200, input: 104, output: 12, cacheRead: 0, cacheWrite: 0, ms: 0 });
@@ -472,7 +517,7 @@ test('gpt lane: error statuses map to closed types; an error.message is read; no
     [413, 'junk', 'request_too_large', 'codex: upstream error'],
     [500, { detail: 5 }, 'api_error', 'codex: upstream error'],
     [403, { detail: 'TESTTOKEN in text' }, 'permission_error', 'chatgpt.com refused the request'],
-    [503, { detail: 'x'.repeat(900) }, 'api_error', `codex: ${'x'.repeat(500)}`],
+    [503, { detail: 'ab '.repeat(300) }, 'api_error', `codex: ${'ab '.repeat(300).slice(0, 500)}`],
   ];
   for (const [status, body, type, message] of cases) {
     upstream = () => failure(status, body);
@@ -548,7 +593,7 @@ test('gpt lane: count_tokens on a mapped model is an estimate of bytes / 4, with
   const r = await call(bytes, '/v1/messages/count_tokens?beta=true');
   assert.deepEqual([r.status, r.json], [200, { input_tokens: Math.ceil(Buffer.byteLength(bytes) / 4) }]);
   assert.equal(ups.length, 0);
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  await proxy.close(); // waits for the usage writes that are still running
   assert.equal(usage.length, 0);
 });
 
@@ -574,4 +619,103 @@ test('gpt lane: only a caller with the proxy key reaches it', async () => {
   res.resume();
   assert.equal(res.statusCode, 401);
   assert.equal(ups.length, 0);
+});
+
+test('gpt lane: the client session header becomes session-id and prompt_cache_key; no other client header goes up', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  const id = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  await call(claudeBody('claude-opus-5-5'), '/v1/messages', { 'x-claude-code-session-id': id.toUpperCase(), 'x-app': 'cli', 'x-stainless-os': 'Linux' });
+  assert.deepEqual(Object.keys(ups[0].headers).sort(), ['accept', 'accept-encoding', 'authorization', 'chatgpt-account-id', 'content-type', 'session-id']);
+  assert.equal(ups[0].headers['session-id'], id);
+  assert.equal(JSON.parse(ups[0].body.toString('utf8')).prompt_cache_key, id);
+  // no header and no metadata: no session id at all
+  const { metadata: _drop, ...bare } = claudeBody('claude-opus-5-5');
+  await call(bare);
+  assert.equal(ups[1].headers['session-id'], undefined);
+  assert.equal('prompt_cache_key' in JSON.parse(ups[1].body.toString('utf8')), false);
+});
+
+test('gpt lane: a redirect, or a 200 that is not an event stream, is 502 "unexpected answer" for a stream and for no stream; the body is cancelled; the line has the status and no counts', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  let cancelled = 0;
+  const open = (status: number, type: string | null) => () => {
+    const body = new ReadableStream({
+      pull() {},
+      cancel() {
+        cancelled++;
+      },
+    });
+    return new Response(body, { status, headers: type ? { 'content-type': type, location: 'https://example.com/x' } : { location: 'https://example.com/x' } });
+  };
+  let n = 0;
+  for (const [status, type] of [[302, 'text/html'], [302, null], [200, 'application/json']] as [number, string | null][]) {
+    for (const stream of [true, false]) {
+      upstream = open(status, type);
+      const r = await call(claudeBody('claude-opus-5-5', { stream }));
+      assert.deepEqual([r.status, r.json], [502, { type: 'error', error: { type: 'api_error', message: `codex: unexpected answer ${status}` } }], `${status} ${type} ${stream}`);
+      n++;
+      const l = await lines(n);
+      assert.deepEqual([l[n - 1].provider, l[n - 1].status, l[n - 1].input, l[n - 1].output], ['codex', status, null, null]);
+    }
+  }
+  assert.equal(cancelled, 6);
+  assert.ok(!outputs.some((o) => o.includes('example.com')), 'the location does not reach the client');
+});
+
+test('gpt lane: a 200 stream with no content-type (as chatgpt.com sends it, seen 2026-11-24) is converted', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  upstream = () => new Response(readFileSync(join(FIX, 'stream-text-captured.sse')), { status: 200 });
+  const r = await call(claudeBody('claude-opus-5-5', { stream: true }));
+  assert.equal(r.status, 200);
+  assert.equal(r.headers['content-type'], 'text/event-stream');
+  assert.match(r.text, /event: message_stop/);
+});
+
+test('gpt lane: an upstream error body that never ends is given up after the wait, and the client gets the mapped status at once', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  await proxy.close();
+  const home = { fetch: fake, now: () => clock, accountsPath: FILE, accountHomes: HOMES, home: FAKE_HOME, env: { CLAUDE_CONFIG_DIR: join(FAKE_HOME, 'c'), CODEX_HOME: join(FAKE_HOME, 'x') }, platform: 'linux' };
+  proxy = new AccountsProxy({ ...home, keyPath: KEY_FILE, gpt: () => gptCfg, errorBodyMs: 40, appendUsage: async (line) => void usage.push(line) });
+  await proxy.sync({ enabled: true, port: 0 });
+  key = await proxy.key();
+  let stalled!: () => void;
+  const cancelled = new Promise<void>((resolve) => {
+    stalled = resolve;
+  });
+  upstream = () =>
+    new Response(new ReadableStream({ start: (c) => c.enqueue(new TextEncoder().encode('{"detail":"par')), pull() {}, cancel: () => stalled() }), { status: 400, headers: { 'content-type': 'application/json' } });
+  const r = await call(claudeBody('claude-opus-5-5'));
+  assert.deepEqual([r.status, r.json], [400, { type: 'error', error: { type: 'invalid_request_error', message: 'codex: upstream error' } }], 'the part that came is not used');
+  await cancelled;
+});
+
+test('gpt lane: error text from upstream is scrubbed in a status answer and in a failed stream', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  upstream = () => failure(400, { detail: 'org-EXAMPLE123456 owner@example.com 123e4567-e89b-12d3-a456-426614174000 ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd' });
+  const r = await call(claudeBody('claude-opus-5-5'));
+  assert.equal(r.json.error.message, 'codex: [redacted] [redacted] [redacted] [redacted]');
+  const sse = `data: ${JSON.stringify({ type: 'response.failed', response: { error: { message: 'bad org-EXAMPLE123456' } } })}\n\n`;
+  upstream = () => new Response(sse, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  const s = await call(claudeBody('claude-opus-5-5', { stream: false }));
+  assert.equal(s.json.error.message, 'codex: bad [redacted]');
+  const f = await call(claudeBody('claude-opus-5-5'));
+  assert.ok(f.text.includes('codex: bad [redacted]') && !f.text.includes('EXAMPLE123456'));
+});
+
+test('gpt lane: the body is parsed once for the lane (the model name of the line comes from it); a body that is not JSON still passes through', async () => {
+  await codex(CX.A, ACCOUNT_ID.A);
+  const body = claudeBody('claude-opus-5-5');
+  const real = JSON.parse;
+  let parses = 0;
+  JSON.parse = ((...a: Parameters<typeof JSON.parse>) => {
+    const text = String(a[0]);
+    if (text.includes('"user_example_session_1"') && text.includes('claude-opus-5-5')) parses++;
+    return real(...a);
+  }) as typeof JSON.parse;
+  try {
+    await call(body);
+  } finally {
+    JSON.parse = real;
+  }
+  assert.equal(parses, 1);
 });

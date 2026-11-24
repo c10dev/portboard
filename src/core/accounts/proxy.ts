@@ -28,7 +28,7 @@ import { pipeline } from 'node:stream/promises';
 import { writePrivate } from '../atomic.ts';
 import { PATHS } from '../paths.ts';
 import { SITE, SITE_DEFAULTS } from '../site.ts';
-import { clipText, ConvertError, fromResponse, ResponsesToMessages, routeModel, toolNames, toResponsesRequest, type GptConfig, type ToolNames } from './gpt.ts';
+import { clipText, ConvertError, fromResponse, ResponsesToMessages, routeModel, sessionIdOf, toolNames, toResponsesRequest, type GptConfig, type ToolNames } from './gpt.ts';
 import type { HomesOptions } from './homes.ts';
 import { Pool, verdictOf, type ProxyEvent, type ProxyProvider } from './pool.ts';
 import { appendUsage, MODEL_CLIP, num as count, type UsageLine } from './usage.ts';
@@ -70,6 +70,8 @@ const CLOSE_WAIT_MS = 2000;
 const MAX_SSE_BUFFER = 64 * 1024;
 /** Codex's `response.completed` holds the whole Response (every output item), so its SSE event can pass 64 KiB: Codex gets the JSON limit */
 const MAX_CODEX_SSE_BUFFER = MAX_OBSERVE_BYTES;
+/** The GPT lane reads the body of an upstream error for this long at most */
+const ERROR_BODY_MS = 10_000;
 
 /** `unknown`: the settings say on, but this process never opened or closed the proxy (the stdio MCP server): the dashboard's may be listening */
 export type ProxyState = 'off' | 'listening' | 'port in use' | 'error' | 'unknown';
@@ -107,6 +109,8 @@ export interface ProxyOptions extends HomesOptions {
   appendUsage?: (line: UsageLine, path: string) => Promise<void>;
   /** tests: the GPT lane's settings; default SITE.accounts.proxy.gpt (used only when accounts.enabled and accounts.proxy.enabled are on too) */
   gpt?: () => GptConfig;
+  /** tests: a shorter wait for the body of an upstream error on the GPT lane (default 10 seconds) */
+  errorBodyMs?: number;
 }
 
 /** The token counts one answer carried; null where it carried none */
@@ -679,9 +683,20 @@ export class AccountsProxy {
       if (!res.writableFinished) abort.abort();
     });
     const countOnly = target.url.split('?')[0].endsWith('/count_tokens');
-    const seen: Seen = { provider: target.provider, model: modelOf(body), countOnly, started: this.pool.now() };
-    const gpt = target.provider === 'claude' ? this.gptRoute(body) : null;
-    if (gpt) return this.forwardGpt(gpt.parsed, gpt.upstreamModel, countOnly, body, res, abort, seen);
+    // the GPT lane parses the body once: the result gives the model name of the usage line and the route
+    const lane = target.provider === 'claude' && this.gptConfig().enabled;
+    let parsed: unknown = null;
+    if (lane) {
+      try {
+        parsed = JSON.parse(body.toString('utf8'));
+      } catch {
+        // not JSON: not routed
+      }
+    }
+    const asked = objectOf(parsed)?.model;
+    const seen: Seen = { provider: target.provider, model: lane ? (typeof asked === 'string' ? asked.slice(0, MODEL_CLIP) : null) : modelOf(body), countOnly, started: this.pool.now() };
+    const upstreamModel = lane ? routeModel(asked, this.gptConfig()) : null;
+    if (upstreamModel) return this.forwardGpt(req.headers, parsed, upstreamModel, countOnly, body, res, abort, seen);
     await this.forward(target.provider, req.headers, target.url, body, res, abort, seen);
   }
 
@@ -692,27 +707,15 @@ export class AccountsProxy {
     return { enabled: a.enabled && a.proxy.enabled && a.proxy.gpt.enabled, models: a.proxy.gpt.models };
   }
 
-  /** The parsed body and the upstream GPT model when the lane takes this request; null otherwise. The body is parsed only when the lane is on. */
-  private gptRoute(body: Buffer): { parsed: unknown; upstreamModel: string } | null {
-    const cfg = this.gptConfig();
-    if (!cfg.enabled) return null;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(body.toString('utf8'));
-    } catch {
-      return null;
-    }
-    const upstreamModel = routeModel(objectOf(parsed)?.model, cfg);
-    return upstreamModel ? { parsed, upstreamModel } : null;
-  }
-
   /** The GPT lane: convert, ask a Codex account (the same switching as `forward`), convert the answer back */
-  private async forwardGpt(parsed: unknown, upstreamModel: string, countOnly: boolean, raw: Buffer, res: ServerResponse, abort: AbortController, seen: Seen): Promise<void> {
+  private async forwardGpt(from: IncomingMessage['headers'], parsed: unknown, upstreamModel: string, countOnly: boolean, raw: Buffer, res: ServerResponse, abort: AbortController, seen: Seen): Promise<void> {
     if (countOnly) return sendJson(res, 200, { input_tokens: Math.ceil(raw.length / 4) });
     const names = toolNames();
+    // chatgpt.com caches a prompt per session: the same id goes up as `session-id` and `prompt_cache_key`; no other client header does
+    const sessionId = sessionIdOf(from['x-claude-code-session-id'], parsed);
     let converted: Buffer;
     try {
-      converted = Buffer.from(JSON.stringify(toResponsesRequest(parsed, upstreamModel, names)));
+      converted = Buffer.from(JSON.stringify(toResponsesRequest(parsed, upstreamModel, names, sessionId)));
     } catch (err) {
       if (err instanceof ConvertError) return sendJson(res, 400, { type: 'error', error: { type: 'invalid_request_error', message: err.message } });
       throw err;
@@ -723,6 +726,7 @@ export class AccountsProxy {
       headers: (pick) => ({
         authorization: `Bearer ${pick.token}`,
         ...(pick.accountId ? { 'chatgpt-account-id': pick.accountId } : {}),
+        ...(sessionId ? { 'session-id': sessionId } : {}),
         'content-type': 'application/json',
         accept: 'text/event-stream',
         'accept-encoding': 'identity',
@@ -831,14 +835,25 @@ export class AccountsProxy {
   private async passGpt(response: Response, res: ServerResponse, seen: Seen, account: string, wantStream: boolean, requestedModel: string, names: ToolNames): Promise<void> {
     const observer = new UsageObserver(true, false, 'codex');
     let status = response.status;
+    let counted = true;
     const source = (): Readable => (response.body ? Readable.fromWeb(response.body as unknown as import('node:stream/web').ReadableStream) : Readable.from([]));
     try {
+      // chatgpt.com answers its stream with no content-type at all (seen 2026-11-24): only a named type that is not a stream is refused
+      const type = response.headers.get('content-type');
+      const sse = type === null || type.trim() === '' || type.toLowerCase().includes('text/event-stream');
       if (response.status >= 400) {
+        counted = false;
         const extra: Record<string, string> = {};
         const retry = response.headers.get('retry-after');
         if (retry !== null) extra['retry-after'] = retry;
-        const detail = await readErrorText(source());
+        const detail = await readErrorText(source(), this.o.errorBodyMs ?? ERROR_BODY_MS);
         return sendJson(res, response.status, gptErrorBody(response.status, detail), extra);
+      }
+      if (response.status >= 300 || !sse) {
+        // a redirect, or an answer that is not a stream: nothing to convert
+        counted = false;
+        void response.body?.cancel().catch(() => {});
+        return sendJson(res, 502, { type: 'error', error: { type: 'api_error', message: `codex: unexpected answer ${response.status}` } });
       }
       const translator = new ResponsesToMessages(requestedModel, names);
       if (wantStream) {
@@ -873,7 +888,7 @@ export class AccountsProxy {
       if (final === null) return sendJson(res, 502, BODIES.upstream);
       sendJson(res, 200, fromResponse(final, requestedModel, names));
     } finally {
-      this.record(seen, account, status, response.status >= 400 ? NO_TOKENS() : observer.result());
+      this.record(seen, account, status, counted ? observer.result() : NO_TOKENS());
     }
   }
 }
@@ -886,9 +901,14 @@ function gptErrorBody(status: number, detail: string | null): { type: 'error'; e
 }
 
 /** The text of an upstream error answer (`detail` or `error.message`, a string) out of at most 1 MiB; null when there is none */
-async function readErrorText(body: Readable): Promise<string | null> {
+async function readErrorText(body: Readable, waitMs: number): Promise<string | null> {
   const chunks: Buffer[] = [];
   let size = 0;
+  let late = false;
+  const timer = setTimeout(() => {
+    late = true;
+    body.destroy();
+  }, waitMs);
   try {
     for await (const c of body) {
       chunks.push(c as Buffer);
@@ -898,7 +918,9 @@ async function readErrorText(body: Readable): Promise<string | null> {
   } catch {
     // a broken body has no text
   }
+  clearTimeout(timer);
   body.destroy();
+  if (late) return null;
   try {
     const j = objectOf(JSON.parse(Buffer.concat(chunks).subarray(0, MAX_OBSERVE_BYTES).toString('utf8')));
     if (typeof j?.detail === 'string') return j.detail;

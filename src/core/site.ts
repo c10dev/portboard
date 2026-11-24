@@ -22,6 +22,7 @@ import { readFileSync } from 'node:fs';
 import { homedir, hostname, userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MODEL_ID } from './accounts/gpt.ts';
 import { keyedCache } from './cache.ts';
 import { isPortboardCheckout } from './checkout.ts';
 import { run } from './exec.ts';
@@ -173,8 +174,6 @@ export function machinesConfig(raw: Record<string, unknown> | undefined): typeof
   };
 }
 
-/** A GPT model id the GPT lane may send upstream (also used by src/core/accounts/gpt.ts) */
-const GPT_MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const GPT_NAME = /^[\x21-\x7e]{1,128}$/;
 const GPT_MAX_MODELS = 32;
 
@@ -186,7 +185,7 @@ function gptConfig(raw: unknown): typeof SITE_DEFAULTS.accounts.proxy.gpt {
     let n = 0;
     for (const [k, v] of Object.entries(g.models as Record<string, unknown>)) {
       if (n >= GPT_MAX_MODELS) break;
-      if (GPT_NAME.test(k) && typeof v === 'string' && GPT_MODEL_ID.test(v)) {
+      if (GPT_NAME.test(k) && typeof v === 'string' && MODEL_ID.test(v)) {
         models[k] = v;
         n++;
       }

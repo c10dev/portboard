@@ -5,6 +5,10 @@
  "system": [
   {
    "type": "text",
+   "text": "x-anthropic-billing-header: cc_version=2.1.330; cch=00000;"
+  },
+  {
+   "type": "text",
    "text": "You are Claude Code.",
    "cache_control": {
     "type": "ephemeral"
