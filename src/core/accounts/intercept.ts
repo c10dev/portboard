@@ -196,7 +196,7 @@ export class DesktopRoute {
   /** every socket made for an accepted CONNECT, with the key hash the CONNECT was authorized with */
   private readonly owned = new Map<Socket, Buffer>();
   /** the timers of a decrypted connection */
-  private readonly timers = new Map<Socket, { header?: NodeJS.Timeout; idle?: NodeJS.Timeout; busy: boolean }>();
+  private readonly timers = new Map<Socket, { header?: NodeJS.Timeout; idle?: NodeJS.Timeout; open: number }>();
   private readonly inner: Server;
   private readonly agent: HttpsAgent;
   private context: { cert: string; ctx: SecureContext } | null = null;
@@ -215,8 +215,10 @@ export class DesktopRoute {
         }),
       );
     });
-    // the route's own timers (watch, began) do the header and idle timing: the server never listens, so Node's would not run
+    // the route's own timers (watch, began) do the header and idle timing. Node's header check needs a listening server, and its
+    // keep-alive timer (5 s by default) would end an idle connection long before `idleMs`: both are off here
     this.inner.requestTimeout = 0;
+    this.inner.keepAliveTimeout = 0;
     this.inner.on('upgrade', (req, socket, head) => {
       this.clearTimers(socket as Socket);
       this.upgrade(req, socket as Socket, head);
@@ -248,7 +250,7 @@ export class DesktopRoute {
 
   /** The time limits of a decrypted connection: the first request's headers within `headersTimeoutMs` of the handshake, none while a request or its answer is in progress, and after each answer the next request's complete headers within `idleMs` */
   private watch(tls: Socket): void {
-    const t: { header?: NodeJS.Timeout; idle?: NodeJS.Timeout; busy: boolean } = { busy: false };
+    const t: { header?: NodeJS.Timeout; idle?: NodeJS.Timeout; open: number } = { open: 0 };
     this.timers.set(tls, t);
     t.header = setTimeout(() => tls.destroy(), this.deps.headersTimeoutMs);
     tls.once('close', () => this.clearTimers(tls));
@@ -262,11 +264,12 @@ export class DesktopRoute {
     clearTimeout(t.idle);
     t.header = undefined;
     t.idle = undefined;
-    t.busy = true;
+    // pipelined requests overlap: the idle clock starts only when the last open one has its answer
+    t.open++;
     res.once('close', () => {
       if (tls.destroyed || this.timers.get(tls) !== t) return;
-      t.busy = false;
-      t.idle = setTimeout(() => tls.destroy(), this.deps.idleMs);
+      t.open = Math.max(0, t.open - 1);
+      if (t.open === 0) t.idle = setTimeout(() => tls.destroy(), this.deps.idleMs);
     });
   }
 

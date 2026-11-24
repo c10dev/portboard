@@ -125,7 +125,7 @@ async function startRelay() {
       seen.push({ method: req.method ?? '', url: req.url ?? '', headers: req.headers, body: Buffer.concat(chunks) });
       res.writeHead(200, { 'content-type': 'text/plain', 'x-relay': 'yes' });
       res.write('part-one;');
-      setTimeout(() => res.end('part-two'), 30);
+      setTimeout(() => res.end('part-two'), req.url === '/slow' ? 400 : 30);
     });
   });
   const upgraded: Buffer[] = [];
@@ -752,6 +752,32 @@ test('a decrypted connection that sends half a request is closed; an idle one is
   kept.tls.write('GET /api/oauth/pro');
   await within(closedOf(kept.tls), 'the connection closes at the idle limit');
   assert.equal(relay.seen.length, 1, 'no second request reached the relay');
+});
+
+test('pipelined requests on a decrypted connection: the idle wait starts only after the last answer', async () => {
+  const relay = await startRelay();
+  await start({ interceptHeadersMs: 150, interceptIdleMs: 150, interceptUpstream: { host: '127.0.0.1', port: relay.port, ca: relay.ca } });
+  const conn = await openIntercept();
+  let seen = '';
+  conn.tls.on('data', (d: Buffer) => (seen += d.toString()));
+  conn.tls.write('GET /api/oauth/profile HTTP/1.1\r\nHost: api.anthropic.com\r\n\r\nGET /slow HTTP/1.1\r\nHost: api.anthropic.com\r\n\r\n');
+  await until(() => seen.split('part-two').length === 3, 'both answers arrive');
+  assert.deepEqual(relay.seen.map((r) => r.url), ['/api/oauth/profile', '/slow']);
+  await within(closedOf(conn.tls), 'then the idle wait closes it');
+});
+
+test('an idle decrypted connection outlives the 6 seconds of Node\'s own keep-alive timer when the idle wait is longer', async () => {
+  const relay = await startRelay();
+  await start({ interceptIdleMs: 20_000, interceptUpstream: { host: '127.0.0.1', port: relay.port, ca: relay.ca } });
+  const conn = await openIntercept();
+  let seen = '';
+  conn.tls.on('data', (d: Buffer) => (seen += d.toString()));
+  conn.tls.write('GET /api/oauth/profile HTTP/1.1\r\nHost: api.anthropic.com\r\n\r\n');
+  await until(() => seen.includes('part-two'), 'the answer');
+  // a deadline, not a sleep: the connection must still be open when it passes
+  const outcome = await Promise.race([closedOf(conn.tls).then(() => 'closed'), new Promise<string>((resolve) => setTimeout(() => resolve('open'), 6_500))]);
+  assert.equal(outcome, 'open');
+  conn.tls.destroy();
 });
 
 test('decrypted lane requests share the limit of plain requests; relayed requests do not', async () => {
