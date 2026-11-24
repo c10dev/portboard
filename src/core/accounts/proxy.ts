@@ -32,7 +32,7 @@ import { pipeline } from 'node:stream/promises';
 import { writePrivate } from '../atomic.ts';
 import { PATHS } from '../paths.ts';
 import { SITE, SITE_DEFAULTS } from '../site.ts';
-import { clipText, ConvertError, fromResponse, ResponsesToMessages, routeModel, sessionIdOf, toolNames, toResponsesRequest, type GptConfig, type ToolNames } from './gpt.ts';
+import { clipText, ConvertError, fromResponse, mergeThread, ResponsesToMessages, routeModel, sessionIdOf, ThreadStore, toolNames, toResponsesRequest, type GptConfig, type ToolNames } from './gpt.ts';
 import type { HomesOptions } from './homes.ts';
 import { DesktopRoute, INTERCEPT_HOST, loadOrMakeCert, type RouteDeps } from './intercept.ts';
 import { Pool, verdictOf, type ProxyEvent, type ProxyProvider } from './pool.ts';
@@ -488,6 +488,8 @@ export class AccountsProxy {
   private certs: { cert: string; key: string } | null = null;
   /** non-CONNECT requests open now (counted only while the route is on) */
   private plain = 0;
+  /** the GPT lane's threads (docs/accounts.md#gpt-lane): memory only, one store for this proxy */
+  private readonly threads = new ThreadStore();
 
   private readonly o: ProxyOptions;
 
@@ -838,18 +840,40 @@ export class AccountsProxy {
   /** The GPT lane: convert, ask a Codex account (the same switching as `forward`), convert the answer back */
   private async forwardGpt(from: IncomingMessage['headers'], parsed: unknown, upstreamModel: string, countOnly: boolean, raw: Buffer, res: ServerResponse, abort: AbortController, seen: Seen): Promise<void> {
     if (countOnly) return sendJson(res, 200, { input_tokens: Math.ceil(raw.length / 4) });
+    // a request with `thread` (through the desktop route) may carry only the new turn: the stored history is put back in front of it
+    let effective = parsed;
+    const body = objectOf(parsed);
+    const thread = objectOf(body?.thread);
+    if (body && thread) {
+      if (thread.type === 'continue') {
+        const prev = this.threads.get(String(thread.previous_message_id));
+        if (!prev) return sendJson(res, 400, { type: 'error', error: { type: 'invalid_request_error', message: 'thread not found: the proxy keeps GPT lane threads in memory only; start a new conversation' } });
+        effective = mergeThread(body, prev);
+      }
+    }
     const names = toolNames();
     // chatgpt.com caches a prompt per session: the same id goes up as `session-id` and `prompt_cache_key`; no other client header does
     const sessionId = sessionIdOf(from['x-claude-code-session-id'], parsed);
     let converted: Buffer;
     try {
-      converted = Buffer.from(JSON.stringify(toResponsesRequest(parsed, upstreamModel, names, sessionId)));
+      converted = Buffer.from(JSON.stringify(toResponsesRequest(effective, upstreamModel, names, sessionId)));
     } catch (err) {
       if (err instanceof ConvertError) return sendJson(res, 400, { type: 'error', error: { type: 'invalid_request_error', message: err.message } });
       throw err;
     }
     const wantStream = objectOf(parsed)?.stream === true;
     const requestedModel = String(objectOf(parsed)?.model ?? '').slice(0, MODEL_CLIP);
+    // after a whole answer: the history up to and including it is kept under the id the client received
+    const sent = objectOf(effective);
+    const keep =
+      body && thread && sent
+        ? (id: string, content: unknown) =>
+            this.threads.put(id, {
+              system: sent.system,
+              tools: Array.isArray(sent.tools) ? sent.tools : null,
+              messages: [...(Array.isArray(sent.messages) ? sent.messages : []), { role: 'assistant', content }],
+            })
+        : null;
     const lane: Lane = {
       headers: (pick) => ({
         authorization: `Bearer ${pick.token}`,
@@ -859,7 +883,7 @@ export class AccountsProxy {
         accept: 'text/event-stream',
         'accept-encoding': 'identity',
       }),
-      pass: (response, account) => this.passGpt(response, res, seen, account, wantStream, requestedModel, names),
+      pass: (response, account) => this.passGpt(response, res, seen, account, wantStream, requestedModel, names, keep),
     };
     // the usage line names the GPT model that answered, as a Codex line (docs/accounts.md#usage-log)
     seen.provider = 'codex';
@@ -960,7 +984,7 @@ export class AccountsProxy {
    * OpenAI-shaped stream with the Codex rules. When the client asked for no stream, the whole upstream stream is read and the
    * final Response becomes one Message.
    */
-  private async passGpt(response: Response, res: ServerResponse, seen: Seen, account: string, wantStream: boolean, requestedModel: string, names: ToolNames): Promise<void> {
+  private async passGpt(response: Response, res: ServerResponse, seen: Seen, account: string, wantStream: boolean, requestedModel: string, names: ToolNames, keep: ((id: string, content: unknown) => void) | null): Promise<void> {
     const observer = new UsageObserver(true, false, 'codex');
     const status = response.status;
     let counted = true;
@@ -992,7 +1016,12 @@ export class AccountsProxy {
         } catch {
           // upstream broke off or the caller left: the connection is closed, nothing more to say
           res.destroy();
+          return;
         }
+        // a whole answer only: the final Response is known and no error came. The id is the one `message_start` carried.
+        const done = translator.finalResponse();
+        const id = translator.messageId();
+        if (keep && done !== null && id !== null && translator.failure() === null) keep(id, fromResponse(done, requestedModel, names, id).content);
         return;
       }
       let size = 0;
@@ -1014,7 +1043,9 @@ export class AccountsProxy {
       const final = translator.finalResponse();
       if (failure) return sendJson(res, 500, { type: 'error', error: { type: 'api_error', message: failure } });
       if (final === null) return sendJson(res, 502, BODIES.upstream);
-      sendJson(res, 200, fromResponse(final, requestedModel, names));
+      const message = fromResponse(final, requestedModel, names);
+      sendJson(res, 200, message);
+      if (keep) keep(String(message.id), message.content);
     } finally {
       this.record(seen, account, status, counted ? observer.result() : NO_TOKENS());
     }
