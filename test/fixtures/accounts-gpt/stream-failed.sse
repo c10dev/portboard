@@ -1,0 +1,12 @@
+event: response.created
+data: {"type": "response.created", "response": {"id": "resp_fail1", "status": "in_progress"}}
+
+event: response.output_item.added
+data: {"type": "response.output_item.added", "item": {"type": "message", "id": "msg_f", "role": "assistant", "content": []}}
+
+event: response.output_text.delta
+data: {"type": "response.output_text.delta", "item_id": "msg_f", "content_index": 0, "delta": "Hi"}
+
+event: response.failed
+data: {"type": "response.failed", "response": {"id": "resp_fail1", "status": "failed", "error": {"code": "server_error", "message": "bad\u0007thing"}}}
+

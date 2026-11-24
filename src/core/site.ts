@@ -102,9 +102,10 @@ export const SITE_DEFAULTS = {
   },
   /**
    * AI subscription accounts view (docs/accounts.md): reads the local Claude Code and Codex logins; off until enabled.
-   * `proxy`: the loopback account pool proxy (docs/accounts.md#proxy), off until both flags are true
+   * `proxy`: the loopback account pool proxy (docs/accounts.md#proxy), off until both flags are true.
+   * `proxy.gpt`: the GPT lane (docs/accounts.md#gpt-lane): Claude Code requests for the listed model names go to a GPT model
    */
-  accounts: { enabled: false, proxy: { enabled: false, port: 8795 } },
+  accounts: { enabled: false, proxy: { enabled: false, port: 8795, gpt: { enabled: false, models: {} as Record<string, string> } } },
   /** where_to_run's score weights over recommend.ts DEFAULT_WEIGHTS (only numbers between -1 and 1 are taken) */
   recommend: { weights: {} as Record<string, number> },
 };
@@ -172,12 +173,34 @@ export function machinesConfig(raw: Record<string, unknown> | undefined): typeof
   };
 }
 
-/** portboard.json `accounts`: on only for `enabled: true`; `proxy.enabled` likewise, `proxy.port` a whole number from 1024 to 65535 (else 8795) */
+/** A GPT model id the GPT lane may send upstream (also used by src/core/accounts/gpt.ts) */
+const GPT_MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const GPT_NAME = /^[\x21-\x7e]{1,128}$/;
+const GPT_MAX_MODELS = 32;
+
+/** portboard.json `accounts.proxy.gpt`: on only for `enabled: true`; `models` keeps the first 32 entries (in key order) that have a printable name and a valid model id */
+function gptConfig(raw: unknown): typeof SITE_DEFAULTS.accounts.proxy.gpt {
+  const g = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const models: Record<string, string> = {};
+  if (g.models && typeof g.models === 'object' && !Array.isArray(g.models)) {
+    let n = 0;
+    for (const [k, v] of Object.entries(g.models as Record<string, unknown>)) {
+      if (n >= GPT_MAX_MODELS) break;
+      if (GPT_NAME.test(k) && typeof v === 'string' && GPT_MODEL_ID.test(v)) {
+        models[k] = v;
+        n++;
+      }
+    }
+  }
+  return { enabled: g.enabled === true, models };
+}
+
+/** portboard.json `accounts`: on only for `enabled: true`; `proxy.enabled` likewise, `proxy.port` a whole number from 1024 to 65535 (else 8795); `proxy.gpt` as gptConfig */
 export function accountsConfig(raw: Record<string, unknown> | undefined): typeof SITE_DEFAULTS.accounts {
   const D = SITE_DEFAULTS.accounts.proxy;
   const p = raw?.proxy && typeof raw.proxy === 'object' && !Array.isArray(raw.proxy) ? (raw.proxy as Record<string, unknown>) : {};
   const port = typeof p.port === 'number' && Number.isInteger(p.port) && p.port >= 1024 && p.port <= 65535 ? p.port : D.port;
-  return { enabled: raw?.enabled === true, proxy: { enabled: p.enabled === true, port } };
+  return { enabled: raw?.enabled === true, proxy: { enabled: p.enabled === true, port, gpt: gptConfig(p.gpt) } };
 }
 
 /** portboard.json `recommend`: weights between -1 and 1 by name (recommend.ts says which names it knows) */

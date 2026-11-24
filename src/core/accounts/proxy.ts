@@ -11,7 +11,9 @@
 //   - Only POST /v1/messages, POST /v1/messages/count_tokens (Claude) and POST /codex/responses (Codex) are sent on
 //     (PROXY_REQUESTS). Other paths are counted. WebSocket upgrades are not sent on.
 //   - The request body goes upstream as the bytes it came in; the answer streams back. A switch happens only before the first
-//     byte of an answer reaches the caller (pool.ts decides which answers move on).
+//     byte of an answer reaches the caller (pool.ts decides which answers move on). The one exception is the GPT lane
+//     (docs/accounts.md#gpt-lane, gpt.ts): a /v1/messages request whose model the owner listed in `accounts.proxy.gpt` is
+//     converted to a Responses request and sent to the Codex address with a Codex account, and its answer is converted back.
 //   - The dashboard process opens the listener from the `accounts-proxy` job (src/features/accounts.ts); the stdio MCP server never does.
 //
 // No token, key, header value, body or query string is written to a log, an event or an answer.
@@ -21,11 +23,12 @@ import { readFile, stat } from 'node:fs/promises';
 import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { StringDecoder } from 'node:string_decoder';
-import { Readable, Transform } from 'node:stream';
+import { Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { writePrivate } from '../atomic.ts';
 import { PATHS } from '../paths.ts';
 import { SITE, SITE_DEFAULTS } from '../site.ts';
+import { clipText, ConvertError, fromResponse, ResponsesToMessages, routeModel, toolNames, toResponsesRequest, type GptConfig, type ToolNames } from './gpt.ts';
 import type { HomesOptions } from './homes.ts';
 import { Pool, verdictOf, type ProxyEvent, type ProxyProvider } from './pool.ts';
 import { appendUsage, MODEL_CLIP, num as count, type UsageLine } from './usage.ts';
@@ -102,6 +105,8 @@ export interface ProxyOptions extends HomesOptions {
   usagePath?: string;
   /** tests: replace the usage log's writer */
   appendUsage?: (line: UsageLine, path: string) => Promise<void>;
+  /** tests: the GPT lane's settings; default SITE.accounts.proxy.gpt (used only when accounts.enabled and accounts.proxy.enabled are on too) */
+  gpt?: () => GptConfig;
 }
 
 /** The token counts one answer carried; null where it carried none */
@@ -293,6 +298,12 @@ export class UsageObserver extends Transform {
     }
     return { ...this.tokens };
   }
+}
+
+/** What differs on the GPT lane: the upstream headers and what is done with the answer (the account switching is `forward`'s) */
+interface Lane {
+  headers(pick: { token: string; accountId: string | null }): Record<string, string>;
+  pass(response: Response, account: string): Promise<void>;
 }
 
 /** What `forward` knows about the request when it writes the usage line */
@@ -667,8 +678,61 @@ export class AccountsProxy {
     res.on('close', () => {
       if (!res.writableFinished) abort.abort();
     });
-    const seen: Seen = { provider: target.provider, model: modelOf(body), countOnly: target.url.split('?')[0].endsWith('/count_tokens'), started: this.pool.now() };
+    const countOnly = target.url.split('?')[0].endsWith('/count_tokens');
+    const seen: Seen = { provider: target.provider, model: modelOf(body), countOnly, started: this.pool.now() };
+    const gpt = target.provider === 'claude' ? this.gptRoute(body) : null;
+    if (gpt) return this.forwardGpt(gpt.parsed, gpt.upstreamModel, countOnly, body, res, abort, seen);
     await this.forward(target.provider, req.headers, target.url, body, res, abort, seen);
+  }
+
+  /** The GPT lane's settings: the test hook, or portboard.json (the lane is open only while the proxy itself is) */
+  private gptConfig(): GptConfig {
+    if (this.o.gpt) return this.o.gpt();
+    const a = SITE.accounts;
+    return { enabled: a.enabled && a.proxy.enabled && a.proxy.gpt.enabled, models: a.proxy.gpt.models };
+  }
+
+  /** The parsed body and the upstream GPT model when the lane takes this request; null otherwise. The body is parsed only when the lane is on. */
+  private gptRoute(body: Buffer): { parsed: unknown; upstreamModel: string } | null {
+    const cfg = this.gptConfig();
+    if (!cfg.enabled) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body.toString('utf8'));
+    } catch {
+      return null;
+    }
+    const upstreamModel = routeModel(objectOf(parsed)?.model, cfg);
+    return upstreamModel ? { parsed, upstreamModel } : null;
+  }
+
+  /** The GPT lane: convert, ask a Codex account (the same switching as `forward`), convert the answer back */
+  private async forwardGpt(parsed: unknown, upstreamModel: string, countOnly: boolean, raw: Buffer, res: ServerResponse, abort: AbortController, seen: Seen): Promise<void> {
+    if (countOnly) return sendJson(res, 200, { input_tokens: Math.ceil(raw.length / 4) });
+    const names = toolNames();
+    let converted: Buffer;
+    try {
+      converted = Buffer.from(JSON.stringify(toResponsesRequest(parsed, upstreamModel, names)));
+    } catch (err) {
+      if (err instanceof ConvertError) return sendJson(res, 400, { type: 'error', error: { type: 'invalid_request_error', message: err.message } });
+      throw err;
+    }
+    const wantStream = objectOf(parsed)?.stream === true;
+    const requestedModel = String(objectOf(parsed)?.model ?? '').slice(0, MODEL_CLIP);
+    const lane: Lane = {
+      headers: (pick) => ({
+        authorization: `Bearer ${pick.token}`,
+        ...(pick.accountId ? { 'chatgpt-account-id': pick.accountId } : {}),
+        'content-type': 'application/json',
+        accept: 'text/event-stream',
+        'accept-encoding': 'identity',
+      }),
+      pass: (response, account) => this.passGpt(response, res, seen, account, wantStream, requestedModel, names),
+    };
+    // the usage line names the GPT model that answered, as a Codex line (docs/accounts.md#usage-log)
+    seen.provider = 'codex';
+    seen.model = upstreamModel;
+    await this.forward('codex', {}, PROXY_REQUESTS.codex.origin + PROXY_REQUESTS.codex.upstreamPath, converted, res, abort, seen, lane);
   }
 
   /** Write one usage line; nothing here changes the answer, and a failed write is dropped */
@@ -682,7 +746,7 @@ export class AccountsProxy {
   }
 
   /** Try the accounts in turn; hand the first answer that is not a switch to the caller */
-  private async forward(provider: ProxyProvider, from: IncomingMessage['headers'], url: string, body: Buffer, res: ServerResponse, abort: AbortController, seen: Seen): Promise<void> {
+  private async forward(provider: ProxyProvider, from: IncomingMessage['headers'], url: string, body: Buffer, res: ServerResponse, abort: AbortController, seen: Seen, lane?: Lane): Promise<void> {
     const pool = this.pool;
     const used = new Set<string>();
     /** the account asked last */
@@ -703,14 +767,14 @@ export class AccountsProxy {
       try {
         response = await (this.o.fetch ?? upstreamRequest)(url, {
           method: 'POST',
-          headers: upstreamHeaders(from, provider, pick.token, pick.accountId),
+          headers: lane ? lane.headers(pick) : upstreamHeaders(from, provider, pick.token, pick.accountId),
           body: body as unknown as BodyInit,
           redirect: 'manual',
           signal: abort.signal,
         });
       } catch {
         // the caller left, the wait for the headers ran out, or the network failed: nothing was sent to the caller yet
-        if (!res.destroyed && !res.headersSent) sendJson(res, 502, errorBody(provider, 'upstream'));
+        if (!res.destroyed && !res.headersSent) sendJson(res, 502, errorBody(lane ? 'claude' : provider, 'upstream'));
         this.record(seen, pick.id, 0, NO_TOKENS());
         return;
       } finally {
@@ -719,7 +783,7 @@ export class AccountsProxy {
       const verdict = verdictOf(provider, response.status, response.headers, pool.now());
       if (!verdict) {
         if (response.status < 400) pool.current[provider] = pick.id;
-        return this.pass(response, res, seen, pick.id);
+        return lane ? lane.pass(response, pick.id) : this.pass(response, res, seen, pick.id);
       }
       pool.rest(provider, pick.id, verdict.restMs, response.status);
       held = { response, id: pick.id };
@@ -729,10 +793,10 @@ export class AccountsProxy {
       if (lastId) this.record(seen, lastId, 0, NO_TOKENS());
       return void held?.response.body?.cancel().catch(() => {});
     }
-    if (held) return this.pass(held.response, res, seen, held.id);
+    if (held) return lane ? lane.pass(held.response, held.id) : this.pass(held.response, res, seen, held.id);
     // no account was left to ask: nothing to log (docs/accounts.md#usage-log)
     pool.noteNoAccount(provider);
-    sendJson(res, 503, errorBody(provider, 'noAccount'));
+    sendJson(res, 503, errorBody(lane ? 'claude' : provider, 'noAccount'));
   }
 
   /** Status and headers first, then the body as a stream; a caller that leaves ends the upstream request (the signal) */
@@ -756,6 +820,92 @@ export class AccountsProxy {
       // once, however the answer ended, with the counts seen so far
       this.record(seen, account, response.status, observer.result());
     }
+  }
+
+  /**
+   * The GPT lane's answer. An error status is answered in the Anthropic error shape with a closed text (OpenAI's own text of a
+   * 401 or 403 is never passed on). A stream is converted as it comes; the usage counts are read before the conversion, on the
+   * OpenAI-shaped stream with the Codex rules. When the client asked for no stream, the whole upstream stream is read and the
+   * final Response becomes one Message.
+   */
+  private async passGpt(response: Response, res: ServerResponse, seen: Seen, account: string, wantStream: boolean, requestedModel: string, names: ToolNames): Promise<void> {
+    const observer = new UsageObserver(true, false, 'codex');
+    let status = response.status;
+    const source = (): Readable => (response.body ? Readable.fromWeb(response.body as unknown as import('node:stream/web').ReadableStream) : Readable.from([]));
+    try {
+      if (response.status >= 400) {
+        const extra: Record<string, string> = {};
+        const retry = response.headers.get('retry-after');
+        if (retry !== null) extra['retry-after'] = retry;
+        const detail = await readErrorText(source());
+        return sendJson(res, response.status, gptErrorBody(response.status, detail), extra);
+      }
+      const translator = new ResponsesToMessages(requestedModel, names);
+      if (wantStream) {
+        res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+        res.flushHeaders();
+        try {
+          await pipeline(source(), observer, translator, res);
+        } catch {
+          // upstream broke off or the caller left: the connection is closed, nothing more to say
+          res.destroy();
+        }
+        return;
+      }
+      let size = 0;
+      const limit = new Transform({
+        transform(chunk: Buffer, _enc, cb) {
+          size += chunk.length;
+          cb(size > MAX_BODY_BYTES ? new Error('answer too large') : null, size > MAX_BODY_BYTES ? undefined : chunk);
+        },
+      });
+      try {
+        await pipeline(source(), limit, observer, translator, new Writable({ write: (_c, _e, cb) => cb() }));
+      } catch {
+        status = 0;
+        if (!res.destroyed && !res.headersSent) sendJson(res, 502, BODIES.upstream);
+        return;
+      }
+      if (res.destroyed) return;
+      const failure = translator.failure();
+      const final = translator.finalResponse();
+      if (failure) return sendJson(res, 500, { type: 'error', error: { type: 'api_error', message: failure } });
+      if (final === null) return sendJson(res, 502, BODIES.upstream);
+      sendJson(res, 200, fromResponse(final, requestedModel, names));
+    } finally {
+      this.record(seen, account, status, response.status >= 400 ? NO_TOKENS() : observer.result());
+    }
+  }
+}
+
+/** The error body of the GPT lane: the Anthropic shape; a 401 or 403 says a closed text, as OpenAI's own text may echo a token */
+function gptErrorBody(status: number, detail: string | null): { type: 'error'; error: { type: string; message: string } } {
+  const type = status === 400 || status === 422 ? 'invalid_request_error' : status === 401 ? 'authentication_error' : status === 403 ? 'permission_error' : status === 404 ? 'not_found_error' : status === 413 ? 'request_too_large' : status === 429 ? 'rate_limit_error' : 'api_error';
+  const message = status === 401 ? 'codex account token refused' : status === 403 ? 'chatgpt.com refused the request' : `codex: ${clipText(detail)}`;
+  return { type: 'error', error: { type, message } };
+}
+
+/** The text of an upstream error answer (`detail` or `error.message`, a string) out of at most 1 MiB; null when there is none */
+async function readErrorText(body: Readable): Promise<string | null> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  try {
+    for await (const c of body) {
+      chunks.push(c as Buffer);
+      size += (c as Buffer).length;
+      if (size > MAX_OBSERVE_BYTES) break;
+    }
+  } catch {
+    // a broken body has no text
+  }
+  body.destroy();
+  try {
+    const j = objectOf(JSON.parse(Buffer.concat(chunks).subarray(0, MAX_OBSERVE_BYTES).toString('utf8')));
+    if (typeof j?.detail === 'string') return j.detail;
+    const m = objectOf(j?.error)?.message;
+    return typeof m === 'string' ? m : null;
+  } catch {
+    return null;
   }
 }
 

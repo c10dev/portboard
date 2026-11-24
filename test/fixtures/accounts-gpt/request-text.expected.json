@@ -1,0 +1,42 @@
+{
+ "model": "gpt-6-astra",
+ "instructions": "You are Claude Code.\n\nBe brief.",
+ "input": [
+  {
+   "type": "message",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "hello"
+    }
+   ]
+  },
+  {
+   "type": "message",
+   "role": "developer",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "Reminder one.\n\nReminder two."
+    }
+   ]
+  },
+  {
+   "type": "message",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "What time is it?"
+    }
+   ]
+  }
+ ],
+ "reasoning": {
+  "effort": "high"
+ },
+ "prompt_cache_key": "f59ce0d040c673ffebe63ab9696d65e9",
+ "stream": true,
+ "store": false
+}

@@ -1,0 +1,25 @@
+{
+ "id": "resp_def456",
+ "object": "response",
+ "status": "incomplete",
+ "incomplete_details": {
+  "reason": "max_output_tokens"
+ },
+ "output": [
+  {
+   "type": "message",
+   "id": "msg_1",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "Partial"
+    },
+    {
+     "type": "refusal",
+     "refusal": "I can't"
+    }
+   ]
+  }
+ ]
+}
