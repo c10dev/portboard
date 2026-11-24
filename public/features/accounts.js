@@ -74,6 +74,8 @@ const ERRORS = [
   [/^proxy key unusable$/, () => t('accounts.proxy.error.key')],
   [/^invalid lanes$/, () => t('accounts.lanes.invalid')],
   [/^lanes not written$/, () => t('accounts.lanes.error.notWritten')],
+  [/^desktop route certificate unusable$/, () => t('accounts.lanes.error.cert')],
+  [/^invalid JSON body$/, () => t('accounts.lanes.error.body')],
 ];
 
 function errorText(s) {
@@ -218,13 +220,15 @@ const KIND = {
 const LANE_NAME = /^[\x21-\x7e]{1,128}$/;
 const LANE_MODEL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const LANE_MAX = 32;
+/** The mapping editor's rows and whether they hold changes the server has not seen (kept across redraws of the block) */
+const draft = { dirty: false, rows: [] };
 
 /**
  * The GPT lane and desktop route controls of the proxy block (p.lanes, p.activity; POST api/accounts/proxy/lanes): two switches, the
  * model mapping, "copy desktop settings" (the key is asked inside the click and never drawn), the activity line and, when the lanes
  * file could not be read, a warning. `manual` is the proxy block's read-only field for when the clipboard cannot be used.
  */
-function lanesNodes(p, listening, { showManual, hideManual }) {
+function lanesNodes(p, listening, { showManual, hideManual, group, markCopied, resetCopied }) {
   const lanes = p.lanes;
   if (!lanes) return null;
   const failed = h('span', { class: 'set-state warn acc-line', role: 'alert' });
@@ -254,18 +258,28 @@ function lanesNodes(p, listening, { showManual, hideManual }) {
   };
 
   // the mapping: one row per entry; the save button posts the non-empty rows
+  // the rows live in `draft` (module state), so a redraw of the block keeps what was typed and not yet saved
+  if (!draft.dirty) draft.rows = Object.entries(lanes.gpt.models).map(([from, to]) => ({ from, to }));
+  const unsaved = h('span', { class: 'set-note', hidden: !draft.dirty }, t('accounts.lanes.unsaved'));
+  const touch = () => { draft.dirty = true; unsaved.hidden = false; };
   const rows = h('div');
-  const mapRow = (from, to) => {
-    const input = (label, placeholder, value) => {
+  const mapRow = (entry) => {
+    const input = (label, placeholder, key) => {
       const i = h('input', { type: 'text', class: 'ctl-text', 'aria-label': label, placeholder, maxlength: 128, autocomplete: 'off', spellcheck: 'false' });
-      i.value = value;
+      i.value = entry[key];
+      i.addEventListener('input', () => { entry[key] = i.value; touch(); });
       return i;
     };
-    const r = h('div', { class: 'set-row acc-line', dataset: { lane: 'model' } }, input(t('accounts.lanes.claudeName'), 'claude-haiku-5-5', from), input(t('accounts.lanes.gptModel'), 'gpt-6-astra', to));
-    r.append(button(t('accounts.lanes.remove'), () => { invalid.textContent = ''; r.remove(); }, { write: true }));
+    const r = h('div', { class: 'set-row acc-line', dataset: { lane: 'model' } }, input(t('accounts.lanes.claudeName'), 'claude-haiku-5-5', 'from'), input(t('accounts.lanes.gptModel'), 'gpt-6-astra', 'to'));
+    r.append(button(t('accounts.lanes.remove'), () => {
+      invalid.textContent = '';
+      draft.rows.splice(draft.rows.indexOf(entry), 1);
+      touch();
+      r.remove();
+    }, { write: true }));
     return r;
   };
-  for (const [from, to] of Object.entries(lanes.gpt.models)) rows.append(mapRow(from, to));
+  for (const entry of draft.rows) rows.append(mapRow(entry));
   const save = button(t('accounts.lanes.save'), async () => {
     say('');
     invalid.textContent = '';
@@ -284,9 +298,18 @@ function lanesNodes(p, listening, { showManual, hideManual }) {
       save.disabled = false;
       return say(errorText(reason(err)));
     }
+    // the server's models take the place of the draft
+    draft.dirty = false;
+    unsaved.hidden = true;
     refresh();
   }, { write: true });
-  const add = button(t('accounts.lanes.add'), () => { rows.append(mapRow('', '')); rows.lastElementChild?.querySelector('input')?.focus(); }, { write: true });
+  const add = button(t('accounts.lanes.add'), () => {
+    const entry = { from: '', to: '' };
+    draft.rows.push(entry);
+    touch();
+    rows.append(mapRow(entry));
+    rows.lastElementChild?.querySelector('input')?.focus();
+  }, { write: true });
 
   // "copy desktop settings": the same ClipboardItem promise as the copy buttons; the key is in the clipboard text only
   const settingsOf = async () => {
@@ -305,7 +328,7 @@ function lanesNodes(p, listening, { showManual, hideManual }) {
     }
     try {
       await navigator.clipboard.writeText(got.command);
-      copyDesktop.textContent = t('accounts.add.copied');
+      markCopied(copyDesktop);
     } catch {
       showManual(got.byHand, t('accounts.lanes.manual', { file: got.keyFile }), copyDesktopLabel);
     }
@@ -313,19 +336,20 @@ function lanesNodes(p, listening, { showManual, hideManual }) {
   const copyDesktop = button(copyDesktopLabel, () => {
     say('');
     hideManual();
-    copyDesktop.textContent = copyDesktopLabel;
+    resetCopied();
     const pending = settingsOf();
     pending.catch(() => {});
     if (window.ClipboardItem && navigator.clipboard?.write) {
       const blob = pending.then((c) => new Blob([c.command], { type: 'text/plain' }));
       navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]).then(
-        () => { copyDesktop.textContent = t('accounts.add.copied'); },
+        () => markCopied(copyDesktop),
         () => fallback(pending),
       );
       return;
     }
     fallback(pending);
   }, { write: true, disabled: !listening || !lanes.desktop.enabled });
+  group.push([copyDesktop, copyDesktopLabel]);
 
   const a = p.activity;
   const last = a ? [a.gpt.lastAt, a.desktop.lastAt].filter(Boolean).sort().at(-1) : null;
@@ -334,7 +358,7 @@ function lanesNodes(p, listening, { showManual, hideManual }) {
     ...lane('desktop', t('accounts.lanes.desktop'), t('accounts.lanes.desktopNote'), extLink(t('accounts.docs'), `${DOCS}#desktop-route`)),
     h('strong', null, t('accounts.lanes.models')),
     rows,
-    h('div', { class: 'set-row acc-line' }, add, save, invalid),
+    h('div', { class: 'set-row acc-line' }, add, save, invalid, unsaved),
     h('p', { class: 'set-note' }, t('accounts.lanes.modelsNote')),
     h('div', { class: 'set-row acc-line' }, copyDesktop),
     h('p', { class: 'set-note' }, t('accounts.lanes.copyDesktopNote')),
@@ -393,10 +417,11 @@ function proxyBlock(report) {
       byHand: `ANTHROPIC_BASE_URL=${p.url} ANTHROPIC_AUTH_TOKEN="$(cat ${shellQuote(keyFile)})" claude`,
     };
   };
-  /** Only the button whose command is on the clipboard says "copied": the other one shows its normal label */
+  /** The copy buttons of this block (button, normal label); only the one whose text is on the clipboard says "copied" */
+  const group = [];
+  const resetCopied = () => { for (const [b, label] of group) b.textContent = label; };
   const markCopied = (btn) => {
-    copy.textContent = t('accounts.proxy.copy');
-    copyCodex.textContent = t('accounts.proxy.copyCodex');
+    resetCopied();
     btn.textContent = t('accounts.add.copied');
   };
   /** The key request failed, or both clipboard ways did: say it, or show the by-hand command */
@@ -432,6 +457,7 @@ function proxyBlock(report) {
       }
       fallback(pending, copy);
     }, { write: true, disabled: !listening });
+    group.push([copy, label]);
     return copy;
   };
   const copy = copyButton(t('accounts.proxy.copy'), false);
@@ -441,8 +467,7 @@ function proxyBlock(report) {
     if (!(await confirmRemove(t('accounts.proxy.rotate.confirm'), t('accounts.proxy.rotate.yes')))) return;
     try {
       await postOrThrow('api/accounts/proxy/key', { rotate: true });
-      copy.textContent = t('accounts.proxy.copy');
-      copyCodex.textContent = t('accounts.proxy.copyCodex');
+      resetCopied();
       say(t('accounts.proxy.rotated'));
     } catch (err) {
       say(errorText(reason(err)));
@@ -461,7 +486,7 @@ function proxyBlock(report) {
     h('div', { class: 'set-row acc-line' }, copy, copyCodex, rotate),
     note,
     manual,
-    lanesNodes(p, listening, { showManual, hideManual }),
+    lanesNodes(p, listening, { showManual, hideManual, group, markCopied, resetCopied }),
     h('p', { class: 'set-note' }, t('accounts.proxy.events')),
     lines.length ? lines : h('p', { class: 'set-note' }, t('accounts.proxy.noEvents')),
   );

@@ -242,7 +242,7 @@ test('lanes route: not the owner, no X-Portboard, and the wrong shape of caller 
   }
   assert.throws(() => statSync(LANES_FILE));
   const r = (accountsFeature.routes ?? []).find((x) => x.path === '/api/accounts/proxy/lanes');
-  assert.ok(r && r.method === 'POST' && r.write === true && 'body' in r && r.body?.limit === 8192);
+  assert.ok(r && r.method === 'POST' && r.write === true && 'body' in r && r.body?.limit === 16384);
 });
 
 test('lanes route: accounts off and proxy off are 404 with their own texts', async () => {
@@ -285,8 +285,8 @@ test('lanes route: each invalid shape is 400 "invalid lanes" without the input, 
     const r = await lanesRoute(b);
     assert.deepEqual([r.status, r.body], [400, { error: 'invalid lanes' }], JSON.stringify(b)?.slice(0, 80));
   }
-  // a body over 8 KiB is refused before the handler
-  const big = await lanesRoute(JSON.stringify({ gpt: { models: { a: 'x'.repeat(9000) } } }));
+  // a body over 16 KiB is refused before the handler
+  const big = await lanesRoute(JSON.stringify({ gpt: { models: { a: 'x'.repeat(17000) } } }));
   assert.ok(big.status >= 400 && big.status !== 500);
   assert.throws(() => statSync(LANES_FILE));
   assert.ok(![...outputs, auditText()].some((o) => o.includes(SECRET)), 'the input is not echoed or logged');
@@ -370,6 +370,60 @@ test('the accounts-proxy job reads the lanes file each run (an edited file appli
   await job.run({} as never);
   const r = proxy.report().lanes;
   assert.deepEqual([r.unreadable, r.gpt.enabled, r.desktop.enabled, r.source], [true, false, false, { gpt: 'config', desktop: 'config' }]);
+});
+
+test('lanes route: the largest valid map (32 names and model ids of 128 characters) is accepted', async () => {
+  const models = Object.fromEntries(Array.from({ length: 32 }, (_v, i) => [`${'n'.repeat(120)}${String(i).padStart(8, '0')}`, 'g'.repeat(128)]));
+  const size = Buffer.byteLength(JSON.stringify({ gpt: { models } }));
+  assert.ok(size > 8192 && size < 16384, `${size} bytes`);
+  const r = await lanesRoute({ gpt: { models } });
+  assert.equal(r.status, 200);
+  assert.equal(Object.keys(fileJson().gpt.models).length, 32);
+});
+
+test('lanes route: the desktop route turned on with a certificate that cannot be used is undone: 500, the file still says off, the proxy is listening', async () => {
+  mkdirSync(CFG, { recursive: true });
+  writeFileSync(CERT_FILE, 'not a certificate', { mode: 0o600 });
+  await lanesRoute({ gpt: { enabled: true } });
+  const r = await lanesRoute({ desktop: { enabled: true } });
+  assert.deepEqual([r.status, r.body], [500, { error: 'desktop route certificate unusable' }]);
+  assert.deepEqual(fileJson(), { gpt: { enabled: true, models: {} }, desktop: { enabled: false } });
+  assert.equal(proxy.report().state, 'listening');
+  assert.equal(proxy.report().lanes.desktop.enabled, false);
+  assert.equal((await keyRoute()).status, 200, 'the proxy still answers');
+  // a good certificate: the same request works
+  rmSync(CERT_FILE);
+  assert.equal((await lanesRoute({ desktop: { enabled: true } })).status, 200);
+  assert.equal(proxy.report().state, 'listening');
+});
+
+test('lanes route: two posts at once both apply, and each answer holds at least its own change', async () => {
+  const [a, b] = await Promise.all([lanesRoute({ gpt: { enabled: true } }), lanesRoute({ desktop: { enabled: true } })]);
+  assert.deepEqual([a.status, b.status], [200, 200]);
+  assert.equal((a.body as any).lanes.gpt.enabled, true);
+  assert.equal((b.body as any).lanes.desktop.enabled, true);
+  assert.deepEqual(fileJson(), { gpt: { enabled: true, models: {} }, desktop: { enabled: true } });
+  const r = proxy.report().lanes;
+  assert.deepEqual([r.gpt.enabled, r.desktop.enabled], [true, true]);
+});
+
+test('report: a process that never synced reads the lanes from the file (GET /api/accounts)', async () => {
+  mkdirSync(CFG, { recursive: true });
+  writeFileSync(LANES_FILE, JSON.stringify({ gpt: { enabled: true, models: { 'claude-a-5': 'gpt-6' } }, desktop: { enabled: true } }), { mode: 0o600 });
+  const never = new AccountsProxy({ ...homesOpts(), keyPath: KEY_FILE });
+  setAccountsOptionsForTest(() => ({ ...homesOpts(), proxy: never }));
+  const ctx = context();
+  const req = fakeReq('127.0.0.1', { 'x-portboard': '1' });
+  req.method = 'GET';
+  const out = await appRouter(REGISTRY.routes, ctx)(req, new URL('http://x/api/accounts'), ctx);
+  assert.equal(out!.status, 200);
+  const p = (out!.body as any).proxy;
+  assert.equal(p.state, 'unknown');
+  assert.deepEqual(p.lanes, { gpt: { enabled: true, models: { 'claude-a-5': 'gpt-6' } }, desktop: { enabled: true }, source: { gpt: 'file', desktop: 'file' }, unreadable: false });
+  // the tool reads the same
+  const tool = accountsFeature.tools?.find((t) => t.def.name === 'list_accounts');
+  const text = (await tool!.call({} as never, {} as never)) as { content: { text: string }[] };
+  assert.deepEqual(JSON.parse(text.content[0].text).proxy.lanes.source, { gpt: 'file', desktop: 'file' });
 });
 
 // ---- the key route and the report ----
@@ -486,6 +540,13 @@ const modelRows = () => doc.querySelectorAll('div').filter((d) => d.dataset.lane
 const field = (row: any, label: string) => row.querySelectorAll('input').find((i: any) => i.getAttribute('aria-label') === label);
 const everything = () => [doc.body.textContent, ...doc.querySelectorAll('input').map((i) => i.value)].join('\n');
 const alerts = () => doc.querySelectorAll('span').filter((s) => s.getAttribute('role') === 'alert' && s.textContent !== '').map((s) => s.textContent).join('|');
+
+/** Remove every row and save: the draft is clean again (the module keeps it between tests) */
+async function clean() {
+  for (const r of modelRows()) r.querySelectorAll('button').find((b: any) => b.textContent === names.remove)!.click();
+  button(names.save).click();
+  await tick();
+}
 
 async function show(report = proxyReport()) {
   current = report;
@@ -607,6 +668,7 @@ test('page: a bad row is not posted and the buttons show why', async () => {
     await tick();
     assert.deepEqual(posts, [], `${name} / ${model}`);
     assert.ok(doc.body.textContent.includes(invalid), `${name} / ${model}`);
+    await clean();
   }
   // more than 32 rows
   await show(proxyReport({ lanes: { gpt: { enabled: true, models: {} }, desktop: { enabled: false }, source: { gpt: 'file', desktop: 'file' }, unreadable: false } }));
@@ -619,6 +681,7 @@ test('page: a bad row is not posted and the buttons show why', async () => {
   button(names.save).click();
   await tick();
   assert.deepEqual(posts, []);
+  await clean();
   // a server error on a good map is shown, and the rows stay
   await show();
   lanesAnswer = { status: 400, body: { error: 'invalid lanes' } };
@@ -627,6 +690,64 @@ test('page: a bad row is not posted and the buttons show why', async () => {
   assert.equal(posts.length, 1);
   assert.equal(alerts(), invalid);
   assert.equal(modelRows().length, 1);
+});
+
+test('page: unsaved rows survive a redraw (a switch posts only its own body); Save posts them and clears the note', async () => {
+  const unsaved = L('저장하지 않은 변경이 있어요.', 'Unsaved changes.');
+  await show();
+  const note = () => doc.querySelectorAll('span').find((x) => x.textContent === unsaved)!;
+  assert.equal(note().hidden, true);
+  button(names.add).click();
+  assert.equal(note().hidden, false);
+  const typed = field(modelRows()[1], names.claude);
+  typed.value = 'claude-opus-5-5';
+  typed.dispatch('input');
+  const model = field(modelRows()[1], names.gpt);
+  model.value = 'gpt-6';
+  model.dispatch('input');
+  posts.length = 0;
+  const sw = switchOf(names.lanesGpt);
+  sw.checked = true;
+  sw.dispatch('change');
+  await tick();
+  assert.deepEqual(posts, [{ path: 'api/accounts/proxy/lanes', body: { gpt: { enabled: true } } }]);
+  // the block was drawn again from the report: the draft rows are still there
+  assert.equal(modelRows().length, 2);
+  assert.deepEqual([field(modelRows()[1], names.claude).value, field(modelRows()[1], names.gpt).value], ['claude-opus-5-5', 'gpt-6']);
+  assert.equal(note().hidden, false);
+  // a settings:refresh keeps them too
+  doc.dispatchEvent({ type: 'settings:refresh' });
+  await tick();
+  assert.equal(modelRows().length, 2);
+  posts.length = 0;
+  button(names.save).click();
+  await tick();
+  assert.deepEqual(posts, [{ path: 'api/accounts/proxy/lanes', body: { gpt: { models: { 'claude-haiku-5-5': 'gpt-6-astra', 'claude-opus-5-5': 'gpt-6' } } } }]);
+  assert.equal(note().hidden, true);
+  // the report now says what the server has: the rows are the report's again
+  current = proxyReport({ lanes: { gpt: { enabled: true, models: { 'claude-opus-5-5': 'gpt-6' } }, desktop: { enabled: true }, source: { gpt: 'file', desktop: 'file' }, unreadable: false } });
+  doc.dispatchEvent({ type: 'settings:refresh' });
+  await tick();
+  assert.equal(modelRows().length, 1);
+  assert.equal(field(modelRows()[0], names.claude).value, 'claude-opus-5-5');
+});
+
+test('page: the three copy buttons reset each other: only the last one clicked says copied', async () => {
+  const copied = L('복사했어요', 'Copied');
+  await show();
+  const labels = [L('Claude 명령 복사', 'Copy Claude command'), L('Codex 명령 복사', 'Copy Codex command'), names.copy];
+  for (const first of labels) {
+    for (const second of labels.filter((l) => l !== first)) {
+      await show();
+      button(first).click();
+      await tick();
+      button(second).click();
+      await tick();
+      const said = buttons().filter((b) => b.textContent === copied);
+      assert.equal(said.length, 1, `${first} then ${second}`);
+      assert.equal(buttons().filter((b) => labels.includes(b.textContent)).length, 2, 'the other two show their own labels');
+    }
+  }
 });
 
 test('page: "copy desktop settings" puts the JSON with the key on the clipboard (2-space JSON), and is disabled unless listening and the route is on', async () => {

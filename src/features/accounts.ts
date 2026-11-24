@@ -70,6 +70,16 @@ function loginOptions() {
 /** The proxy this process drives: the one the report options name (tests), else the process's own */
 const proxyOf = () => optionsFn().proxy ?? accountsProxy;
 
+/** The report; a proxy that never synced in this process (the stdio MCP server) says what the lanes file and portboard.json say */
+async function reportOf(o: ReportOptions) {
+  const r = await accountsReport(o);
+  if (r.proxy.state === 'unknown') {
+    const l = await lanesNow();
+    r.proxy.lanes = { gpt: l.gpt, desktop: l.desktop, source: l.source, unreadable: l.unreadable === true };
+  }
+  return r;
+}
+
 /** accounts.enabled and the proxy's own flag (the lanes file never turns the proxy on) */
 const proxyOn = (): boolean => enabledFn() && proxyConfig().enabled;
 
@@ -78,6 +88,33 @@ async function lanesNow(): Promise<LanesRead> {
   const base = proxyConfig();
   const a = SITE.accounts;
   return readLanes({ site: { accounts: { ...a, proxy: { ...a.proxy, desktop: { enabled: base.desktop === true } } } } });
+}
+
+let lanesChain: Promise<void> = Promise.resolve();
+
+/** Merge `patch` over the lanes in effect, write the file and apply it; the desktop route turned on with a certificate that cannot be used is undone */
+async function applyLanes(patch: NonNullable<ReturnType<typeof parseLanesPatch>>): Promise<Reply> {
+  const before = await lanesNow();
+  const next = applyLanesPatch(before, patch);
+  try {
+    await writeLanes(next);
+  } catch {
+    return reply(500, { error: 'lanes not written' });
+  }
+  // applied at once: the same sync as the job's
+  await proxyOf().sync(await proxySettings());
+  if (next.desktop.enabled && !before.desktop.enabled && proxyOf().report().state === 'error') {
+    // the route could not start (its certificate): the proxy would stay closed, so the old lanes go back
+    let restored = true;
+    try {
+      await writeLanes({ gpt: before.gpt, desktop: before.desktop });
+    } catch {
+      restored = false;
+    }
+    await proxyOf().sync(await proxySettings());
+    return reply(500, { error: restored ? 'desktop route certificate unusable' : 'lanes not written' });
+  }
+  return ok({ lanes: next, source: { gpt: 'file', desktop: 'file' } });
 }
 
 /** The proxy's settings with the lanes in effect, and nothing while accounts are off */
@@ -109,7 +146,7 @@ export const accountsFeature: FeatureModule = {
         // The same owner decision as the audit log's read: plan, email and limits are the owner's business.
         const c = classify(req, await ctx.owner(), await ctx.policy());
         if (!c.owner) return reply(403, { error: 'owner only', reason: c.reason ?? '' });
-        return ok(await accountsReport({ ...optionsFn(), refresh: true }));
+        return ok(await reportOf({ ...optionsFn(), refresh: true }));
       },
     },
     {
@@ -243,23 +280,18 @@ export const accountsFeature: FeatureModule = {
       method: 'POST',
       path: '/api/accounts/proxy/lanes',
       write: true,
-      body: { limit: 8192 },
+      // the largest valid map (32 names and 32 model ids of 128 characters) is about 8.4 KiB
+      body: { limit: 16384 },
       async handler({ body }) {
         if (!enabledFn()) return reply(404, { error: 'accounts disabled' });
         if (!proxyOn()) return reply(404, { error: 'accounts proxy disabled' });
         // the body is not echoed in an answer, whatever is wrong with it
         const patch = parseLanesPatch(body);
         if (!patch) return reply(400, { error: 'invalid lanes' });
-        const now = await lanesNow();
-        const next = applyLanesPatch(now, patch);
-        try {
-          await writeLanes(next);
-        } catch {
-          return reply(500, { error: 'lanes not written' });
-        }
-        // applied at once: the same sync as the job's
-        await proxyOf().sync(await proxySettings());
-        return ok({ lanes: next, source: { gpt: 'file', desktop: 'file' } });
+        // one request at a time: read, merge, write and sync of a request never mix with another's
+        const run = lanesChain.then(() => applyLanes(patch));
+        lanesChain = run.then(() => undefined, () => undefined);
+        return run;
       },
     },
   ],
@@ -284,7 +316,7 @@ export const accountsFeature: FeatureModule = {
           'remaining limits (used percent and reset time of the 5-hour and weekly windows; none for Copilot). It reads the CLIs\' ' +
           'two login files (~/.claude/.credentials.json, ~/.codex/auth.json) and Portboard\'s own accounts file, and asks each ' +
           'vendor\'s unofficial usage endpoint (api.anthropic.com, chatgpt.com), cached for 5 minutes. It never refreshes a ' +
-          'token (only the dashboard does that, for an added account with no folder) and never returns a token. The answer also has `proxy` (the account pool proxy: enabled, state, port, current account ids (`current.claude`, `current.codex`), resting account ids, last events, counts; never a key; state is `unknown` in this process while the settings are on). Each added account also says whether it is `active` and, once the owner chose "use this account" ' +
+          'token (only the dashboard does that, for an added account with no folder) and never returns a token. The answer also has `proxy` (the account pool proxy: enabled, state, port, current account ids (`current.claude`, `current.codex`), resting account ids, last events, counts, `lanes` (the GPT lane and desktop route in effect, and whether each came from the lanes file or portboard.json), `activity` (what the two lanes did since start); never a key; state is `unknown` in this process while the settings are on). Each added account also says whether it is `active` and, once the owner chose "use this account" ' +
           'in the dashboard, the `command` that starts its CLI in its own folder. Read-only: it cannot add, use or remove an account. When accounts.enabled is off in ' +
           'portboard.json it answers "accounts disabled" and reads nothing.',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },
@@ -292,7 +324,7 @@ export const accountsFeature: FeatureModule = {
       },
       async call() {
         if (!enabledFn()) return text('accounts disabled', true);
-        return text(await accountsReport(optionsFn()));
+        return text(await reportOf(optionsFn()));
       },
     },
   ],
