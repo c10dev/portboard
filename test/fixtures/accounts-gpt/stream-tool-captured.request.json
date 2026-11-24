@@ -1,0 +1,5 @@
+{"model":"gpt-6-astra","store":false,"stream":true,"tool_choice":"auto","parallel_tool_calls":false,
+ "input":[
+  {"type":"additional_tools","role":"developer","tools":[{"type":"namespace","name":"functions","description":"","tools":[{"type":"function","name":"get_time","description":"Return the current time.","parameters":{"type":"object","properties":{"tz":{"type":"string"}},"required":["tz"]},"strict":false}]}]},
+  {"type":"message","role":"developer","content":[{"type":"input_text","text":"You are a test assistant. Use tools when asked."}]},
+  {"type":"message","role":"user","content":[{"type":"input_text","text":"Call get_time with tz UTC. Do not answer in text."}]}]}

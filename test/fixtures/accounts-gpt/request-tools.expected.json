@@ -1,0 +1,140 @@
+{
+ "model": "gpt-6-astra",
+ "input": [
+  {
+   "type": "message",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "run it"
+    }
+   ]
+  },
+  {
+   "type": "message",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "Running."
+    }
+   ]
+  },
+  {
+   "type": "function_call",
+   "call_id": "toolu_01",
+   "name": "Bash",
+   "arguments": "{\"command\":\"ls\"}"
+  },
+  {
+   "type": "function_call",
+   "call_id": "toolu_02",
+   "name": "mcp__example_server__aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_76dcd624",
+   "arguments": "{}"
+  },
+  {
+   "type": "function_call_output",
+   "call_id": "toolu_01",
+   "output": "file.txt"
+  },
+  {
+   "type": "function_call_output",
+   "call_id": "toolu_02",
+   "output": "Error: line a\nline b\nTool loaded: LoadedLater"
+  },
+  {
+   "type": "message",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_image",
+     "image_url": "data:image/png;base64,iVBORw0KGgo="
+    }
+   ]
+  },
+  {
+   "type": "message",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "next"
+    }
+   ]
+  },
+  {
+   "type": "message",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_image",
+     "image_url": "https://example.com/a.png"
+    },
+    {
+     "type": "input_file",
+     "filename": "document.pdf",
+     "file_data": "data:application/pdf;base64,JVBERi0="
+    },
+    {
+     "type": "input_text",
+     "text": "plain doc"
+    },
+    {
+     "type": "input_text",
+     "text": "[search_result block omitted]"
+    }
+   ]
+  }
+ ],
+ "tools": [
+  {
+   "type": "function",
+   "name": "Bash",
+   "description": "Run a command.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "command": {
+      "type": "string"
+     }
+    }
+   },
+   "strict": false
+  },
+  {
+   "type": "function",
+   "name": "mcp__example_server__aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_76dcd624",
+   "description": "",
+   "parameters": {
+    "type": "object",
+    "properties": {}
+   },
+   "strict": false
+  },
+  {
+   "type": "function",
+   "name": "LoadedLater",
+   "description": "Loaded by reference.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "command": {
+      "type": "string"
+     }
+    }
+   },
+   "strict": false
+  }
+ ],
+ "tool_choice": {
+  "type": "function",
+  "name": "mcp__example_server__aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_76dcd624"
+ },
+ "parallel_tool_calls": false,
+ "reasoning": {
+  "effort": "medium"
+ },
+ "stream": true,
+ "store": false
+}

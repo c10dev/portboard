@@ -1,0 +1,34 @@
+{
+ "id": "msg_abc123",
+ "type": "message",
+ "role": "assistant",
+ "model": "claude-opus-5-5",
+ "content": [
+  {
+   "type": "text",
+   "text": "Checking."
+  },
+  {
+   "type": "tool_use",
+   "id": "call_1",
+   "name": "get_time",
+   "input": {
+    "tz": "UTC"
+   }
+  },
+  {
+   "type": "tool_use",
+   "id": "call_2",
+   "name": "get_time",
+   "input": {}
+  }
+ ],
+ "stop_reason": "tool_use",
+ "stop_sequence": null,
+ "usage": {
+  "input_tokens": 60,
+  "output_tokens": 7,
+  "cache_read_input_tokens": 40,
+  "cache_creation_input_tokens": 0
+ }
+}

@@ -1,0 +1,191 @@
+{
+ "model": "claude-opus-5-5",
+ "max_tokens": 1000,
+ "stream": true,
+ "tools": [
+  {
+   "name": "Bash",
+   "description": "Run a command.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "command": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  {
+   "name": "mcp__example.server__aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "input_schema": {
+    "type": "object",
+    "properties": {}
+   }
+  },
+  {
+   "name": "LoadedLater",
+   "description": "Loaded by reference.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "command": {
+      "type": "string"
+     }
+    }
+   },
+   "defer_loading": true
+  },
+  {
+   "name": "Hidden",
+   "description": "Never loaded.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "command": {
+      "type": "string"
+     }
+    }
+   },
+   "defer_loading": true
+  },
+  {
+   "name": "DeferredToolPlaceholder",
+   "input_schema": {
+    "type": "object"
+   },
+   "defer_loading": true
+  },
+  {
+   "type": "web_search_20250305",
+   "name": "web_search"
+  }
+ ],
+ "tool_choice": {
+  "type": "tool",
+  "name": "mcp__example.server__aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "disable_parallel_tool_use": true
+ },
+ "thinking": {
+  "type": "enabled",
+  "budget_tokens": 2000
+ },
+ "messages": [
+  {
+   "role": "user",
+   "content": [
+    {
+     "type": "text",
+     "text": "run it"
+    }
+   ]
+  },
+  {
+   "role": "assistant",
+   "content": [
+    {
+     "type": "thinking",
+     "thinking": "hmm",
+     "signature": "sig"
+    },
+    {
+     "type": "redacted_thinking",
+     "data": "x"
+    },
+    {
+     "type": "text",
+     "text": "Running."
+    },
+    {
+     "type": "tool_use",
+     "id": "toolu_01",
+     "name": "Bash",
+     "input": {
+      "command": "ls"
+     }
+    },
+    {
+     "type": "tool_use",
+     "id": "toolu_02",
+     "name": "mcp__example.server__aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+   ]
+  },
+  {
+   "role": "user",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "toolu_01",
+     "content": "file.txt",
+     "is_error": false,
+     "cache_control": {
+      "type": "ephemeral"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "toolu_02",
+     "is_error": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "line a"
+      },
+      {
+       "type": "text",
+       "text": "line b"
+      },
+      {
+       "type": "tool_reference",
+       "tool_name": "LoadedLater"
+      },
+      {
+       "type": "image",
+       "source": {
+        "type": "base64",
+        "media_type": "image/png",
+        "data": "iVBORw0KGgo="
+       }
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": "next"
+    }
+   ]
+  },
+  {
+   "role": "user",
+   "content": [
+    {
+     "type": "image",
+     "source": {
+      "type": "url",
+      "url": "https://example.com/a.png"
+     }
+    },
+    {
+     "type": "document",
+     "source": {
+      "type": "base64",
+      "media_type": "application/pdf",
+      "data": "JVBERi0="
+     }
+    },
+    {
+     "type": "document",
+     "source": {
+      "type": "text",
+      "media_type": "text/plain",
+      "data": "plain doc"
+     }
+    },
+    {
+     "type": "search_result",
+     "content": []
+    }
+   ]
+  }
+ ]
+}
